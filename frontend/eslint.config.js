@@ -2,12 +2,10 @@ import js from "@eslint/js";
 import boundaries from "eslint-plugin-boundaries";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
-import { fileURLToPath } from "node:url";
 import tseslint from "typescript-eslint";
 import noRawPalette from "./eslint-rules/no-raw-palette.js";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
-const SRC_DIR = fileURLToPath(new URL("./src", import.meta.url));
 
 // Element descriptors are folder-based, so the finer distinctions are file categories on top of
 // the `feature` and `lib` elements: a feature's index.ts (its public entry point) and lib/utils.
@@ -44,7 +42,8 @@ export default tseslint.config(
         { category: "utils", pattern: "**/src/lib/utils{,.*,/**}" },
       ],
       "import/resolver": {
-        alias: { map: [["@", SRC_DIR]], extensions: SOURCE_EXTENSIONS },
+        // Relative paths in the alias map resolve against the lint cwd (frontend/ for `pnpm lint`).
+        alias: { map: [["@", "./src"]], extensions: SOURCE_EXTENSIONS },
         node: { extensions: SOURCE_EXTENSIONS },
       },
     },
