@@ -61,7 +61,7 @@ A request for an org the user doesn't belong to returns **404**, so the response
 
 ---
 
-## 4. Data model (Flyway `V1__init.sql`)
+## 4. Data model (Flyway `V1`–`V4`)
 
 All IDs are ULID `varchar(26)`. All timestamps are `timestamptz`. `*_enc` columns hold Vault Transit ciphertext (`vault:v{n}:…`) as `text`, encrypted with a per-row context (overview §3.1). Because the context includes the row id, the id must be generated before the secret is encrypted. ULIDs are generated in Java, so this is always true.
 
@@ -129,6 +129,8 @@ run_approvals(id, run_id FK UNIQUE, decided_by FK NULL,
 sdk_versions(id, project_id FK, version, run_id FK, change_type ENUM(MAJOR,MINOR,PATCH),
              changelog TEXT, created_at, UNIQUE(project_id, version))
 ```
+
+**Migrations:** `V1__identity.sql` (users, oauth_accounts, organizations, org_members), `V2__projects.sql` (projects, project_configs), `V3__runs.sql` (spec_snapshots, generation_runs, generation_run_logs), `V4__run_results.sql` (run_artifacts, lint_results, run_approvals, sdk_versions). Split so each lands in its own small PR.
 
 **Indexes:** `generation_runs(project_id, created_at DESC)`, `generation_runs(status)`, `sdk_versions(project_id, created_at DESC)`, `generation_run_logs(run_id, seq)`.
 
@@ -307,6 +309,8 @@ public interface VcsClient {
   FileContent getFile(String repo, String path, String ref);          // content + sha
   CommitRef putFile(String repo, String path, String content, String expectedSha, String message);
   void createBranch(String repo, String name, String fromSha);
+  void deleteBranch(String repo, String name);                         // cancel cleanup
+  Map<String, String> listBlobShas(String repo, String ref, String pathPrefix);   // path → git blob sha (one tree call)
   CommitRef commitTree(String repo, String branch, List<GeneratedFile> files, String message);
   PullRequest openPr(String repo, String head, String base, String title, String body);
   void comment(String repo, int prNumber, String body);
