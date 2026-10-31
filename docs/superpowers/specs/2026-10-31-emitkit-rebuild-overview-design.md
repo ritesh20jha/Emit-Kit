@@ -31,7 +31,7 @@ EmitKit connects to a user's GitHub repositories, watches an OpenAPI spec, and g
 | Generators | Our own templates: swagger-parser → internal `ApiModel` → Mustache templates per target |
 | AI | **Spring AI**. Gemini is the default provider; the user supplies the key |
 | Secret encryption | HashiCorp Vault **Transit engine only** (encryption as a service). Vault is not used for config, DB credentials or anything else |
-| Deployment (v1–v3) | **Docker Compose** on a Linux host. Syntax checks run in short-lived, locked-down Docker containers |
+| Deployment (v1–v3) | **Docker Compose** on a Linux host. Syntax checks run in short-lived, locked-down Docker containers under **gVisor** (`runsc`) |
 | Deployment (v4) | Kubernetes + Helm, moved to v4 along with observability (see the [v4 spec](2026-10-31-emitkit-rebuild-v4-design.md)) |
 
 ### Spring Boot 4 notes

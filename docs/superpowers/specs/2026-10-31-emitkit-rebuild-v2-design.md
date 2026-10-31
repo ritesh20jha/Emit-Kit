@@ -179,7 +179,7 @@ publish_jobs(id, run_id FK, target_id FK, status, registry_url, log_ref, created
 - Trigger:
   - `ON_MERGE`: when the PR merge webhook creates the tag, enqueue a `publish.jobs` message for each enabled target.
   - `MANUAL`: a "Publish" button on the Versions tab.
-- Execution: a sandbox container on the rootless sandbox daemon (v1 §5.6). Unlike the check sandbox it needs network access, but **only to the registry hosts**. It is attached to an internal Docker network whose only way out is an egress proxy (Squid) with an allowlist of registry hostnames. It builds from the tagged commit and publishes. Credentials are written to a file on a `tmpfs` mount inside the container (never as environment variables or image layers), and the container is removed right after.
+- Execution: a sandbox container on the rootless sandbox daemon, under gVisor like every sandbox (v1 §5.6). Unlike the check sandbox it needs network access, but **only to the registry hosts**. It is attached to an internal Docker network whose only way out is an egress proxy (Squid) with an allowlist of registry hostnames. It builds from the tagged commit and publishes. Credentials are written to a file on a `tmpfs` mount inside the container (never as environment variables or image layers), and the container is removed right after.
 - Idempotency: a "version already exists" response from the registry → `SKIPPED`, not failed.
 - Mutual exclusion: a project can either have the v1 CI workflow files **or** direct publishing for a given generator. Turning on direct publishing stops those workflow files from being emitted.
 

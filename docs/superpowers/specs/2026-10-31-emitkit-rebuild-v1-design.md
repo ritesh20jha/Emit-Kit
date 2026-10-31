@@ -228,7 +228,12 @@ Implemented with `com.github.zafarkhaja:java-semver`.
 
 - Image `emitkit/toolchain:{ver}`: Node 20 (typescript, prettier), Python 3.12 (ruff), Temurin JDK 21 (javac, google-java-format).
 - The worker runs each check in a new container through `docker-java`, behind a `SandboxRunner` interface (v4 adds a Kubernetes Job implementation).
-- **Separate Docker daemon:** sandbox containers run on a dedicated **rootless** Docker daemon, not the host's main daemon. The worker gets only that daemon's socket, so a sandbox escape lands in an unprivileged user account, not root on the host.
+- **gVisor runtime:** every sandbox container runs with gVisor (`runsc`) instead of the default `runc` runtime. gVisor puts its own user-space kernel between the container and the host, so generated code never makes system calls to the host kernel directly. In docker-java this is `HostConfig.withRuntime("runsc")`; all other settings below stay the same.
+  - Setting `emitkit.sandbox.runtime`: `runsc` (default) or `runc`. `runc` is allowed only with the `dev` or `test` profiles, for machines without gVisor installed.
+  - At startup the worker checks `docker info` for the `runsc` runtime. With the `prod` or `staging` profile, the worker refuses to start if it's missing.
+  - gVisor's platform is `systrap` (the default; works on VMs without nested virtualization).
+- **Separate Docker daemon:** sandbox containers run on a dedicated **rootless** Docker daemon, not the host's main daemon. The worker gets only that daemon's socket, so even an escape from gVisor lands in an unprivileged user account, not root on the host.
+  - gVisor + rootless Docker is a less common combination. Milestone 6 starts with a short spike to confirm it works with the limits below (cgroup v2 delegation for `--cpus`/`--memory`/`--pids-limit`). If it doesn't, the fallback is gVisor on a dedicated **rootful** sandbox daemon, still separate from the main daemon; gVisor then is the main isolation boundary.
 - Container settings:
   - `--network none` (no network at all);
   - `--read-only` root filesystem, plus a `tmpfs` workspace at `/work` (512 MB);
@@ -242,7 +247,11 @@ Implemented with `com.github.zafarkhaja:java-semver`.
   - TS: `tsc --noEmit --strict` and `prettier --write`.
   - Python: `ruff check --fix` and `ruff format`.
   - Java: `javac` (against generated stubs plus vendored jars of declared dependencies) and `google-java-format`.
-- Local dev uses the same `DockerSandboxRunner`. It can point at the normal Docker daemon (`emitkit.sandbox.docker-host`), which is fine on a dev machine.
+- Local dev uses the same `DockerSandboxRunner`. It can point at the normal Docker daemon (`emitkit.sandbox.docker-host`) and use `runc` if gVisor isn't installed, which is fine on a dev machine.
+- Tests:
+  - An integration test (runs in CI with gVisor installed) confirms the container really runs under gVisor: `dmesg` inside the container shows gVisor's boot messages.
+  - Escape-attempt tests: no network (`curl` fails), can't write outside `/work`, runs as uid 10001, gets killed at the timeout, can't fork past the pids limit.
+  - The toolchain image gets a CI job that runs the full check suite under `runsc`, since a few tools behave differently there (file watching, some `/proc` files). `check.sh` turns off file watchers and runs tools in single-run mode.
 
 ---
 
@@ -431,7 +440,7 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 3. **Projects & VCS:** `VcsProvider`/GitHub, project create/delete, webhooks, rate-limit tracking.
 4. **Spec engine:** parser, `ApiModel`, linter, differ, semver (pure Java, test-first).
 5. **Generators:** TS → Python → Java → CLI → MCP → docs → workflows, each with golden tests.
-6. **Worker pipeline:** RabbitMQ topology, steps 1–11, Docker sandbox runner on a rootless daemon, cancel, retry, gate.
+6. **Worker pipeline:** gVisor + rootless Docker spike, RabbitMQ topology, steps 1–11, Docker sandbox runner (gVisor, rootless daemon), cancel, retry, gate.
 7. **Run UX:** SSE logs, preview, diff viewer, lint tab, approvals, zip download.
 8. **Hardening & cutover:** backups and restore drill, load test, security review, parity checklist, delete TS code.
 

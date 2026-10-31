@@ -111,7 +111,7 @@ A new `KubernetesSandboxRunner` (fabric8 `kubernetes-client`) next to v1's `Dock
 - read-only root filesystem, `emptyDir` (memory-backed) workspace;
 - 1 CPU / 1 Gi limits, `activeDeadlineSeconds=180`, `ttlSecondsAfterFinished=60`;
 - non-root, `allowPrivilegeEscalation: false`, all capabilities dropped, seccomp `RuntimeDefault`, Pod Security Admission `restricted`;
-- optional: gVisor `RuntimeClass` for an extra isolation layer, if the cluster supports it;
+- gVisor through a `runsc` `RuntimeClass`, the same as v1 (required, not optional). The sandbox Jobs run on a node pool with gVisor installed (for example GKE Sandbox, or the gVisor containerd shim on self-managed nodes);
 - input and output through presigned RustFS URLs (an init container downloads; the main container uploads results), because `copyArchiveToContainer` isn't available for Jobs;
 - the worker's ServiceAccount may only create, watch and delete Jobs and read Pod logs in `emitkit-sandbox`.
 
