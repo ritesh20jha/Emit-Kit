@@ -4,17 +4,23 @@ archunit = "1.5.1"
 junit = "6.1.3"
 assertj = "3.27.7"
 testcontainers = "2.0.5"
+aws-sdk = "2.57.8"
 spotless = "8.10.4"
 google-java-format = "2.0.0"
 
 [libraries]
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+spring-boot-core = { module = "org.springframework.boot:spring-boot" }
 spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "spring-boot" }
+aws-sdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "aws-sdk" }
+aws-s3 = { module = "software.amazon.awssdk:s3" }
+aws-url-connection-client = { module = "software.amazon.awssdk:url-connection-client" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-core = { module = "org.testcontainers:testcontainers" }
 spotless-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
