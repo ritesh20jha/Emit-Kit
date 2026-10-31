@@ -10,4 +10,19 @@ public record StorageProperties(
     String bucket,
     String accessKey,
     String secretKey,
-    @DefaultValue("us-east-1") String region) {}
+    @DefaultValue("us-east-1") String region) {
+
+  /** Same as the generated record string, except the secret is masked so logs never leak it. */
+  @Override
+  public String toString() {
+    return "StorageProperties[endpoint="
+        + endpoint
+        + ", bucket="
+        + bucket
+        + ", accessKey="
+        + accessKey
+        + ", secretKey=***, region="
+        + region
+        + "]";
+  }
+}
