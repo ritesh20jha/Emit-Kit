@@ -184,7 +184,28 @@ ai_usage(id, org_id FK, project_id FK, feature ENUM(DOCS, ASSISTANT, RELEASE_NOT
 
 ---
 
-## 9. Testing
+## 9. Frontend
+
+Follows overview §4.
+
+| Route / area | Contents |
+|---|---|
+| `/projects/$id/editor` | **Assistant panel** (toggle `⌘K` → "Ask assistant", or the toolbar button): chat with streamed replies, quick actions, and proposed edits shown as an inline merge view with Accept / Reject / per-hunk accept (§4) |
+| `/projects/$id/config` | AI section gains provider select, model field with the default shown as placeholder, and **Test connection** |
+| `/projects/$id/versions/$vid` | version detail page: release notes (editable before merge), migration guide with per-language before/after code tabs |
+| `/orgs/$orgId/analytics` | adds an **AI usage** panel (requests and tokens by feature and provider) |
+| `/login` | GitHub, GitLab and Bitbucket buttons; instance picker for self-managed GitLab |
+| `/me/accounts` | linked VCS accounts: link another provider, unlink (not the last one) |
+| Everywhere | provider icon next to each org in the switcher; wording from `vcsTerms(provider)` ("Merge request" on GitLab) |
+
+- **AI output safety in the UI:** AI markdown is rendered with `react-markdown` + `rehype-sanitize`; AI content is labelled "AI-generated"; nothing AI-suggested is saved without an explicit user action.
+- **Streaming UX:** typing indicator, Stop button (aborts the SSE request), and an error state with Retry.
+- **New components:** ChatPanel, MergeReview (per-hunk accept), ProviderButton, ProviderIcon.
+- **Milestones:** each v3 milestone (§11) includes its frontend pages.
+
+---
+
+## 10. Testing
 
 - AI: a fake Spring AI `ChatModel` with recorded responses (golden JSON). Contract tests against each real provider run nightly, with a small budget-capped key from CI secrets. The secrets-in-prompt test (§3.5) runs on every PR.
 - Assistant: property test that any accepted edit still parses (fuzz with random selections over the fixture specs).
@@ -194,7 +215,7 @@ ai_usage(id, org_id FK, project_id FK, feature ENUM(DOCS, ASSISTANT, RELEASE_NOT
 
 ---
 
-## 10. Milestones
+## 11. Milestones
 
 1. **AI platform:** Anthropic and OpenAI through Spring AI, Test connection, usage tracking, limits, safety tests.
 2. **AI release notes:** the deterministic fallback first, then AI.

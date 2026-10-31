@@ -181,15 +181,79 @@ public interface SecretCipher {
 
 ---
 
-## 4. Frontend baseline
+## 4. Frontend
 
-- React 19, Vite, TypeScript (strict).
-- TanStack Router (file-based) and TanStack Query.
-- shadcn/ui + Tailwind CSS v4, light/dark theme, sonner toasts.
-- CodeMirror 6 for the spec editor, `@apidevtools/swagger-parser` for live validation in the browser.
+The frontend is **rebuilt from scratch**, like the backend. Today's `apps/web` is reference material for *what* the screens do, not *how* they're built: **no code, styles or components are copied from it.** It is deleted together with the rest of the TS code at the end of v1.
+
+### 4.1 What's wrong with today's frontend (and the rule that fixes it)
+
+| Problem in `apps/web` | Rule for the rebuild |
+|---|---|
+| Generic "AI-made" look: glass blur (21×), gradient text, hard-coded `indigo-*` everywhere (80+×) | One design system with tokens (§4.3); a lint rule bans raw palette classes in feature code |
+| Text too small: `text-[10px]` used 38×, tiny uppercase labels | Minimum 12 px, body 14 px, sentence-case labels |
+| Project tabs kept in `useState`, so they can't be linked or survive a refresh | Every view and tab is a route; filters live in URL search params (§4.4) |
+| Big page files (project page 439 lines) mixing data, logic and markup | Thin routes, feature folders, ≤ 150 lines per route file (§4.5) |
+| Zero `aria-*` attributes, unclear focus, weak empty/error states | WCAG 2.2 AA, four required states for every data view (§4.6) |
+
+### 4.2 Stack
+- React 19, Vite, TypeScript (strict), TanStack Router (file-based) and TanStack Query.
+- shadcn/ui components **restyled to our tokens** + Tailwind CSS v4, Radix primitives underneath (accessible by default), sonner toasts, `cmdk` for the command palette, lucide icons.
+- CodeMirror 6 (+ `@codemirror/merge` for diffs) for the spec editor and diff viewer; `@apidevtools/swagger-parser` for live validation in the browser.
+- react-hook-form + zod for forms.
 - API client generated from the backend's springdoc OpenAPI document (`openapi-typescript` + `openapi-fetch`), regenerated in CI so a mismatch fails the build.
-- Built as static files and served by Caddy.
-- Testing: Vitest + Testing Library; Playwright for end-to-end tests against docker-compose.
+- Built as static files and served by Caddy (v1–v3).
+
+### 4.3 Visual direction & design system: "precise dev tool"
+- **Feel:** calm, dense, keyboard-first, in the family of GitHub, Linear and Vercel dashboards, but with EmitKit's own identity. Content first; chrome stays quiet.
+- **Color:** neutral grey scale for surfaces and text; **one** accent color for primary actions, links and focus rings; four status colors (success, running, failed, awaiting approval) used only for status. No glass blur, gradients or glow.
+- **Type:** Inter for the UI, JetBrains Mono for code, IDs, SHAs, versions and log lines. Scale 12 / 14 / 16 / 20 / 24 px. Body 14 px.
+- **Spacing & shape:** 4 px grid; radius 6 px (controls) / 8 px (cards); 1 px borders instead of heavy shadows.
+- **Motion:** 150 ms ease-out for hover and menus only, turned off under `prefers-reduced-motion`.
+- **Tokens:** all of the above live as CSS variables in `ui/tokens.css` (`--color-bg`, `--color-fg-muted`, `--color-accent`, `--color-status-failed`, `--space-2`, …), mapped into Tailwind's theme. Light and dark themes are two sets of the same tokens, and both are tested.
+- **Component library (`ui/`):** Button, IconButton, Input, Select, Checkbox, Switch, Textarea, Dialog, Sheet, DropdownMenu, Tabs (route-aware), Table, DataList (mobile), Badge, StatusPill, Toast, Tooltip, Skeleton, EmptyState, ErrorState, CodeBlock, Kbd, CommandPalette, PageHeader, Breadcrumbs. Every component has a Storybook story in both themes.
+
+### 4.4 Navigation & URLs
+- **App shell:** a left sidebar (org switcher at the top, then Projects, Members, Settings; v2 adds Analytics, Audit, Notifications), a top bar with breadcrumbs, the GitHub quota indicator, the theme toggle and the user menu. On mobile the sidebar becomes a drawer.
+- **Command palette (⌘K / Ctrl+K):** jump to any project, run or page; run actions such as "Trigger run", "Open editor", "Switch org". Results are filtered by the user's permissions.
+- **Keyboard shortcuts:** `g p` projects, `g r` runs, `/` focus search, `?` shortcut help, `⌘S` save in the editor.
+- **Every view has a URL:** tabs are child routes (`/projects/$id/runs`, `/projects/$id/config`, …). Table filters, sorting, pagination cursors and selected files are search params, so any screen can be shared or bookmarked and survives a refresh.
+
+### 4.5 Code architecture
+```
+/frontend/src
+  app/          router setup, providers (Query, theme), layouts (app shell, auth guard)
+  routes/       thin route files: loaders + composition of feature components (≤ 150 lines)
+  features/     orgs/ members/ projects/ spec-editor/ spec-diff/ config/ runs/ versions/ …
+                each: components/, hooks/, schemas.ts, api.ts (query options)
+  ui/           design-system components + tokens.css; no business logic, no API calls
+  lib/api/      generated client, query-key factory, ProblemDetails → AppError mapping
+  lib/auth/     session (/me), CSRF header, 401 → login redirect, usePermission()
+  lib/sse/      useEventStream() hook with reconnect + replay
+  test/         MSW handlers, render helpers
+```
+- **Import rules** (enforced by `eslint-plugin-boundaries`): `routes → features → ui/lib`; features never import other features' internals (only their `index.ts`); `ui` imports nothing from `features`.
+- **State:** server data lives only in TanStack Query (no Redux or Zustand). URL state lives in router search params. Local UI state stays in components.
+- **Data loading:** route loaders call `queryClient.ensureQueryData`, so pages render with data instead of popping in. Mutations invalidate exact query keys from the key factory.
+- **Auth:** a session cookie; the API client adds the `X-XSRF-TOKEN` header from the cookie; any 401 sends the user to `/login?next=…`. The `/me` query holds the user, orgs and roles.
+- **Permissions:** `usePermission('RUN_TRIGGER', orgId)` and a `<Can>` wrapper. Actions the user can't perform are hidden; read-only views show a short "You have view access" note instead of edit controls. The backend still enforces every check.
+- **Errors:** RFC 9457 responses map to an `AppError` with a stable `code`. Each code has a plain-language message (e.g. `SPEC_CONFLICT` → "Someone else changed this file. Reload to see their version."). Field errors are shown inline in forms; others as toasts or in-page error states.
+- **Live data:** `useEventStream(url)` wraps `EventSource` with automatic reconnect, de-duplication by log `seq`, and a "Reconnecting…" banner.
+
+### 4.6 States, accessibility & responsiveness
+- **Four required states for every data view:**
+  - **Loading:** a skeleton shaped like the final layout (no spinners for full pages).
+  - **Empty:** says what the view is for and offers the next action ("No runs yet. Trigger the first run").
+  - **Error:** the plain-language message, the error code in mono, and a Retry button.
+  - **No permission:** what the user can't do and who can (the org admins).
+- **Accessibility:** WCAG 2.2 AA. Every interactive element is reachable and usable by keyboard with a visible focus ring; dialogs trap focus; status is never shown by color alone (icon + label); live log updates use a polite live region; color contrast checked for both themes.
+- **Responsive:** works from 360 px wide. Tables switch to `DataList` cards below 768 px; the editor and diff viewer switch to a single column with a file picker.
+- **Performance:** route-level code splitting; CodeMirror loaded only on editor and diff routes; initial JS < 250 KB gzip; log view virtualized (100k lines).
+
+### 4.7 Frontend testing
+- **Unit / component:** Vitest + Testing Library, API mocked with MSW.
+- **Storybook** for `ui/` and key feature components, with visual regression snapshots (Playwright screenshots of stories) in both themes.
+- **Accessibility:** `@axe-core/playwright` on every main page in the E2E suite; zero serious or critical violations allowed.
+- **End to end:** Playwright against docker-compose with WireMock-backed GitHub.
 
 ---
 

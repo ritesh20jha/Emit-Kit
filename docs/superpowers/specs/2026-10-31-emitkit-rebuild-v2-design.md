@@ -249,7 +249,34 @@ The v1 permission table gains `PUBLISH_MANAGE` (admin) and `ANALYTICS_VIEW` (all
 
 ---
 
-## 10. Testing
+## 10. Frontend
+
+Follows overview §4. New sidebar items: **Analytics**, **Audit**, **Notifications** (bell in the top bar), and an org **Settings** area with sub-pages.
+
+| Route | Contents |
+|---|---|
+| `/projects/$id/*` | a **spec source switcher** in the project header (`?source=slug`, default `default`) that filters Editor, Diff, Runs and Versions (§3) |
+| `/projects/$id/settings/sources` | list, add, edit and remove spec sources; URL sources show last fetch status |
+| `/projects/$id/runs` | adds a **Schedule** panel: cron builder with presets and the next 5 fire times (§5.1) |
+| `/projects/$id/settings/publishing` | publish targets per generator, mode (on merge / manual), last publish result |
+| `/projects/$id/versions` | adds a **Publish** button and publish status per registry |
+| `/orgs/$orgId/settings/tokens` | API tokens: create (token shown once, with copy), scopes, last used, revoke |
+| `/orgs/$orgId/settings/invites` | pending invites, resend, cancel; invite dialog (email + role) |
+| `/invite/$token` | accept-invite page (asks the user to sign in with GitHub first) |
+| `/orgs/$orgId/settings/notifications` | channels (email / Slack / Discord) with "Send test", and rules per event |
+| `/orgs/$orgId/settings/credentials` | registry credentials (write-only fields; shows "set" and last rotated) |
+| `/orgs/$orgId/audit` | audit table with filters in the URL, CSV export |
+| `/orgs/$orgId/analytics` | charts (§8) with project and date-range filters in the URL |
+| `/admin/health` | platform-admin only: queues, DLQ actions, workers, sandbox slots, GitHub quota |
+| Notification bell | unread count, live over SSE; a dropdown of recent items and a "Mark all read" action |
+
+- **Charts:** Recharts, styled with the design tokens (status colors for run states, accent for single series), with an accessible data table toggle under each chart.
+- **New components:** CronBuilder, ChartCard, SecretField (write-only input with "set" state), CopyOnceDialog (for new tokens), FilterBar.
+- **Milestones:** each v2 milestone (§12) includes its frontend pages; no separate frontend track.
+
+---
+
+## 11. Testing
 
 - Golden tests and compile tests for Go, C#, Kotlin, Postman (validated against the collection JSON schema), mock server (boot it and run smoke requests), React Query, and docs site (HTML snapshot).
 - Generated SDK tests must pass inside the sandbox for the full set of fixture specs.
@@ -261,7 +288,7 @@ The v1 permission table gains `PUBLISH_MANAGE` (admin) and `ANALYTICS_VIEW` (all
 
 ---
 
-## 11. Milestones
+## 12. Milestones
 
 1. **Multi-spec data model and spec from URL** (with the migration).
 2. **Team features:** API tokens, invites, audit log.

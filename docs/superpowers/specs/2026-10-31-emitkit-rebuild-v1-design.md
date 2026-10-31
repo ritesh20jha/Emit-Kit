@@ -16,6 +16,7 @@ v1 rebuilds every feature of the current TypeScript EmitKit on Spring Boot + Rea
 3. Generator golden tests and compile tests pass for TS, Python and Java.
 4. Production runs on Docker Compose (`docker-compose.prod.yml`) with 2 `api-app` and 2 `worker-app` containers behind Caddy.
 5. A single PR deletes `apps/`, `packages/` and the Bun/Turbo tooling.
+6. The new frontend meets overview §4: zero serious/critical axe violations on every v1 page, all four data states present on every data view, Storybook visual tests passing in both themes.
 
 ---
 
@@ -340,7 +341,9 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 | `GET /orgs/{orgId}/members` · `PATCH /orgs/{orgId}/members/{userId}` | ORG_VIEW · MEMBER_ROLE_EDIT | |
 | `GET /orgs/{orgId}/projects` | PROJECT_VIEW | |
 | `GET /orgs/{orgId}/vcs-repos` | PROJECT_CREATE | repo picker |
+| `GET /orgs/{orgId}/vcs-repos/{owner}/{repo}/spec-check?path=&branch=` | PROJECT_CREATE | new-project flow: checks the file exists and parses; returns title and version |
 | `POST /orgs/{orgId}/projects` | PROJECT_CREATE | `{mode: EXISTING|NEW, repo, specPath, defaultBranch, visibility?, outputMode, outputRepo?}` |
+| `POST /projects/{id}/webhook` | CONFIG_EDIT | re-register the webhook (new secret) when it's missing or failing |
 | `GET /projects/{id}` · `DELETE /projects/{id}` | PROJECT_VIEW · PROJECT_DELETE | delete removes the webhook (best effort, logs a warning on failure) |
 | `GET /projects/{id}/config` · `PUT /projects/{id}/config` | PROJECT_VIEW · CONFIG_EDIT | PUT creates a new config version. The AI key is write-only; GET returns `aiKeySet: true` |
 | `GET /projects/{id}/spec` | SPEC_VIEW | `{content, sha, format}` |
@@ -380,23 +383,61 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 
 ## 10. Frontend (React)
 
-### Routes
+Built fresh to the rules in overview §4 (design system, URLs, code architecture, states, accessibility). No code is copied from `apps/web`.
+
+### 10.1 Routes
 | Route | Contents |
 |---|---|
-| `/login` | GitHub sign-in |
-| `/` → redirect | to the last-used org dashboard |
-| `/orgs/$orgId` | dashboard: org info card, project grid, "New project" button (if permitted) |
-| `/orgs/$orgId/members` 🆕 | member list with role select (admin only) |
-| `/orgs/$orgId/projects/new` | two tabs: *Existing repo* (searchable repo picker) and *New repo* (name, visibility). Then spec path, branch, output mode |
-| `/projects/$id` (tabs) | **Overview** (repo, spec, webhook status, latest run, latest version) · **Runs** · **Config** · **Versions** · **Editor** · **Diff** 🆕 · **Settings** (danger zone) |
-| `/runs/$runId` | header (status, trigger, branch, SHA, duration, PR link) · actions (Cancel / Rerun / Download zip) · tabs: **Logs** (live SSE, auto-scroll, filter by step) · **Files** 🆕 (tree + diff viewer) · **Lint** 🆕 · **Changes** 🆕 (diff summary) · an approval banner when the run is `AWAITING_APPROVAL` |
+| `/login` | GitHub sign-in; returns to `?next=` after login |
+| `/` | redirects to the last-used org (kept in `localStorage`; falls back to the personal org) |
+| `/orgs/$orgId` | **Projects**: searchable, filterable project list (status of last run, current version, repo). "New project" button if permitted. Empty state leads to the new-project flow |
+| `/orgs/$orgId/members` 🆕 | member list with role (admins can change roles inline); role source shown (GitHub sync / manual) |
+| `/orgs/$orgId/settings` | org info (slug, GitHub ID, member count), "Re-sync from GitHub" |
+| `/orgs/$orgId/projects/new` | 3-step guided flow (§10.2) |
+| `/projects/$id` | **Overview** (§10.3) |
+| `/projects/$id/runs` | run list: status, trigger, version, duration, PR. Filters (`?status=&trigger=`) in the URL. "Trigger run" and "Dry run" buttons |
+| `/projects/$id/editor` | spec editor (§10.4) |
+| `/projects/$id/diff` 🆕 | spec diff viewer: pick two snapshots (`?from=&to=`), summary of added/removed/changed operations with breaking ones first, then a side-by-side text diff |
+| `/projects/$id/config` | config form (§10.5) |
+| `/projects/$id/versions` | version history: version, change type, date, run, expandable changelog |
+| `/projects/$id/settings` | webhook status with "Re-register", output mode, danger zone (delete) |
+| `/runs/$runId` | run page (§10.6); child routes `/logs` (default), `/files` 🆕, `/lint` 🆕, `/changes` 🆕 |
 
-### Key behaviors
-- **Editor:** CodeMirror with YAML/JSON modes, debounced (500 ms) browser-side swagger-parser validation, and lint markers from `POST /lint`. Buttons: Save · Save & Generate · Dry run. A 409 opens a conflict dialog with Reload or Overwrite; Overwrite fetches the new sha, then saves again after a second confirmation.
-- **Config form:** react-hook-form + zod. Fields appear only when relevant (SDK languages only if SDK is selected; npm, PyPI and Maven fields per language). The AI key field shows "•••• set" with a Replace button.
-- **Hidden actions:** buttons the user's role doesn't allow are hidden, not disabled. The backend still enforces every permission.
-- **Header:** org switcher, GitHub quota indicator (shown only when below 20%), theme toggle, user menu.
-- **Responsive:** down to 360 px wide. Tables collapse into cards.
+### 10.2 New-project flow
+1. **Repository:** choose *Existing repo* (searchable picker with owner, visibility, last pushed) or *New repo* (name, visibility; name checked as you type).
+2. **Spec:** spec path (for existing repos, the file is checked as you type; a found file shows its title and version) and default branch (pre-filled).
+3. **Output:** output mode (same repo / separate repo with its own picker) and a summary of what EmitKit will do (register a webhook, create a starter spec for new repos).
+
+Progress is kept in search params, so Back works and a refresh keeps the step. Finishing opens the project's Config page with a "Choose what to generate" prompt.
+
+### 10.3 Project overview
+Answers "what's the state of this project?" at a glance:
+- **Last run:** status, trigger, time, duration, link; Trigger run / Rerun buttons.
+- **Current version** and change type, plus link to the open EmitKit PR if any.
+- **Spec:** path, branch, last commit; lint counts from the last run.
+- **Health:** webhook OK / failing, GitHub quota, "AI key set" if relevant.
+- **Recent activity:** the last 5 runs.
+
+### 10.4 Spec editor
+- CodeMirror with YAML/JSON modes, line numbers, folding, search.
+- Debounced (500 ms) swagger-parser validation in the browser and lint markers from `POST /lint`, shown inline and in a **Problems** panel (click a problem to jump to the line).
+- Toolbar: Save (`⌘S`) · Save & Generate · Dry run; shows "Unsaved changes" and blocks leaving the page with unsaved edits.
+- On 409 `SPEC_CONFLICT`: a dialog with **Reload** (discard mine) or **Compare**, which opens a merge view of their version and mine before saving again.
+
+### 10.5 Config form
+- Sections: Outputs · SDK languages · Package names · Versioning · Breaking-change policy · Lint policy · AI.
+- Fields appear only when relevant (languages only if SDK is selected; npm / PyPI / Maven fields per language).
+- The AI key shows "Key set" with a **Replace** button; it is never sent back to the browser.
+- Save is disabled until something changes; leaving with unsaved changes asks first. Read-only users see the values without inputs.
+
+### 10.6 Run page
+- **Header:** status pill, trigger, branch, short SHA (copy button), version, duration, PR link; actions Cancel / Rerun / Download zip (shown by status and permission).
+- **Step timeline:** the 11 pipeline steps as a horizontal (desktop) or vertical (mobile) timeline with each step's status and duration. Clicking a step filters the logs to that step.
+- **Logs:** live over SSE, virtualized, auto-scroll that pauses when you scroll up ("Jump to latest" button), filter by step and level, search, copy, download as text.
+- **Files 🆕:** tree with ADDED / MODIFIED / UNCHANGED / SKIPPED badges; a diff view for a selected file (`?path=`).
+- **Lint 🆕:** table by severity with rule, location and message.
+- **Changes 🆕:** the diff summary, breaking changes first.
+- **Approval banner** when `AWAITING_APPROVAL`: lists the breaking changes; admins see Approve / Reject with a comment field.
 
 ---
 
@@ -435,13 +476,25 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 
 ## 13. Implementation milestones (inside v1)
 
+Backend and frontend tracks run in parallel. Each frontend milestone needs only the API endpoints of the backend milestone listed next to it; until those exist, it works against MSW mocks built from the OpenAPI document.
+
+**Backend track**
 1. **Foundations:** Gradle modules, docker-compose (including Vault dev mode with the Transit key bootstrapped by an init script), Flyway V1, `SecretCipher` with Vault Transit + Testcontainers Vault tests, Vault AppRole roles and policies, CI, ArchUnit, `docker-compose.prod.yml` with Caddy.
-2. **Auth & orgs:** OAuth login, sessions, org sync, roles, `OrgAccessService`. Frontend shell.
+2. **Auth & orgs:** OAuth login, sessions, org sync, roles, `OrgAccessService`.
 3. **Projects & VCS:** `VcsProvider`/GitHub, project create/delete, webhooks, rate-limit tracking.
 4. **Spec engine:** parser, `ApiModel`, linter, differ, semver (pure Java, test-first).
 5. **Generators:** TS → Python → Java → CLI → MCP → docs → workflows, each with golden tests.
 6. **Worker pipeline:** gVisor + rootless Docker spike, RabbitMQ topology, steps 1–11, Docker sandbox runner (gVisor, rootless daemon), cancel, retry, gate.
-7. **Run UX:** SSE logs, preview, diff viewer, lint tab, approvals, zip download.
+7. **Run endpoints:** SSE logs, files/preview, lint, approvals, zip download.
 8. **Hardening & cutover:** backups and restore drill, load test, security review, parity checklist, delete TS code.
+
+**Frontend track**
+- **F1. Design system** (with backend 1): Vite app scaffold, `tokens.css`, `ui/` components, Storybook with visual tests, lint rules (no raw palette classes, import boundaries).
+- **F2. App shell & auth** (with backend 2): router and layouts, login, `/me`, CSRF and 401 handling, org switcher, sidebar, command palette, members page, error and empty-state patterns.
+- **F3. Projects** (with backend 3): projects list, new-project flow, project overview, settings, versions.
+- **F4. Spec editor & diff** (with backend 4): editor with validation, lint markers and conflict handling; diff viewer.
+- **F5. Config** (with backend 5): config form for all outputs and languages.
+- **F6. Runs** (with backends 6–7): run list, run page with timeline, live logs, files, lint, changes, approvals.
+- **F7. Polish & audit** (with backend 8): accessibility audit, mobile pass, performance budget, Playwright E2E for the parity checklist.
 
 Each milestone gets its own implementation plan.
