@@ -179,7 +179,7 @@ publish_jobs(id, run_id FK, target_id FK, status, registry_url, log_ref, created
 - Trigger:
   - `ON_MERGE`: when the PR merge webhook creates the tag, enqueue a `publish.jobs` message for each enabled target.
   - `MANUAL`: a "Publish" button on the Versions tab.
-- Execution: a sandbox Job that, unlike the check sandbox, **is allowed egress only to the registry hosts**. It builds from the tagged commit and publishes with the credentials, which are mounted as a short-lived Kubernetes Secret that is deleted right after.
+- Execution: a sandbox container on the rootless sandbox daemon (v1 §5.6). Unlike the check sandbox it needs network access, but **only to the registry hosts**. It is attached to an internal Docker network whose only way out is an egress proxy (Squid) with an allowlist of registry hostnames. It builds from the tagged commit and publishes. Credentials are written to a file on a `tmpfs` mount inside the container (never as environment variables or image layers), and the container is removed right after.
 - Idempotency: a "version already exists" response from the registry → `SKIPPED`, not failed.
 - Mutual exclusion: a project can either have the v1 CI workflow files **or** direct publishing for a given generator. Turning on direct publishing stops those workflow files from being emitted.
 
@@ -221,7 +221,7 @@ notifications(id, user_id FK, org_id FK, event, title, body, link, read_at NULL,
 - Shows:
   - RabbitMQ queue depth, consumer count and DLQ size (management HTTP API);
   - active worker instances (heartbeat in Redis every 10 s, key TTL 30 s) and in-flight runs per worker;
-  - sandbox Jobs running and pending;
+  - sandbox containers running, and checks waiting for a sandbox slot;
   - the GitHub rate-limit status of the most active tokens.
 - DLQ actions: list messages, requeue one, discard one. Each action is audited (with `actor_type=USER` and org = platform).
 

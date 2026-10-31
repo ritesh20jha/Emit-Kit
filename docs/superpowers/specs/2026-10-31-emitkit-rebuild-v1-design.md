@@ -8,13 +8,13 @@
 
 ## 1. Goal & exit criteria
 
-v1 rebuilds every feature of the current TypeScript EmitKit on Spring Boot + React and adds the core improvements listed below. It ships to production Kubernetes and replaces the TypeScript code.
+v1 rebuilds every feature of the current TypeScript EmitKit on Spring Boot + React and adds the core improvements listed below. It ships to production on Docker Compose and replaces the TypeScript code.
 
 **Exit criteria**
 1. Every item in the parity checklist (§12) passes in staging.
 2. The Playwright end-to-end suite passes against staging.
 3. Generator golden tests and compile tests pass for TS, Python and Java.
-4. The Helm release runs in production with at least 2 api replicas and at least 2 worker replicas.
+4. Production runs on Docker Compose (`docker-compose.prod.yml`) with 2 `api-app` and 2 `worker-app` containers behind Caddy.
 5. A single PR deletes `apps/`, `packages/` and the Bun/Turbo tooling.
 
 ---
@@ -34,10 +34,10 @@ Numbers refer to the master feature list. New features are marked 🆕.
 | Pipeline & generators | 44–48 pipeline · 49 TS SDK · 50 Python SDK · 🆕 51 Java SDK · 52 CLI · 53 MCP · 54 docs (+ AI examples) |
 | Releases | 60 version history · 61 auto tags · 62 CI workflows (🆕 + Maven) · 🆕 63 breaking-change PR comment |
 | Integrations | 67 HMAC webhooks · 68 push triggers · 69 merge → tag · 🆕 70 `VcsProvider` abstraction |
-| Observability | 🆕 75 GitHub rate-limit awareness · 🆕 76 metrics/tracing/structured logs |
+| Observability | 🆕 75 GitHub rate-limit awareness (76 metrics/tracing/structured logs moved to v4) |
 | Platform | 77 encryption · 78 CORS allowlist · 79 health + OpenAPI reference · 80 theme, toasts, skeletons, responsive |
 
-**Not in v1** (deferred to v2/v3): 4, 10, 11, 19, 20, 26, 33, 42, 43, 51 (Go/C#/Kotlin), 55–59, 64–66, 70 (GitLab/Bitbucket), 71–74.
+**Not in v1** (deferred to v2/v3): 4, 10, 11, 19, 20, 26, 33, 42, 43, 51 (Go/C#/Kotlin), 55–59, 64–66, 70 (GitLab/Bitbucket), 71–74. **Deferred to v4:** 76 (metrics, tracing, structured logs) and Kubernetes deployment.
 
 ---
 
@@ -92,7 +92,7 @@ project_configs(id, project_id FK, version INT,         -- append-only; latest =
                 version_strategy ENUM(EMITKIT_MANAGED,SPEC_VERSION),
                 breaking_gate ENUM(ALLOW,REQUIRE_APPROVAL,BLOCK) DEFAULT 'ALLOW',
                 lint_fail_on ENUM(NEVER,ERROR,WARNING) DEFAULT 'NEVER',
-                ai_provider DEFAULT 'gemini', ai_api_key_enc NULL,
+                ai_provider DEFAULT 'gemini', ai_model NULL, ai_api_key_enc NULL,
                 created_by FK, created_at,
                 UNIQUE(project_id, version))
 
@@ -152,7 +152,7 @@ Each step implements `PipelineStep { StepName name(); StepResult execute(RunCont
 | 5 | **CalcVersion** | §5.5. | — |
 | 6 | **BreakingGate** 🆕 | If the diff has breaking changes: `ALLOW` continues; `BLOCK` fails the run; `REQUIRE_APPROVAL` sets status `AWAITING_APPROVAL`, creates a `run_approvals` row, acks the message and stops. When approved, the API re-enqueues `{runId}` and the pipeline resumes at step 7. When rejected, the run is set to `CANCELLED`. | `BREAKING_BLOCKED` |
 | 7 | **RunGenerators** | Run each selected generator in parallel (virtual threads). Each returns `List<GeneratedFile>`. If one generator fails, the run fails, and the log names the generator. | `GENERATOR_ERROR` |
-| 8 | **SyntaxCheck** | Write the files to a tarball, launch a sandbox Kubernetes Job (§5.6), run the checks and formatters, read back the formatted files. | `CHECK_FAILED`, `SANDBOX_TIMEOUT` |
+| 8 | **SyntaxCheck** | Write the files to a tarball, start a sandbox container (§5.6), run the checks and formatters, read back the formatted files. | `CHECK_FAILED`, `SANDBOX_TIMEOUT` |
 | 9 | **PackageArtifact** 🆕 | Zip the output and upload to S3 as `artifacts/{orgId}/{runId}.zip`. Build the manifest by comparing each file with the target branch (ADDED/MODIFIED/UNCHANGED/SKIPPED). | `STORAGE_ERROR` |
 | 10 | **CommitOutput** | Skipped when `dry_run`. Target is the same repo (APPEND) or `output_repo_full_name` (SEPARATE). Create branch `emitkit/run-{runId}`. Commit all files with one Git tree. Skip any path under `*/custom/*` that already exists on the base branch. Add the publish workflows (§6.7). Open the PR (title `EmitKit: SDK v{version}`, body = changelog + lint summary). If breaking, post the breaking-change comment 🆕 63. | `VCS_CONFLICT`, `VCS_AUTH` |
 | 11 | **Finalize** | Set status `SUCCESS`. Insert `sdk_versions` only if the version changed and the run is not a dry run. Publish `[DONE]`. | — |
@@ -227,18 +227,22 @@ Implemented with `com.github.zafarkhaja:java-semver`.
 ### 5.6 Sandbox (syntax check & format)
 
 - Image `emitkit/toolchain:{ver}`: Node 20 (typescript, prettier), Python 3.12 (ruff), Temurin JDK 21 (javac, google-java-format).
-- The worker creates a Kubernetes Job through fabric8 kubernetes-client. The Job:
-  - has no network access (NetworkPolicy deny-all);
-  - has a read-only root filesystem plus an `emptyDir` workspace;
-  - limits: 1 CPU, 1 Gi memory, `activeDeadlineSeconds=180`;
-  - runs as non-root with seccomp `RuntimeDefault`;
-  - cleans itself up via `ttlSecondsAfterFinished`.
-- Input and output move through a presigned S3 URL. The worker uploads the tarball, the Job downloads it through an init container that is allowed egress to S3 only, runs `check.sh`, and uploads the result tarball and `report.json`.
+- The worker runs each check in a new container through `docker-java`, behind a `SandboxRunner` interface (v4 adds a Kubernetes Job implementation).
+- **Separate Docker daemon:** sandbox containers run on a dedicated **rootless** Docker daemon, not the host's main daemon. The worker gets only that daemon's socket, so a sandbox escape lands in an unprivileged user account, not root on the host.
+- Container settings:
+  - `--network none` (no network at all);
+  - `--read-only` root filesystem, plus a `tmpfs` workspace at `/work` (512 MB);
+  - `--cpus 1 --memory 1g --pids-limit 256`;
+  - `--cap-drop ALL --security-opt no-new-privileges`, default seccomp profile, non-root `--user 10001`;
+  - hard timeout of 180 s; the worker kills the container if it runs longer;
+  - removed right after it finishes (`--rm`, plus a cleanup sweep every 10 min for leftovers labelled `emitkit.sandbox=true`).
+- Input and output: the worker copies the tarball into the container (`copyArchiveToContainer`), runs `check.sh`, and copies the result tarball and `report.json` back out (`copyArchiveFromContainer`). Nothing goes through object storage.
+- Concurrency: a semaphore per worker limits sandbox containers to `emitkit.sandbox.max-concurrent` (default 4).
 - Checks per language:
   - TS: `tsc --noEmit --strict` and `prettier --write`.
   - Python: `ruff check --fix` and `ruff format`.
   - Java: `javac` (against generated stubs plus vendored jars of declared dependencies) and `google-java-format`.
-- Local dev: `SandboxRunner` has a `DockerSandboxRunner` implementation (docker-java), chosen with `emitkit.sandbox.mode=docker`.
+- Local dev uses the same `DockerSandboxRunner`. It can point at the normal Docker daemon (`emitkit.sandbox.docker-host`), which is fine on a dev machine.
 
 ---
 
@@ -254,7 +258,7 @@ public interface Generator {
 record GeneratedFile(String path, String content, FileKind kind /* GENERATED | CUSTOM_STUB */) {}
 ```
 
-`GeneratorContext` carries the output dir, version, package names and an optional `AiProvider` (used by docs only). Templates are Mustache (`com.samskivert:jmustache`) and live under `src/main/resources/templates/{generator}/`. Output must be byte-stable for the same input, which the golden tests check.
+`GeneratorContext` carries the output dir, version, package names and an optional `DocsAiAssistant` (used by docs only; implemented by the `ai` module with Spring AI). Templates are Mustache (`com.samskivert:jmustache`) and live under `src/main/resources/templates/{generator}/`. Output must be byte-stable for the same input, which the golden tests check.
 
 | Gen | Output dir | Contents |
 |---|---|---|
@@ -263,8 +267,18 @@ record GeneratedFile(String path, String content, FileKind kind /* GENERATED | C
 | **Java SDK** 🆕 | `{out}/sdk/java/` | `build.gradle.kts`, `src/main/java/{group}/{Api}Client.java` (java.net.http + Jackson), `model/*` (records), `resources/{Tag}Api.java`, `ApiException` hierarchy, builder-based config, `custom/` stub |
 | **CLI** | `{out}/cli/` | Commander ^11 TS CLI, one subcommand per operation (`{tag} {op}`), flags from params, `--json` body input, `bin` in `package.json` |
 | **MCP** | `{out}/mcp/` | `@modelcontextprotocol/sdk` server. Each operation is a tool, with `inputSchema` derived from params and body. Stdio transport. `package.json` |
-| **Docs** | `{out}/docs/v{version}/` | `index.md` plus `{tag}.md`. Each operation has its method, path, params table, request/response schemas and examples (curl, TS, Python, 🆕 Java). Examples are made from templates. If an AI key is set, `AiProvider` adds richer examples and prose; AI failures fall back to the template output silently, with a log warning |
+| **Docs** | `{out}/docs/v{version}/` | `index.md` plus `{tag}.md`. Each operation has its method, path, params table, request/response schemas and examples (curl, TS, Python, 🆕 Java). Examples are made from templates. If an AI key is set, `DocsAiAssistant` (Spring AI `ChatClient`, §6.1) adds richer examples and prose; AI failures fall back to the template output silently, with a log warning |
 | **Workflows** | `.github/workflows/` | `emitkit-publish-npm.yml`, `emitkit-publish-pypi.yml`, 🆕 `emitkit-publish-maven.yml`. Triggered on tags `sdk/v*`, using repo secrets `NPM_TOKEN`, `PYPI_TOKEN`, `MAVEN_*` |
+
+### 6.1 AI with Spring AI (docs enrichment)
+
+- Library: **Spring AI** with its Google GenAI (Gemini) chat model module. v1 uses AI only for docs.
+- **Bring your own key:** each project has its own encrypted key, so the chat model can't be one shared Spring bean. Auto-configured chat model beans are switched off (`spring.ai.model.chat=none`).
+- A `ChatModelFactory` in the `ai` module builds a `ChatClient` for each run, from `ai_provider` + `ai_model` + the decrypted key. The client is thrown away when the step ends, so the key isn't kept in memory.
+- `ai_model` is optional; if it's empty, the factory uses a default from `application.yml` (`emitkit.ai.gemini.default-model`), so no model name is hard-coded in Java.
+- Structured output: `ChatClient.prompt()...call().entity(DocsExamples.class)`, a record with `curl`, `typescript`, `python`, `java` and `notes`. If the response can't be mapped, the step uses the template output.
+- Timeout 30 s per call, at most 1 retry, calls batched by tag (one call per tag, not per operation).
+- Tests use a fake `ChatModel` that returns recorded responses; no real AI calls in CI.
 
 ---
 
@@ -331,7 +345,7 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 | `POST /runs/{runId}/approval` | RUN_APPROVE | `{decision, comment}` |
 | `GET /runs/{runId}/logs` · `GET /runs/{runId}/logs/stream` | RUN_VIEW | the stream is SSE |
 | `GET /runs/{runId}/files` · `GET /runs/{runId}/files/{path}?diff=true` | RUN_VIEW | preview: manifest, file content, unified diff against the base branch |
-| `GET /runs/{runId}/artifact` | RUN_VIEW | 302 to a presigned S3 URL (5 min) |
+| `GET /runs/{runId}/artifact` | RUN_VIEW | the API streams the zip from RustFS (`Content-Disposition: attachment`). RustFS isn't reachable from the internet, so no presigned URL |
 | `GET /runs/{runId}/lint` | RUN_VIEW | |
 | `GET /projects/{id}/versions` | RUN_VIEW | |
 | `POST /webhooks/github` | HMAC | see §9. Returns 503 if Vault is unreachable, so GitHub redelivers |
@@ -383,11 +397,11 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 |---|---|
 | API latency | p95 < 300 ms for non-VCS endpoints |
 | Run duration | p95 < 3 min for a 200-operation spec with all outputs |
-| Throughput | 20 concurrent runs per worker replica (bounded by sandbox Jobs) |
-| Availability | 99.5% monthly for API |
+| Throughput | 4 concurrent sandbox checks per worker container (configurable); 8 per host with 2 workers |
+| Availability | 99% monthly for the API (single Compose host; higher targets in v4) |
 | Security | OWASP ASVS L2 for auth, session and access control. Dependency scanning (OWASP dependency-check, `npm audit`) in CI |
-| Backups | Postgres PITR, 7-day retention. Vault Raft snapshots every 6 h (without the Transit key, the stored secrets can't be read) |
-| Vault | 99.9% availability; Transit p95 < 20 ms |
+| Backups | Nightly `pg_dump` + WAL archiving to off-host storage, 7-day retention. Vault Raft snapshots every 6 h, stored off-host (without the Transit key, the stored secrets can't be read). RustFS bucket mirrored nightly |
+| Vault | Transit p95 < 20 ms; same host as the apps, so the same availability |
 
 ---
 
@@ -412,13 +426,13 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 
 ## 13. Implementation milestones (inside v1)
 
-1. **Foundations:** Gradle modules, docker-compose (including Vault dev mode with the Transit key bootstrapped by an init script), Flyway V1, `SecretCipher` with Vault Transit + Testcontainers Vault tests, CI, ArchUnit, Helm skeleton (Vault Kubernetes auth roles and policies).
+1. **Foundations:** Gradle modules, docker-compose (including Vault dev mode with the Transit key bootstrapped by an init script), Flyway V1, `SecretCipher` with Vault Transit + Testcontainers Vault tests, Vault AppRole roles and policies, CI, ArchUnit, `docker-compose.prod.yml` with Caddy.
 2. **Auth & orgs:** OAuth login, sessions, org sync, roles, `OrgAccessService`. Frontend shell.
 3. **Projects & VCS:** `VcsProvider`/GitHub, project create/delete, webhooks, rate-limit tracking.
 4. **Spec engine:** parser, `ApiModel`, linter, differ, semver (pure Java, test-first).
 5. **Generators:** TS → Python → Java → CLI → MCP → docs → workflows, each with golden tests.
-6. **Worker pipeline:** RabbitMQ topology, steps 1–11, sandbox runner (Docker, then Kubernetes), cancel, retry, gate.
+6. **Worker pipeline:** RabbitMQ topology, steps 1–11, Docker sandbox runner on a rootless daemon, cancel, retry, gate.
 7. **Run UX:** SSE logs, preview, diff viewer, lint tab, approvals, zip download.
-8. **Hardening & cutover:** observability, load test, security review, parity checklist, delete TS code.
+8. **Hardening & cutover:** backups and restore drill, load test, security review, parity checklist, delete TS code.
 
 Each milestone gets its own implementation plan.

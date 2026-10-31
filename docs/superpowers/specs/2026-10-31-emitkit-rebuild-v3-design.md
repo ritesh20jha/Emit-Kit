@@ -30,20 +30,21 @@ v3 adds AI features that help users write better specs and understand releases. 
 
 ## 3. AI platform
 
-### 3.1 Provider abstraction
-v1 shipped `AiProvider` with a single Gemini implementation used by docs. v3 widens the interface and adds providers:
+### 3.1 Providers through Spring AI
+v1 uses Spring AI with Gemini for docs only (v1 §6.1). v3 adds two more providers **through Spring AI's own model modules**, not through separate vendor SDKs:
 
-```java
-public interface AiProvider {
-  AiProviderId id();                                  // GEMINI, ANTHROPIC, OPENAI
-  AiResponse complete(AiRequest req);                 // system + messages, maxTokens, temperature, jsonSchema?
-  Stream<AiChunk> stream(AiRequest req);              // for the editor assistant
-}
-```
-- Providers: Gemini (existing), Anthropic, OpenAI. Each uses the vendor's official Java SDK when one exists, otherwise its HTTP API.
-- Config per project: `ai_provider`, `ai_model`. The model is a free-text field validated against a provider's model list fetched at config save, so no model IDs are hard-coded. The key stays encrypted (`ai_api_key_enc`).
+| Provider | Spring AI module |
+|---|---|
+| Gemini (existing) | Google GenAI chat model |
+| Anthropic | Anthropic chat model |
+| OpenAI | OpenAI chat model |
+
+- The v1 `ChatModelFactory` gains a `switch` on `ai_provider` that builds the matching Spring AI `ChatModel` with the project's key and model, then wraps it in a `ChatClient`. Everything above the factory (prompts, features, tests) only sees `ChatClient`, so adding a provider later is one new `case`.
+- Config per project: `ai_provider`, `ai_model`, `ai_api_key_enc` (all from v1). `ai_model` is free text with a per-provider default in `application.yml`, so no model names are hard-coded in Java. The Config tab gets a **Test connection** button that makes one tiny call and shows success or the provider's error.
 - **Key ownership stays BYO (bring your own):** EmitKit does not provide a platform key, because billing is out of scope. If no key is set, AI features are hidden in the UI and the pipeline uses the template fallback.
-- Structured output: features that need JSON (release notes sections, migration steps) pass a JSON Schema. The provider adapter maps it to the vendor's structured-output or tool-use mode and validates the response. On a validation failure it retries once, then uses the fallback.
+- Structured output: `ChatClient...call().entity(SomeRecord.class)`. Spring AI's `BeanOutputConverter` builds the JSON-schema instructions from the record and maps the reply. On a mapping failure the call is retried once, then the fallback is used.
+- Streaming (assistant): `ChatClient...stream().content()` returns a `Flux<String>`, which the API relays to the browser through `SseEmitter`.
+- Token usage comes from `ChatResponse.getMetadata().getUsage()` and goes into `ai_usage` (§3.3).
 
 ### 3.2 Context building
 A `SpecContextBuilder` turns an `ApiModel` (or a slice of one) into compact text for prompts:
@@ -176,7 +177,7 @@ ai_usage(id, org_id FK, project_id FK, feature ENUM(DOCS, ASSISTANT, RELEASE_NOT
 | `GET /versions/{vid}/release-notes` · `PUT /versions/{vid}/release-notes` | RUN_VIEW · SPEC_EDIT |
 | `GET /versions/{vid}/migration-guide` | RUN_VIEW |
 | `GET /orgs/{orgId}/ai-usage?from&to` | ORG_VIEW |
-| `GET /ai/providers/{provider}/models` (needs a key in the body or a projectId) | CONFIG_EDIT |
+| `POST /projects/{id}/ai/test` (Test connection) | CONFIG_EDIT |
 | `GET /me/accounts` · `DELETE /me/accounts/{aid}` · `/oauth2/authorization/{gitlab,bitbucket}` | — |
 | `POST /webhooks/gitlab` · `POST /webhooks/bitbucket` | token / HMAC |
 | `GET/POST /admin/vcs-instances` | platform admin |
@@ -185,7 +186,7 @@ ai_usage(id, org_id FK, project_id FK, feature ENUM(DOCS, ASSISTANT, RELEASE_NOT
 
 ## 9. Testing
 
-- AI: a test double `AiProvider` with recorded responses (golden JSON). Contract tests against each real provider run nightly, with a small budget-capped key from CI secrets. The secrets-in-prompt test (§3.5) runs on every PR.
+- AI: a fake Spring AI `ChatModel` with recorded responses (golden JSON). Contract tests against each real provider run nightly, with a small budget-capped key from CI secrets. The secrets-in-prompt test (§3.5) runs on every PR.
 - Assistant: property test that any accepted edit still parses (fuzz with random selections over the fixture specs).
 - Release notes and migration guides: snapshot tests of the fallback templates. Schema-validation tests for the AI structured output.
 - VCS: a WireMock suite for each provider, sharing **one** contract test class (`VcsClientContractTest`) that every provider implementation must pass. Nightly end-to-end tests against real sandbox accounts on GitLab.com and Bitbucket Cloud. A self-managed GitLab test uses Testcontainers `gitlab/gitlab-ce`, weekly because it's slow.
@@ -195,7 +196,7 @@ ai_usage(id, org_id FK, project_id FK, feature ENUM(DOCS, ASSISTANT, RELEASE_NOT
 
 ## 10. Milestones
 
-1. **AI platform:** interface v2, Anthropic and OpenAI providers, usage tracking, limits, safety tests.
+1. **AI platform:** Anthropic and OpenAI through Spring AI, Test connection, usage tracking, limits, safety tests.
 2. **AI release notes:** the deterministic fallback first, then AI.
 3. **AI migration guide:** generator signature extraction, sandbox snippet compilation.
 4. **AI spec assistant:** backend streaming plus edit splicing, then the editor panel.
