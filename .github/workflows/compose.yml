@@ -1,0 +1,32 @@
+name: Compose
+
+on:
+  push:
+    paths:
+      - "deploy/compose/**"
+      - ".github/workflows/compose.yml"
+  pull_request:
+    paths:
+      - "deploy/compose/**"
+      - ".github/workflows/compose.yml"
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start stack
+        run: docker compose -f deploy/compose/docker-compose.yml up -d --wait
+
+      - name: Verify Vault bootstrap
+        run: bash deploy/compose/verify.sh
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f deploy/compose/docker-compose.yml logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/compose/docker-compose.yml down -v
