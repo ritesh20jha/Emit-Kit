@@ -24,6 +24,7 @@ dependencies {
     testImplementation(platform(catalog.findLibrary("testcontainers-bom").get()))
     testImplementation(catalog.findLibrary("junit-jupiter").get())
     testImplementation(catalog.findLibrary("assertj").get())
+    testRuntimeOnly(catalog.findLibrary("junit-platform-launcher").get())
 }
 
 tasks.withType<Test>().configureEach {
