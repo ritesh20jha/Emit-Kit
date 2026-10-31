@@ -31,6 +31,11 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
 
+tasks.withType<JavaCompile>().configureEach {
+    // Emit package-info.class even without annotations, so ArchUnit sees every module package.
+    options.compilerArgs.add("-Xpkginfo:always")
+}
+
 spotless {
     java {
         googleJavaFormat(catalog.findVersion("google-java-format").get().requiredVersion)
