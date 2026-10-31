@@ -115,11 +115,12 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN:-dev-root}
+    # The lifecycle keepalive belongs in compose, not in init.sh: init.sh only does the work.
     # Stays running after success so `up --wait` can pass (see rustfs-init).
     # ./.secrets is created root:root when Docker bind-mounts it. Task 2's init.sh must
     # chmod 777 /secrets and chmod 644 each file it writes (dev only).
     init: true
-    entrypoint: ["/bin/sh", "/init.sh"]
+    entrypoint: ["/bin/sh", "-c", "/bin/sh /init.sh && touch /tmp/ready && exec sleep infinity"]
     volumes:
       - ./vault/init.sh:/init.sh:ro
       - ./.secrets:/secrets
