@@ -29,6 +29,7 @@ EmitKit connects to a user's GitHub repositories, watches an OpenAPI spec, and g
 | Generators | Our own templates: swagger-parser → internal `ApiModel` → Mustache templates per target |
 | Deployment | Docker images, Kubernetes, Helm chart. Syntax checks run in short-lived sandboxed Kubernetes Jobs |
 | AI | Pluggable `AiProvider` interface. Gemini is the default; the user supplies the key |
+| Secret encryption | HashiCorp Vault **Transit engine only** (encryption as a service). Vault is not used for config, DB credentials or anything else |
 
 ### Out of scope (all phases)
 - Billing, subscription plans, usage-based pricing.
@@ -43,7 +44,7 @@ EmitKit connects to a user's GitHub repositories, watches an OpenAPI spec, and g
 ```
 /backend                       Gradle multi-module (Kotlin DSL), Java 21
   settings.gradle.kts
-  common/                      error types, Result helpers, AES-256-GCM crypto, ids (ULID)
+  common/                      error types, Result helpers, SecretCipher (Vault Transit / local AES), ids (ULID)
   domain/                      JPA entities, Spring Data repositories, Flyway migrations
   vcs/                         VcsProvider interface + github/ implementation
   spec-engine/                 parser, ApiModel, differ, semver calculator, linter
@@ -63,7 +64,7 @@ EmitKit connects to a user's GitHub repositories, watches an OpenAPI spec, and g
 /deploy
   docker/                      Dockerfiles (api, worker, web, toolchain)
   helm/emitkit/                Helm chart
-  compose/docker-compose.yml   local dev: postgres, rabbitmq, redis, minio
+  compose/docker-compose.yml   local dev: postgres, rabbitmq, redis, minio, vault (dev mode)
 /docs/superpowers/specs        these specs
 ```
 
@@ -112,9 +113,51 @@ An ArchUnit test in CI enforces these rules.
 - Spring Security OAuth2 Login (GitHub). Session in Redis via Spring Session. Cookie is `HttpOnly; Secure; SameSite=Lax`.
 - CSRF protection on for cookie-authenticated endpoints. The SPA reads the `XSRF-TOKEN` cookie.
 - Webhooks use their own filter chain (no session, HMAC verification only).
-- All secrets (GitHub tokens, webhook secrets, AI keys, registry tokens) are encrypted at rest with AES-256-GCM. The key comes from a Kubernetes Secret, and a key-version prefix allows key rotation.
+- All stored secrets (GitHub tokens, webhook secrets, AI keys, registry tokens) are encrypted through **Vault Transit**. See §3.1.
 - Authorization: every org-scoped request goes through `OrgAccessService.require(orgId, Permission)`. Permissions are listed per role in v1 §3.
 - CORS allowlist is set per environment.
+
+### 3.1 Secret encryption with Vault Transit
+
+Vault is used **only** for the Transit secrets engine. The encryption key is created in Vault and never leaves it (`exportable=false`). EmitKit sends plaintext and gets back ciphertext, and the reverse.
+
+**Setup**
+- Transit key `emitkit-secrets`, type `aes256-gcm96`, `derived=true`. Each call passes a `context`, so a ciphertext copied into another row or column fails to decrypt.
+  - Context = base64 of `{table}:{column}:{rowId}`, e.g. `projects:webhook_secret_enc:01J…`.
+- Auth: the **Kubernetes auth method**. `api-app` and `worker-app` service accounts log in with their pod token. Each role has a policy that only allows:
+  ```hcl
+  path "transit/encrypt/emitkit-secrets" { capabilities = ["update"] }
+  path "transit/decrypt/emitkit-secrets" { capabilities = ["update"] }
+  path "transit/rewrap/emitkit-secrets"  { capabilities = ["update"] }   # api-app only (rotation job)
+  ```
+- Client: `spring-vault-core` (`VaultTransitOperations`). Spring Cloud Vault config loading stays off, so Vault is not a config source.
+
+**Code**
+```java
+public interface SecretCipher {
+  String encrypt(String plaintext, SecretContext ctx);   // returns "vault:v{n}:..."
+  String decrypt(String ciphertext, SecretContext ctx);
+  List<String> decryptBatch(List<CipherItem> items);     // one Transit call per batch
+}
+```
+- `VaultTransitCipher` is used in every deployed environment. `LocalAesCipher` (in-process AES-GCM with a fixed test key) is used **only** in unit tests and is refused at startup when `spring.profiles.active` includes `prod` or `staging`.
+- Ciphertext is stored exactly as Vault returns it (`vault:v3:…`). The `v{n}` part is the key version, which is what makes rotation possible.
+- Plaintext is never logged or cached. Decrypted values live only for the request or step that needs them.
+
+**Key rotation**
+- Yearly, or on demand: `vault write -f transit/keys/emitkit-secrets/rotate`.
+- A ShedLock-guarded job in `api-app` re-wraps all `*_enc` columns in batches of 200 with `transit/rewrap`. The plaintext never reaches the app during re-wrap.
+- After the job reports zero rows below the new version, raise `min_decryption_version` so old key versions can't be used.
+
+**Availability & failure**
+- Production: Vault in HA mode (3 nodes, Raft storage, auto-unseal via cloud KMS) or HCP Vault. A target of 99.9%, which is higher than the API's 99.5%, because every decrypt depends on it.
+- If Vault is unreachable:
+  - Webhooks return **503**, so GitHub redelivers.
+  - Worker steps throw `SecretBackendException`, which counts as **transient** and goes through the normal retry queues.
+  - User requests that need a decrypt return 503 `SECRETS_UNAVAILABLE`.
+  - Endpoints that don't need a secret keep working.
+- `/actuator/health` includes a `vault` indicator (a Transit encrypt+decrypt of a fixed value), part of the readiness group only, so a Vault outage doesn't restart the pods.
+- Metrics: `emitkit.vault.requests{op,status}` and latency.
 
 ### Observability
 - Spring Boot Actuator (`/actuator/health`, `/actuator/prometheus`) on a separate management port.

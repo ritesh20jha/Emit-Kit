@@ -62,7 +62,7 @@ A request for an org the user doesn't belong to returns **404**, so the response
 
 ## 4. Data model (Flyway `V1__init.sql`)
 
-All IDs are ULID `varchar(26)`. All timestamps are `timestamptz`. `*_enc` columns are AES-GCM ciphertext stored as `text` with the prefix `v{keyVersion}:`.
+All IDs are ULID `varchar(26)`. All timestamps are `timestamptz`. `*_enc` columns hold Vault Transit ciphertext (`vault:v{n}:…`) as `text`, encrypted with a per-row context (overview §3.1). Because the context includes the row id, the id must be generated before the secret is encrypted. ULIDs are generated in Java, so this is always true.
 
 ```
 users(id, github_id UNIQUE, login, name, email, avatar_url, created_at, updated_at)
@@ -334,7 +334,7 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 | `GET /runs/{runId}/artifact` | RUN_VIEW | 302 to a presigned S3 URL (5 min) |
 | `GET /runs/{runId}/lint` | RUN_VIEW | |
 | `GET /projects/{id}/versions` | RUN_VIEW | |
-| `POST /webhooks/github` | HMAC | see §9 |
+| `POST /webhooks/github` | HMAC | see §9. Returns 503 if Vault is unreachable, so GitHub redelivers |
 | `GET /actuator/health`, `GET /v3/api-docs`, `/swagger-ui` | public | |
 
 **Spec save with `generate=true`:** the commit and the run are created in one request. If the commit succeeds and enqueueing fails, the response is 202, includes `runError`, and the UI shows a retry button.
@@ -386,7 +386,8 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 | Throughput | 20 concurrent runs per worker replica (bounded by sandbox Jobs) |
 | Availability | 99.5% monthly for API |
 | Security | OWASP ASVS L2 for auth, session and access control. Dependency scanning (OWASP dependency-check, `npm audit`) in CI |
-| Backups | Postgres PITR, 7-day retention |
+| Backups | Postgres PITR, 7-day retention. Vault Raft snapshots every 6 h (without the Transit key, the stored secrets can't be read) |
+| Vault | 99.9% availability; Transit p95 < 20 ms |
 
 ---
 
@@ -411,7 +412,7 @@ All endpoints except auth, webhooks and health need a session. Org-scoped endpoi
 
 ## 13. Implementation milestones (inside v1)
 
-1. **Foundations:** Gradle modules, docker-compose, Flyway V1, CI, ArchUnit, Helm skeleton.
+1. **Foundations:** Gradle modules, docker-compose (including Vault dev mode with the Transit key bootstrapped by an init script), Flyway V1, `SecretCipher` with Vault Transit + Testcontainers Vault tests, CI, ArchUnit, Helm skeleton (Vault Kubernetes auth roles and policies).
 2. **Auth & orgs:** OAuth login, sessions, org sync, roles, `OrgAccessService`. Frontend shell.
 3. **Projects & VCS:** `VcsProvider`/GitHub, project create/delete, webhooks, rate-limit tracking.
 4. **Spec engine:** parser, `ApiModel`, linter, differ, semver (pure Java, test-first).
