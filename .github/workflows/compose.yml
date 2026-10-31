@@ -2,6 +2,7 @@ name: Compose
 
 on:
   push:
+    branches: [main]
     paths:
       - "deploy/compose/**"
       - ".github/workflows/compose.yml"
@@ -10,9 +11,13 @@ on:
       - "deploy/compose/**"
       - ".github/workflows/compose.yml"
 
+permissions:
+  contents: read
+
 jobs:
   stack:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4

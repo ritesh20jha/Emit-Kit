@@ -32,10 +32,10 @@ To override the defaults, copy `.env.example` to `.env` (git-ignored).
 
 ## Verify
 
-`verify.sh` logs in as both AppRoles and checks that the Transit round-trip works, that key export is denied, and that the worker cannot rewrap. It uses a host `vault` CLI if one is installed, and otherwise the CLI inside the `vault` container.
+`verify.sh` logs in as both AppRoles and checks that the Transit round-trip works, that key export is denied, and that the worker cannot rewrap. It also checks the key's type, derived and exportable settings. It uses a host `vault` CLI if one is installed, and otherwise the CLI inside the `vault` container.
 
 ## Notes
 
 - Vault runs in dev mode, so its state is in memory and resets when the container restarts. If you restart `vault` alone, re-bootstrap it with `docker compose -f deploy/compose/docker-compose.yml up -d --wait --force-recreate vault-init`.
-- If you have volumes from the previous `postgres:16` or `rabbitmq:3` images, run `docker compose -f deploy/compose/docker-compose.yml down -v` once.
+- If you hit data-directory errors after pulling this stack from an older checkout, run `docker compose -f deploy/compose/docker-compose.yml down -v` once.
 - To reset everything, run `docker compose -f deploy/compose/docker-compose.yml down -v`.

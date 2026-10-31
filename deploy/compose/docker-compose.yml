@@ -21,6 +21,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:4.4.0-management-alpine
+    hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-emitkit}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-emitkit}
@@ -84,6 +85,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
+        rm -f /tmp/ready &&
         (aws --endpoint-url "$$S3_ENDPOINT" s3api head-bucket --bucket "$$S3_BUCKET" >/dev/null 2>&1 ||
         aws --endpoint-url "$$S3_ENDPOINT" s3api create-bucket --bucket "$$S3_BUCKET") &&
         touch /tmp/ready && exec sleep infinity
@@ -123,7 +125,7 @@ services:
     # otherwise runs as the non-root `vault` user.
     user: "0:0"
     init: true
-    entrypoint: ["/bin/sh", "-c", "/bin/sh /init.sh && touch /tmp/ready && exec sleep infinity"]
+    entrypoint: ["/bin/sh", "-c", "rm -f /tmp/ready && /bin/sh /init.sh && touch /tmp/ready && exec sleep infinity"]
     volumes:
       - ./vault/init.sh:/init.sh:ro
       - ./vault/policies:/policies:ro

@@ -7,6 +7,7 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 SECRETS=$DIR/.secrets
 ADDR=http://127.0.0.1:8200
 KEY=emitkit-secrets
+ROOT=${VAULT_DEV_ROOT_TOKEN:-dev-root}
 
 fail() { echo "verify FAILED: $*" >&2; exit 1; }
 compose() { docker compose -f "$DIR/docker-compose.yml" "$@"; }
@@ -66,5 +67,10 @@ GOT=$(vault_as "$WORKER" write -field=plaintext transit/decrypt/$KEY ciphertext=
 
 # worker: rewrap is denied (a valid ciphertext, so only the policy can block it).
 expect_denied "worker rewrap" "$WORKER" write transit/rewrap/$KEY ciphertext="$CT" context="$CTX"
+
+# key settings, read as root: the Transit key must match ov §3.1.
+[ "$(vault_as "$ROOT" read -field=type transit/keys/$KEY)" = aes256-gcm96 ] || fail "transit key $KEY is not aes256-gcm96"
+[ "$(vault_as "$ROOT" read -field=derived transit/keys/$KEY)" = true ] || fail "transit key $KEY is not derived"
+[ "$(vault_as "$ROOT" read -field=exportable transit/keys/$KEY)" = false ] || fail "transit key $KEY is exportable"
 
 echo "vault ok"
