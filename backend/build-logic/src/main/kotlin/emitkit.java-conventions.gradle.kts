@@ -1,0 +1,37 @@
+import org.gradle.api.artifacts.VersionCatalogsExtension
+
+plugins {
+    `java-library`
+    id("com.diffplug.spotless")
+}
+
+val catalog = the<VersionCatalogsExtension>().named("libs")
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    implementation(platform(catalog.findLibrary("spring-boot-bom").get()))
+
+    testImplementation(platform(catalog.findLibrary("junit-bom").get()))
+    testImplementation(platform(catalog.findLibrary("testcontainers-bom").get()))
+    testImplementation(catalog.findLibrary("junit-jupiter").get())
+    testImplementation(catalog.findLibrary("assertj").get())
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+}
+
+spotless {
+    java {
+        googleJavaFormat(catalog.findVersion("google-java-format").get().requiredVersion)
+    }
+}
