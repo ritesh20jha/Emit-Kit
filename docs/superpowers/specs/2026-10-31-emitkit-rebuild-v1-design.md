@@ -82,8 +82,8 @@ org_members(org_id FK, user_id FK, role ENUM(ADMIN,EDITOR,VIEWER),
 projects(id, org_id FK, repo_full_name, spec_path, default_branch,
          output_mode ENUM(APPEND,SEPARATE), output_repo_full_name NULL,
          webhook_id NULL, webhook_secret_enc NULL,
-         created_by FK, created_at, updated_at,
-         UNIQUE(org_id, repo_full_name))
+         created_by FK, created_at, updated_at, deleted_at NULL,   -- soft delete keeps run history
+         UNIQUE(org_id, repo_full_name) WHERE deleted_at IS NULL)
 
 project_configs(id, project_id FK, version INT,         -- append-only; latest = max(version)
                 outputs JSONB,                          -- ["SDK","CLI","MCP","DOCS"]
@@ -108,6 +108,7 @@ generation_runs(id, project_id FK, config_id FK, spec_snapshot_id FK NULL,
                 status ENUM(QUEUED,RUNNING,AWAITING_APPROVAL,SUCCESS,FAILED,CANCELLED),
                 current_step, failure_code NULL, failure_message NULL,
                 cancel_requested BOOL DEFAULT false, attempt INT DEFAULT 0,
+                step_outputs JSONB DEFAULT '{}',        -- step name → saved output (idempotent resume)
                 commit_sha, sdk_version NULL, change_type NULL,
                 diff_summary JSONB NULL,
                 branch_name NULL, pr_url NULL, pr_number NULL,
@@ -130,7 +131,7 @@ sdk_versions(id, project_id FK, version, run_id FK, change_type ENUM(MAJOR,MINOR
              changelog TEXT, created_at, UNIQUE(project_id, version))
 ```
 
-**Migrations:** `V1__identity.sql` (users, oauth_accounts, organizations, org_members), `V2__projects.sql` (projects, project_configs), `V3__runs.sql` (spec_snapshots, generation_runs, generation_run_logs), `V4__run_results.sql` (run_artifacts, lint_results, run_approvals, sdk_versions). Split so each lands in its own small PR.
+**Migrations:** `V5__shedlock.sql` (ShedLock for scheduled jobs) and `V6__project_soft_delete.sql` follow the four below. `V1__identity.sql` (users, oauth_accounts, organizations, org_members), `V2__projects.sql` (projects, project_configs), `V3__runs.sql` (spec_snapshots, generation_runs, generation_run_logs), `V4__run_results.sql` (run_artifacts, lint_results, run_approvals, sdk_versions). Split so each lands in its own small PR.
 
 **Indexes:** `generation_runs(project_id, created_at DESC)`, `generation_runs(status)`, `sdk_versions(project_id, created_at DESC)`, `generation_run_logs(run_id, seq)`.
 
@@ -300,7 +301,7 @@ record GeneratedFile(String path, String content, FileKind kind /* GENERATED | C
 public interface VcsProvider {
   VcsProviderId id();                                   // GITHUB in v1
   VcsClient forUser(String accessToken);
-  VcsClient forProject(Project project);                // uses creator's token
+  VcsClient forProject(String creatorUserId);          // uses the creator's token (via a TokenSource)
   WebhookVerifier webhookVerifier();
 }
 public interface VcsClient {
@@ -311,10 +312,10 @@ public interface VcsClient {
   void createBranch(String repo, String name, String fromSha);
   void deleteBranch(String repo, String name);                         // cancel cleanup
   Map<String, String> listBlobShas(String repo, String ref, String pathPrefix);   // path → git blob sha (one tree call)
-  CommitRef commitTree(String repo, String branch, List<GeneratedFile> files, String message);
+  CommitRef commitTree(String repo, String branch, List<CommitFile> files, String message);  // CommitFile(path, content); keeps vcs free of generators
   PullRequest openPr(String repo, String head, String base, String title, String body);
   void comment(String repo, int prNumber, String body);
-  void createTag(String repo, String tag, String sha);
+  boolean createTag(String repo, String tag, String sha);                // false if the tag already existed
   Webhook registerWebhook(String repo, String url, String secret, Set<String> events);
   void deleteWebhook(String repo, long id);
   RateLimit rateLimit();
