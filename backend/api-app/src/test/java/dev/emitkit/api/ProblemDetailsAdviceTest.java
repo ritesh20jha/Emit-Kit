@@ -43,6 +43,14 @@ class ProblemDetailsAdviceTest {
   }
 
   @Test
+  void accessDenied_mapsToForbidden() throws Exception {
+    mvc.perform(get("/test/denied"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+        .andExpect(jsonPath("$.type").value("https://emitkit.dev/errors/FORBIDDEN"));
+  }
+
+  @Test
   void unexpectedError_hidesMessage() throws Exception {
     String body =
         mvc.perform(get("/test/boom"))

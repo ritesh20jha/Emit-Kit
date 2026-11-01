@@ -5,6 +5,7 @@ import dev.emitkit.common.error.ErrorCode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.Map;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,6 +29,11 @@ class TestController {
   @PostMapping("/items")
   String create(@Valid @RequestBody Item item) {
     return item.name();
+  }
+
+  @GetMapping("/denied")
+  String denied() {
+    throw new AccessDeniedException("x");
   }
 
   @GetMapping("/boom")
