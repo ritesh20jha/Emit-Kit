@@ -8,5 +8,11 @@ dependencies {
     api(platform(libs.aws.sdk.bom))
     api(libs.aws.s3)
     implementation(libs.spring.boot.core)
+    implementation(libs.spring.boot.starter.data.jpa)
+    implementation(libs.spring.boot.starter.flyway)
+    runtimeOnly(libs.flyway.database.postgresql)
+    runtimeOnly(libs.postgresql)
+    testImplementation(libs.spring.boot.starter.data.jpa.test)
     testImplementation(libs.testcontainers.core)
+    testImplementation(libs.testcontainers.postgresql)
 }
