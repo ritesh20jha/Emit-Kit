@@ -22,6 +22,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "e2e", "eslint-rules", "eslint.config.js", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"],
+  "include": ["src", "e2e", ".storybook", "eslint-rules", "eslint.config.js", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"],
   "exclude": ["eslint-rules/__fixtures__"]
 }

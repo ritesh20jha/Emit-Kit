@@ -1,0 +1,82 @@
+/*
+ * Design tokens (spec ov §4.3). Light values live on :root, dark values on [data-theme="dark"].
+ * Both sets use the same names, so components never branch on theme. app.css maps these into Tailwind.
+ */
+:root {
+  color-scheme: light;
+
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f6f7f9;
+  --color-bg-muted: #eceef2;
+  --color-fg: #15181d;
+  --color-fg-muted: #4b5563;
+  --color-fg-subtle: #5f6672;
+  --color-border: #d9dde3;
+  --color-border-strong: #b8bfc9;
+  --color-accent: #3451d1;
+  --color-accent-fg: #ffffff;
+  --color-focus: #3451d1;
+  --color-status-success: #15803d;
+  --color-status-running: #0e7490;
+  --color-status-failed: #b42318;
+  --color-status-awaiting: #b45309;
+  --color-status-neutral: #5f6672;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #0d1014;
+  --color-bg-subtle: #14181e;
+  --color-bg-muted: #1c222a;
+  --color-fg: #e6e9ee;
+  --color-fg-muted: #a3acb9;
+  --color-fg-subtle: #8b94a3;
+  --color-border: #2a313b;
+  --color-border-strong: #3d4653;
+  --color-accent: #8ea2ff;
+  --color-accent-fg: #0d1014;
+  --color-focus: #8ea2ff;
+  --color-status-success: #4ade80;
+  --color-status-running: #38bdf8;
+  --color-status-failed: #f87171;
+  --color-status-awaiting: #fbbf24;
+  --color-status-neutral: #8b94a3;
+}
+
+:root {
+  /* 4 px grid: --space-N is N * 4 px. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+
+  --radius-control: 6px;
+  --radius-card: 8px;
+
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+
+  --duration-fast: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+  }
+}
