@@ -54,4 +54,75 @@ class NameStrategyTest {
     assertThat(NameStrategy.forLanguage(PYTHON).member("None"))
         .isEqualTo("none"); // snake makes it safe
   }
+
+  @ParameterizedTest
+  @CsvSource({
+    "TYPESCRIPT, delete, true",
+    "TYPESCRIPT, Error, true",
+    "TYPESCRIPT, object, false",
+    "PYTHON, self, true",
+    "PYTHON, match, true",
+    "PYTHON, None, true",
+    "PYTHON, none, false",
+    "JAVA, String, true",
+    "JAVA, Override, true",
+    "JAVA, string, false"
+  })
+  void isReservedMatchesLanguageWords(Language language, String name, boolean reserved) {
+    assertThat(NameStrategy.forLanguage(language).isReserved(name)).isEqualTo(reserved);
+  }
+
+  @Test
+  void typeScriptTypesEscapeErrorAndPromise() {
+    var ts = NameStrategy.forLanguage(TYPESCRIPT);
+    assertThat(ts.type("Error")).isEqualTo("Error_");
+    assertThat(ts.type("Promise")).isEqualTo("Promise_");
+  }
+
+  @Test
+  void pythonEscapesSelfAndSoftKeywords() {
+    var py = NameStrategy.forLanguage(PYTHON);
+    assertThat(py.member("self")).isEqualTo("self_");
+    assertThat(py.member("match")).isEqualTo("match_");
+  }
+
+  @Test
+  void javaEscapesStringAndOverrideTypes() {
+    var java = NameStrategy.forLanguage(JAVA);
+    assertThat(java.type("String")).isEqualTo("String_");
+    assertThat(java.type("override")).isEqualTo("Override_");
+    assertThat(java.member("string")).isEqualTo("string"); // only the Pascal type clashes
+  }
+
+  @Test
+  void digitPrefixIsAppliedBeforeReservedCheck() {
+    assertThat(NameStrategy.forLanguage(JAVA).member("2class")).isEqualTo("_2class");
+    assertThat(NameStrategy.forLanguage(PYTHON).file("2import")).isEqualTo("_2import");
+  }
+
+  @Test
+  void splitsAcronymsDigitsAndConsecutiveSeparators() {
+    var ts = NameStrategy.forLanguage(TYPESCRIPT);
+    var py = NameStrategy.forLanguage(PYTHON);
+    assertThat(ts.member("getHTTPResponse")).isEqualTo("getHttpResponse");
+    assertThat(py.member("getHTTPResponse")).isEqualTo("get_http_response");
+    assertThat(ts.member("v2Api")).isEqualTo("v2Api");
+    assertThat(py.member("v2Api")).isEqualTo("v2_api");
+    assertThat(ts.member("a--b")).isEqualTo("aB");
+    assertThat(py.member("a--b")).isEqualTo("a_b");
+  }
+
+  @Test
+  void fileStemsFollowLanguageConventions() {
+    var ts = NameStrategy.forLanguage(TYPESCRIPT);
+    var py = NameStrategy.forLanguage(PYTHON);
+    var java = NameStrategy.forLanguage(JAVA);
+    assertThat(ts.file("list_pets")).isEqualTo("list-pets");
+    assertThat(ts.file("delete")).isEqualTo("delete"); // kebab stems are never escaped
+    assertThat(py.file("list_pets")).isEqualTo("list_pets");
+    assertThat(py.file("import")).isEqualTo("import_");
+    assertThat(py.file("self")).isEqualTo("self_");
+    assertThat(java.file("object")).isEqualTo("Object_");
+    assertThat(java.file("object")).isEqualTo(java.type("object")); // Java file == type
+  }
 }

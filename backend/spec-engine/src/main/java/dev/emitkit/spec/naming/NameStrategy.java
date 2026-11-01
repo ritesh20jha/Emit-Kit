@@ -38,13 +38,11 @@ public interface NameStrategy {
 
       @Override
       public String file(String raw) {
-        List<String> parts = words(raw);
-        return digitSafe(
-            switch (language) {
-              case TYPESCRIPT -> SnakeCase.join(parts, "-");
-              case PYTHON -> SnakeCase.join(parts, "_");
-              case JAVA -> PascalCase.join(parts);
-            });
+        return switch (language) {
+          case TYPESCRIPT -> digitSafe(SnakeCase.join(words(raw), "-"));
+          case PYTHON -> escape(SnakeCase.join(words(raw), "_"));
+          case JAVA -> type(raw);
+        };
       }
 
       @Override
