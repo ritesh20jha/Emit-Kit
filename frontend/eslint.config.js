@@ -21,6 +21,7 @@ export default tseslint.config(
       "playwright-report",
       "test-results",
       "coverage",
+      "storybook-static",
     ],
   },
   js.configs.recommended,
