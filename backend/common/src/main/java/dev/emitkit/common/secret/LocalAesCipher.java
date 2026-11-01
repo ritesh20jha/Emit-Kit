@@ -16,7 +16,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /** AES-256-GCM with a public test key and the {@link SecretContext} as AAD. Tests only. */
-public class LocalAesCipher implements SecretCipher {
+public final class LocalAesCipher implements SecretCipher {
 
   private static final String PREFIX = "local:v1:";
   private static final String TRANSFORMATION = "AES/GCM/NoPadding";

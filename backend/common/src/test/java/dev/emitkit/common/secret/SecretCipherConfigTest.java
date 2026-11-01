@@ -32,10 +32,7 @@ class SecretCipherConfigTest {
   void localCipherUnderTestProfile_isUsed() {
     runner
         .withPropertyValues("spring.profiles.active=test", "emitkit.vault.cipher=local")
-        .run(ctx -> {
-          assertThat(ctx).hasNotFailed();
-          assertThat(ctx.getBean(SecretCipher.class)).isInstanceOf(LocalAesCipher.class);
-        });
+        .run(ctx -> assertThat(ctx.getBean(SecretCipher.class)).isInstanceOf(LocalAesCipher.class));
   }
 
   @Test
@@ -52,8 +49,8 @@ class SecretCipherConfigTest {
   void vaultCipherSelectedByDefault_withoutConnectingAtStartup(@TempDir Path dir) throws Exception {
     Path file = Files.writeString(dir.resolve("secret-id"), "s3cr3t-id\n");
 
-    new ApplicationContextRunner()
-        .withConfiguration(AutoConfigurations.of(SecretCipherConfig.class, VaultHealthConfig.class))
+    runner
+        .withConfiguration(AutoConfigurations.of(VaultHealthConfig.class))
         .withPropertyValues(
             "emitkit.vault.uri=http://127.0.0.1:1",
             "emitkit.vault.role-id=emitkit-api",

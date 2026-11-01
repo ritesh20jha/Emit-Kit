@@ -31,9 +31,7 @@ class VaultHealthIndicatorTest {
 
   @Test
   void down_error_whenRoundTripDoesNotMatch() {
-    var cipher = new StubCipher(null, true);
-
-    assertDown(cipher, "error");
+    assertDown(new StubCipher(null, true), "error");
   }
 
   @ParameterizedTest
@@ -44,16 +42,14 @@ class VaultHealthIndicatorTest {
 
   static Stream<Arguments> failures() {
     return Stream.of(
-        arguments(
-            new SecretBackendException(LEAK, new ResourceAccessException(LEAK, new IOException())),
-            "unreachable"),
-        arguments(
-            new SecretBackendException(LEAK, new VaultLoginException(LEAK, response(503))),
-            "sealed"),
-        arguments(
-            new SecretBackendException(LEAK, new VaultLoginException(LEAK, response(403))),
-            "error"),
+        arguments(backend(new ResourceAccessException(LEAK, new IOException())), "unreachable"),
+        arguments(backend(new VaultLoginException(LEAK, response(503))), "sealed"),
+        arguments(backend(new VaultLoginException(LEAK, response(403))), "error"),
         arguments(new IllegalStateException(LEAK), "error"));
+  }
+
+  private static SecretBackendException backend(Throwable cause) {
+    return new SecretBackendException(LEAK, cause);
   }
 
   private static void assertDown(StubCipher cipher, String reason) {
