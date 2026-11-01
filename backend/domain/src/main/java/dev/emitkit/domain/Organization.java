@@ -14,6 +14,9 @@ import org.hibernate.annotations.CreationTimestamp;
 @Table(name = "organizations")
 public class Organization extends BaseEntity {
 
+  /** Matches the {@code vcs_provider} column default in V1__identity.sql. */
+  private static final String DEFAULT_VCS_PROVIDER = "github";
+
   @Column(name = "vcs_provider", nullable = false, length = 32)
   private String vcsProvider;
 
@@ -42,6 +45,7 @@ public class Organization extends BaseEntity {
    * Creates an organization.
    *
    * @param id the ULID to use, or {@code null} to generate one
+   * @param vcsProvider the VCS provider, or {@code null} for {@code "github"} (the column default)
    * @param ownerUserId the owning user's id, or {@code null} when no user owns it
    */
   public Organization(
@@ -53,7 +57,7 @@ public class Organization extends BaseEntity {
       boolean personal,
       String ownerUserId) {
     super(id);
-    this.vcsProvider = vcsProvider;
+    this.vcsProvider = vcsProvider != null ? vcsProvider : DEFAULT_VCS_PROVIDER;
     this.vcsOrgId = vcsOrgId;
     this.slug = slug;
     this.name = name;

@@ -18,10 +18,12 @@ public class User extends BaseEntity {
   @Column(name = "login", nullable = false, length = 255)
   private String login;
 
-  @Column(name = "name", nullable = false, length = 255)
+  /** Public GitHub display name. GitHub may omit it, so it is {@code null} when unset. */
+  @Column(name = "name", length = 255)
   private String name;
 
-  @Column(name = "email", nullable = false, length = 255)
+  /** Email from the GitHub profile. It is {@code null} when the user keeps it private. */
+  @Column(name = "email", length = 255)
   private String email;
 
   @Column(name = "avatar_url", nullable = false, length = 255)

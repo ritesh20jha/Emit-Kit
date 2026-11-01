@@ -5,8 +5,8 @@ CREATE TABLE users (
     id          varchar(26)  PRIMARY KEY,
     github_id   bigint       NOT NULL UNIQUE,
     login       varchar(255) NOT NULL,
-    name        varchar(255) NOT NULL,
-    email       varchar(255) NOT NULL,
+    name        varchar(255),
+    email       varchar(255),
     avatar_url  varchar(255) NOT NULL,
     created_at  timestamptz  NOT NULL,
     updated_at  timestamptz  NOT NULL

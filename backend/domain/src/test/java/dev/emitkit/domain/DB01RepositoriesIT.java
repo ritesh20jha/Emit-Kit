@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.emitkit.common.id.Ids;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,6 +24,8 @@ class DB01RepositoriesIT extends PostgresIT {
   @Autowired private OrganizationRepository orgs;
   @Autowired private OrgMemberRepository members;
   @Autowired private JdbcTemplate jdbc;
+
+  @PersistenceContext private EntityManager em;
 
   @Test
   void duplicateOAuthAccount_violatesUnique() {
@@ -123,6 +127,38 @@ class DB01RepositoriesIT extends PostgresIT {
     Organization org = orgs.saveAndFlush(newOrg("103", "epsilon"));
     OrgMember member = new OrgMember(org.getId(), user.getId(), Role.VIEWER, RoleSource.SYNC);
     assertThat(members.saveAndFlush(member)).isSameAs(member);
+  }
+
+  @Test
+  void userWithNullNameAndEmail_roundTrips() {
+    users.saveAndFlush(new User(null, 10L, "ghost", null, null, "https://a"));
+    em.clear();
+    assertThat(users.findByGithubId(10L))
+        .hasValueSatisfying(user -> {
+          assertThat(user.getName()).isNull();
+          assertThat(user.getEmail()).isNull();
+        });
+  }
+
+  @Test
+  void organizationWithNullVcsProvider_defaultsToGithub() {
+    orgs.saveAndFlush(new Organization(null, null, "500", "nullprov", "nullprov", false, null));
+    em.clear();
+    assertThat(orgs.findByVcsProviderAndVcsOrgId("github", "500"))
+        .hasValueSatisfying(org -> assertThat(org.getVcsProvider()).isEqualTo("github"));
+  }
+
+  @Test
+  void oauthAccountWithUnknownUser_violatesForeignKey() {
+    assertThatThrownBy(() ->
+            jdbc.update(
+                "INSERT INTO oauth_accounts (id, user_id, provider, provider_account_id,"
+                    + " access_token_enc, scopes, updated_at)"
+                    + " VALUES (?, ?, 'github', '77', 'vault:v1:x', 'repo', now())",
+                PRESET_ID,
+                Ids.newUlid()))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("oauth_accounts_user_id_fkey");
   }
 
   private static User newUser(long githubId) {
