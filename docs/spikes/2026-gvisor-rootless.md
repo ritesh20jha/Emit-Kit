@@ -16,7 +16,7 @@ Observed on the authoring host (not yet the target host):
 | Docker | client 29.9.2; host daemon 29.9.2, cgroup version 2, runtimes: `runc` only |
 | cgroup v2 | yes (`cgroup2fs`; controllers: cpuset cpu io memory hugetlb pids rdma misc dmem) |
 | runsc | not installed |
-| shellcheck | not installed |
+| shellcheck | not installed on the host (run via the cached `koalaman/shellcheck:stable` image) |
 
 ## Sockets (`emitkit.sandbox.docker-host`)
 
@@ -69,20 +69,30 @@ Each check in `deploy/sandbox/self-check.sh` is listed below for both options.
 
 ## Known gaps
 
-- No check has run on a real gVisor host. The only tests were `bash -n`, `--help`, `--dry-run` for both modes,
-  and self-check's failure paths (unset `DOCKER_HOST`, nonexistent socket). The pass and fail paths of the
-  real checks were exercised only against a fake `docker`.
-- `setup-rootless-gvisor.sh` has not been executed (no `runsc`, no sudo on the authoring host). shellcheck was not run.
+- No check has run on a real gVisor host. The only tests were `bash -n`, shellcheck (clean), `--help`, `--dry-run`
+  for both modes, and self-check's failure paths (unset `DOCKER_HOST`, nonexistent socket). The pass and fail
+  branches of the real checks were exercised only against a fake `docker`. The pids snippet was also run in a
+  runc container (`--pids-limit 32`), not runsc.
+- `setup-rootless-gvisor.sh` has not been executed (no `runsc`, no sudo on the authoring host).
 - `RUNSC_RELEASE` defaults to `latest`. The `.sha512` check confirms the download matches its own release
   directory, not who published it. Pin an exact release and expected digest before production.
 - Option A assumes `docker-ce-rootless-extras`, `uidmap`, subuid/subgid ranges, and a running systemd user manager.
   The script checks for these but does not install them.
 - `--platform=systrap` comes from the plan and is not validated.
-- The pids check counts tasks in `/proc`. Its behaviour under gVisor is untested.
+- The pids check forks 100 `sleep`s inside a subshell, so a fork failure ends only the subshell, then counts the
+  tasks in `/proc`. It passes below 100 and fails at 100 or more. Verified: 31 tasks with `--pids-limit 32` and
+  101 without, in a runc container. Not verified under runsc. The count is inside the container's own PID namespace.
+- Mode A: delegation is set by a system-wide drop-in, `/etc/systemd/system/user@.service.d/delegate.conf`, which
+  applies to every user manager on the host, not only `emitkit-sandbox`. The user manager is restarted before dockerd starts.
+- Mode B: `bridge: none` and `iptables: false` keep the dedicated daemon off `docker0` and the host's DOCKER*
+  iptables chains. Its containers have no network, which is what the sandbox needs.
+- Mode B, unverified: checks 1, 3, 4 and 5 run containers without `--network`. With `bridge: none` the default
+  network may not exist, so mode B may fail those checks for a reason unrelated to gVisor. Check this on the target host.
 - The toolchain's `/proc` and file-watching behaviour under gVisor (per the v1 design) is not covered by these checks.
 - Option B: the app user must be in group `emitkit-sandbox` to use the socket.
-- The script overwrites the `daemon.json` and systemd drop-in it manages (`~emitkit-sandbox/.config/docker/` for A,
-  `/etc/emitkit-sandbox/` for B).
+- The script overwrites the files it manages: `~emitkit-sandbox/.config/docker/daemon.json` and
+  `/etc/systemd/system/user@.service.d/delegate.conf` for A; `/etc/emitkit-sandbox/daemon.json` and the
+  `emitkit-sandbox-docker.service` unit for B.
 
 ## What SBX-03 and OPS-01 should read
 

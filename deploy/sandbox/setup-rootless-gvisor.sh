@@ -11,7 +11,11 @@ RUNSC_BIN=/usr/local/bin/runsc
 RUNSC_RELEASE=${RUNSC_RELEASE:-latest}   # pin an exact release in production
 ROOTFUL_SOCK=/run/emitkit-sandbox/docker.sock
 RUNSC_RUNTIME='{"runtimes": {"runsc": {"path": "/usr/local/bin/runsc", "runtimeArgs": ["--platform=systrap"]}}}'
+# Mode B: no docker0 bridge and no iptables rules, so the dedicated daemon never touches the host's network.
+# Sandbox containers run with --network none, so they need neither.
+ROOTFUL_DAEMON_JSON='{"bridge": "none", "iptables": false, "runtimes": {"runsc": {"path": "/usr/local/bin/runsc", "runtimeArgs": ["--platform=systrap"]}}}'
 DELEGATE='Delegate=cpu cpuset io memory pids'
+USER_MANAGER_DROPIN=/etc/systemd/system/user@.service.d/delegate.conf
 
 MODE=rootless
 DRY_RUN=0
@@ -54,7 +58,11 @@ need() {
 # write_file PATH < content: writes stdin to PATH (under --dry-run it prints the content instead).
 write_file() {
   local content; content=$(cat)
-  if [ "$DRY_RUN" = 1 ]; then echo "+ write $1:"; sed 's/^/+   /' <<<"$content"; return 0; fi
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "+ write $1:"
+    while IFS= read -r line; do echo "+   $line"; done <<<"$content"
+    return 0
+  fi
   mkdir -p "$(dirname "$1")"
   printf '%s\n' "$content" >"$1"
 }
@@ -78,7 +86,9 @@ preflight() {
 
 # install_runsc: download runsc and its .sha512 for this arch, verify, install to $RUNSC_BIN.
 install_runsc() {
-  local base=https://storage.googleapis.com/gvisor/releases/release/$RUNSC_RELEASE/$(uname -m)
+  local arch base
+  arch=$(uname -m)
+  base=https://storage.googleapis.com/gvisor/releases/release/$RUNSC_RELEASE/$arch
   run curl -fsSL -o "$TMP/runsc" "$base/runsc"
   run curl -fsSL -o "$TMP/runsc.sha512" "$base/runsc.sha512"
   if [ "$DRY_RUN" = 1 ]; then echo "+ (cd $TMP && sha512sum -c runsc.sha512)"
@@ -91,13 +101,16 @@ setup_rootless() {
   id "$SANDBOX_USER" >/dev/null 2>&1 || run useradd --create-home --shell /usr/sbin/nologin "$SANDBOX_USER"
   grep -q "^$SANDBOX_USER:" /etc/subuid || run usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$SANDBOX_USER"
   run loginctl enable-linger "$SANDBOX_USER"
-  run systemctl start "user@$(sandbox_uid).service"
   install_runsc
-  write_file "$SANDBOX_HOME/.config/docker/daemon.json" <<<"$RUNSC_RUNTIME"
-  write_file "$SANDBOX_HOME/.config/systemd/user/docker.service.d/delegate.conf" <<EOF
+  # Delegation has to reach the user manager itself: a system-wide drop-in for user@.service, then restart
+  # the manager so it takes effect before dockerd starts. A drop-in on the user's docker.service cannot widen it.
+  write_file "$USER_MANAGER_DROPIN" <<EOF
 [Service]
 $DELEGATE
 EOF
+  run systemctl daemon-reload
+  run systemctl restart "user@$(sandbox_uid).service"
+  write_file "$SANDBOX_HOME/.config/docker/daemon.json" <<<"$RUNSC_RUNTIME"
   run chown -R "$SANDBOX_USER:$SANDBOX_USER" "$SANDBOX_HOME/.config"
   if [ ! -f "$SANDBOX_HOME/.config/systemd/user/docker.service" ]; then
     as_sandbox dockerd-rootless-setuptool.sh install
@@ -110,7 +123,7 @@ EOF
 setup_rootful() {
   getent group "$SANDBOX_USER" >/dev/null || run groupadd --system "$SANDBOX_USER"
   install_runsc
-  write_file /etc/emitkit-sandbox/daemon.json <<<"$RUNSC_RUNTIME"
+  write_file /etc/emitkit-sandbox/daemon.json <<<"$ROOTFUL_DAEMON_JSON"
   write_file /etc/systemd/system/emitkit-sandbox-docker.service <<EOF
 [Unit]
 Description=EmitKit sandbox Docker daemon (gVisor)
