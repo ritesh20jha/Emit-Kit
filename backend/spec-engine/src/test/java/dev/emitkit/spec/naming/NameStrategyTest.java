@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class NameStrategyTest {
 
@@ -66,7 +67,11 @@ class NameStrategyTest {
     "PYTHON, none, false",
     "JAVA, String, true",
     "JAVA, Override, true",
-    "JAVA, string, false"
+    "JAVA, string, false",
+    "TYPESCRIPT, await, true",
+    "TYPESCRIPT, arguments, true",
+    "TYPESCRIPT, eval, true",
+    "JAVA, yield, true"
   })
   void isReservedMatchesLanguageWords(Language language, String name, boolean reserved) {
     assertThat(NameStrategy.forLanguage(language).isReserved(name)).isEqualTo(reserved);
@@ -124,5 +129,51 @@ class NameStrategyTest {
     assertThat(py.file("self")).isEqualTo("self_");
     assertThat(java.file("object")).isEqualTo("Object_");
     assertThat(java.file("object")).isEqualTo(java.type("object")); // Java file == type
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "repos/list-for-org, reposListForOrg, repos_list_for_org, reposListForOrg, ReposListForOrg",
+    "+1, _1, _1, _1, _1",
+    "@type, type, type_, type, Type",
+    "foo:bar, fooBar, foo_bar, fooBar, FooBar",
+    "$ref, ref, ref, ref, Ref",
+    "user[name], userName, user_name, userName, UserName"
+  })
+  void sanitisesWireNamesToValidIdentifiers(
+      String raw, String tsMember, String pyMember, String javaMember, String javaType) {
+    assertThat(NameStrategy.forLanguage(TYPESCRIPT).member(raw)).isEqualTo(tsMember);
+    assertThat(NameStrategy.forLanguage(PYTHON).member(raw)).isEqualTo(pyMember);
+    assertThat(NameStrategy.forLanguage(JAVA).member(raw)).isEqualTo(javaMember);
+    assertThat(NameStrategy.forLanguage(JAVA).type(raw)).isEqualTo(javaType);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"_", "---", ""})
+  void wordlessNamesFallBackToValue(String raw) {
+    assertThat(NameStrategy.forLanguage(TYPESCRIPT).member(raw)).isEqualTo("value");
+    assertThat(NameStrategy.forLanguage(PYTHON).member(raw)).isEqualTo("value");
+    assertThat(NameStrategy.forLanguage(JAVA).member(raw)).isEqualTo("value");
+    assertThat(NameStrategy.forLanguage(TYPESCRIPT).type(raw)).isEqualTo("Value");
+    assertThat(NameStrategy.forLanguage(JAVA).type(raw)).isEqualTo("Value");
+  }
+
+  @Test
+  void pluralAcronymsStayTogether() {
+    assertThat(NameStrategy.forLanguage(TYPESCRIPT).member("URLs")).isEqualTo("urls");
+    assertThat(NameStrategy.forLanguage(PYTHON).member("URLs")).isEqualTo("urls");
+    assertThat(NameStrategy.forLanguage(TYPESCRIPT).file("URLs")).isEqualTo("urls");
+    assertThat(NameStrategy.forLanguage(JAVA).file("URLs")).isEqualTo("Urls");
+    assertThat(NameStrategy.forLanguage(TYPESCRIPT).member("userIDs")).isEqualTo("userIds");
+    assertThat(NameStrategy.forLanguage(PYTHON).member("userIDs")).isEqualTo("user_ids");
+  }
+
+  @Test
+  void typeScriptAndJavaReservedWordsAddedInReview() {
+    var ts = NameStrategy.forLanguage(TYPESCRIPT);
+    assertThat(ts.member("await")).isEqualTo("await_");
+    assertThat(ts.member("arguments")).isEqualTo("arguments_");
+    assertThat(ts.member("eval")).isEqualTo("eval_");
+    assertThat(NameStrategy.forLanguage(JAVA).member("yield")).isEqualTo("yield_");
   }
 }

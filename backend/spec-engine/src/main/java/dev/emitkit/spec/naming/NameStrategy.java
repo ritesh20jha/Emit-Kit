@@ -57,13 +57,19 @@ public interface NameStrategy {
     };
   }
 
-  /** Splits on separators (`-`, `_`, space, `.`) and on case changes and acronym ends. */
+  /**
+   * Splits on any character that is not a letter or digit, and on case changes. An acronym ends
+   * before a capital that starts a word of 3+ letters, so {@code HTTPServer} splits but {@code
+   * URLs} does not. Falls back to {@code value} when nothing is left.
+   */
   private static List<String> words(String raw) {
-    return Arrays.stream(raw.split("[-_ .]+"))
-        .flatMap(
-            part -> Arrays.stream(part.split("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")))
-        .filter(word -> !word.isEmpty())
-        .toList();
+    List<String> words =
+        Arrays.stream(raw.split("[^\\p{L}\\p{N}]+"))
+            .flatMap(part ->
+                Arrays.stream(part.split("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z]{2,})")))
+            .filter(word -> !word.isEmpty())
+            .toList();
+    return words.isEmpty() ? List.of("value") : words;
   }
 
   private static String digitSafe(String name) {

@@ -55,7 +55,10 @@ final class ReservedWords {
           "yield",
           "Error",
           "Object",
-          "Promise");
+          "Promise",
+          "await",
+          "arguments",
+          "eval");
 
   private static final Set<String> PYTHON_WORDS =
       Set.of(
@@ -159,7 +162,8 @@ final class ReservedWords {
           "Object",
           "String",
           "Class",
-          "Override");
+          "Override",
+          "yield");
 
   private ReservedWords() {}
 

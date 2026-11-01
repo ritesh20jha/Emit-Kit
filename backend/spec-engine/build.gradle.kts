@@ -4,5 +4,5 @@ plugins {
 
 dependencies {
     implementation(project(":common"))
-    api("org.jspecify:jspecify")
+    api(libs.jspecify)
 }
