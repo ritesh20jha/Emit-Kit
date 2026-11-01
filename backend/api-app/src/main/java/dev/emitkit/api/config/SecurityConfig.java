@@ -1,5 +1,6 @@
 package dev.emitkit.api.config;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,12 +23,14 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
- * Two filter chains. Webhooks are stateless and CSRF-free (their HMAC check lives in the hook
+ * Three filter chains, matched in order. Actuator is stateless and open, because its management
+ * port is not published. Webhooks are stateless and CSRF-free (their HMAC check lives in the hook
  * module). Everything else is the browser/API chain: session-backed, CSRF-protected, CORS
  * allowlisted, and answering failures as Problem Details.
  */
@@ -78,8 +81,12 @@ public class SecurityConfig {
     return http.cors(c -> c.configurationSource(cors))
         .csrf(csrfCustomizer())
         .addFilterAfter(csrfCookieFilter(), CsrfFilter.class)
+        // No saved request: an anonymous 401 must not create a session for a retry.
+        .requestCache(cache -> cache.requestCache(new NullRequestCache()))
         .authorizeHttpRequests(auth ->
-            auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/login/**", "/oauth2/**")
+            auth.dispatcherTypeMatchers(DispatcherType.ERROR)
+                .permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/login/**", "/oauth2/**")
                 .permitAll()
                 .anyRequest()
                 .authenticated())

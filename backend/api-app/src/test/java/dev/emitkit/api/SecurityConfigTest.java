@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = "emitkit.cors.allowed-origins=http://localhost:5173")
 @AutoConfigureMockMvc
@@ -64,7 +67,9 @@ class SecurityConfigTest {
 
   @Test
   void webhookPathNeedsNoCsrfOrSession() throws Exception {
-    mvc.perform(post("/webhooks/test")).andExpect(status().isOk());
+    mvc.perform(post("/webhooks/test"))
+        .andExpect(status().isOk())
+        .andExpect(cookie().doesNotExist("SESSION"));
   }
 
   @Test
@@ -79,6 +84,24 @@ class SecurityConfigTest {
   void corsForeignOrigin_rejected() throws Exception {
     mvc.perform(get("/api/v1/test").header("Origin", "https://evil.example"))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void anonymousApiRequest_setsNoSessionCookie() throws Exception {
+    mvc.perform(get("/api/v1/test"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(cookie().doesNotExist("SESSION"));
+  }
+
+  @Test
+  void anonymousErrorDispatch_isNotChallenged() throws Exception {
+    RequestPostProcessor errorDispatch =
+        request -> {
+          request.setDispatcherType(DispatcherType.ERROR);
+          request.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, 404);
+          return request;
+        };
+    mvc.perform(get("/error").with(errorDispatch)).andExpect(status().isNotFound());
   }
 
   @Test
