@@ -12,9 +12,13 @@ dependencies {
     implementation(libs.spring.boot.starter.webmvc)
     implementation(libs.spring.boot.starter.validation)
     implementation(libs.spring.boot.starter.security)
+    implementation(libs.spring.boot.starter.session.data.redis)
+    implementation(libs.springdoc.openapi.webmvc)
 
     testImplementation(libs.spring.boot.starter.webmvc.test)
     testImplementation(libs.spring.security.test)
+    testImplementation(libs.spring.boot.testcontainers)
+    testImplementation(libs.testcontainers.core)
 }
 
 // The convention plugin disables bootJar until a main class exists; api-app has one now.

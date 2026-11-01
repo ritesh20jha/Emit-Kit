@@ -15,8 +15,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-// addFilters = false: the real SecurityConfig does not exist yet, and the default Boot security
-// chain would answer 401 before the controller runs. Task 2 replaces this with the real chains.
+// addFilters = false: this slice checks only the advice mapping, so the security filters are off
+// and the requests reach the controller. The real chains are covered by SecurityConfigTest.
 @WebMvcTest(TestController.class)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(ProblemDetailsAdvice.class)
