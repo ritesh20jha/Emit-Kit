@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Tests for scripts/pr-size.sh. Builds a throwaway git repo with a base branch,
 # then for each case commits changes on a fresh branch, runs the script against
-# base and checks the exit code (and the counted line, when given).
+# base and checks the exit code, the counted line and any extra stdout line.
 set -euo pipefail
+
+# Keep results independent of the caller's git config and PR labels.
+unset PR_LABELS
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/pr-size.sh"
@@ -14,8 +18,7 @@ repo="$tmp/repo"
 git init -q -b base "$repo"
 
 g() {
-  git -C "$repo" -c user.name="pr-size-test" -c user.email="pr-size-test@example.invalid" \
-    -c commit.gpgsign=false "$@"
+  git -C "$repo" -c user.name="pr-size-test" -c user.email="pr-size-test@example.invalid" "$@"
 }
 
 mkdir -p "$repo/src"
@@ -28,6 +31,7 @@ pass=0
 fail=0
 seq_no=0
 case_desc=""
+script_base="base"
 last_exit=""
 last_out=""
 
@@ -37,12 +41,13 @@ start_branch() {
   g checkout -q -B "case-$seq_no" base
 }
 
-# run_case: commit the working tree on the current branch, then run the script
-# with base as the base ref. Records its exit code and stdout; stderr passes through.
+# run_case: commit the working tree on the current branch (allowing an empty
+# commit), then run the script with $script_base as the base ref. Records its exit
+# code and stdout; stderr passes through.
 run_case() {
   g add -A
-  g commit -q -m "case $seq_no"
-  if last_out="$(cd "$repo" && PR_LABELS="${PR_LABELS:-}" "$script" base)"; then
+  g commit -q --allow-empty -m "case $seq_no"
+  if last_out="$(cd "$repo" && PR_LABELS="${PR_LABELS:-}" "$script" "$script_base")"; then
     last_exit=0
   else
     last_exit=$?
@@ -66,17 +71,24 @@ case_lines() {
   run_case
 }
 
-# expect_exit <code> [<counted>]: check the last run. When <counted> is given the
-# output must be exactly "counted=<counted> limit=1000".
+# expect_exit <code> [<counted> [<note>]]: check the last run. When <counted> is
+# given, stdout must be exactly "counted=<counted> limit=1000", followed by a
+# second line <note> when one is given.
 expect_exit() {
-  local want_exit="$1" want_counted="${2:-}" ok=1 detail=""
+  local want_exit="$1" want_counted="${2:-}" want_note="${3:-}" want_out ok=1 detail=""
   if [ "$last_exit" != "$want_exit" ]; then
     ok=0
     detail="exit $last_exit, want $want_exit"
   fi
-  if [ -n "$want_counted" ] && [ "$last_out" != "counted=$want_counted limit=1000" ]; then
-    ok=0
-    detail="${detail:+$detail; }output '$last_out', want counted=$want_counted limit=1000"
+  if [ -n "$want_counted" ]; then
+    want_out="counted=$want_counted limit=1000"
+    if [ -n "$want_note" ]; then
+      want_out="$want_out"$'\n'"$want_note"
+    fi
+    if [ "$last_out" != "$want_out" ]; then
+      ok=0
+      detail="${detail:+$detail; }stdout '$last_out', want '$want_out'"
+    fi
   fi
   if [ "$ok" = 1 ]; then
     pass=$((pass + 1))
@@ -87,10 +99,45 @@ expect_exit() {
   fi
 }
 
+# expect_failure: the last run must exit non-zero and print nothing on stdout.
+expect_failure() {
+  if [ "$last_exit" != 0 ] && [ -z "$last_out" ]; then
+    pass=$((pass + 1))
+    echo "PASS: $case_desc (exit $last_exit)"
+  else
+    fail=$((fail + 1))
+    echo "FAIL: $case_desc: exit $last_exit, stdout '$last_out'; want non-zero exit and no stdout"
+  fi
+}
+
 # Limit boundary.
 case_lines 999 "src/a.java"             ; expect_exit 0 999
 case_lines 1000 "src/a.java"            ; expect_exit 0 1000
 case_lines 1001 "src/a.java"            ; expect_exit 1 1001
+
+# Deletions count too: removing 40 lines and adding 961 is 1001 counted lines.
+start_branch
+g rm -q src/old.java
+mkdir -p "$repo/src"
+seq 1 961 > "$repo/src/b.java"
+case_desc="delete src/old.java (40 lines) + 961 lines src/b.java"
+run_case
+expect_exit 1 1001
+
+# Empty diff.
+start_branch
+case_desc="empty diff"
+run_case
+expect_exit 0 0
+
+# Unknown base ref must fail, not report a count.
+start_branch
+seq 1 5 > "$repo/src/a.java"
+case_desc="unknown base ref"
+script_base="no-such-ref"
+run_case
+script_base="base"
+expect_failure
 
 # Excluded paths.
 case_lines 5000 "frontend/openapi.json" ; expect_exit 0 0
@@ -103,8 +150,9 @@ case_lines 1000 "pnpm-lock.yaml" 1000 "frontend/src/lib/api/generated/client.ts"
 case_lines 1001 "src/pnpm-lock.yaml.bak" ; expect_exit 1 1001
 
 # Labels: exact match among comma-separated items only.
-PR_LABELS="size-exempt,docs" case_lines 3000 "src/a.java" ; expect_exit 0 3000
-PR_LABELS="docs,size-exempt" case_lines 1001 "src/a.java" ; expect_exit 0 1001
+PR_LABELS="size-exempt,docs" case_lines 3000 "src/a.java" ; expect_exit 0 3000 "size-exempt label present: limit not enforced"
+PR_LABELS="docs,size-exempt" case_lines 1001 "src/a.java" ; expect_exit 0 1001 "size-exempt label present: limit not enforced"
+PR_LABELS="size-exempt" case_lines 10 "src/a.java"        ; expect_exit 0 10
 PR_LABELS="size-exemptions" case_lines 1001 "src/a.java" ; expect_exit 1 1001
 
 # Binary files are ignored.

@@ -40,7 +40,11 @@ done <<< "$numstat"
 echo "counted=$counted limit=$limit"
 
 labels=",${PR_LABELS:-},"
-if [ "$counted" -gt "$limit" ] && [[ "$labels" != *,size-exempt,* ]]; then
-  echo "PR is over the $limit line limit; split it or add the size-exempt label." >&2
-  exit 1
+if [ "$counted" -gt "$limit" ]; then
+  if [[ "$labels" == *,size-exempt,* ]]; then
+    echo "size-exempt label present: limit not enforced"
+  else
+    echo "PR is over the $limit line limit; split it or add the size-exempt label." >&2
+    exit 1
+  fi
 fi
