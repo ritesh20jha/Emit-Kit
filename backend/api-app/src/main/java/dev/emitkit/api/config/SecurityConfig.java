@@ -54,6 +54,21 @@ public class SecurityConfig {
         .build();
   }
 
+  /**
+   * Actuator: the management port is not published, so the network is the boundary. Ordered ahead
+   * of appChain, whose catch-all would otherwise answer 401 on the management port.
+   */
+  @Bean
+  @Order(0)
+  public SecurityFilterChain actuatorChain(HttpSecurity http) throws Exception {
+    return http.securityMatcher("/actuator/**")
+        .csrf(csrf -> csrf.disable())
+        .sessionManagement(
+            session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+        .build();
+  }
+
   /** Browser and API traffic: CSRF cookie for SPAs, CORS allowlist, /api/v1 requires login. */
   @Bean
   @Order(2)

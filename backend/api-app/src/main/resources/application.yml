@@ -3,3 +3,13 @@ spring:
     data:
       redis:
         namespace: emitkit
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health
+logging:
+  pattern:
+    level: "%5p [%X{runId:-},%X{orgId:-}]"
