@@ -37,8 +37,13 @@ public class User extends BaseEntity {
 
   protected User() {}
 
-  /** Creates a user from the GitHub profile. The id is assigned on persist. */
-  public User(long githubId, String login, String name, String email, String avatarUrl) {
+  /**
+   * Creates a user from the GitHub profile.
+   *
+   * @param id the ULID to use, or {@code null} to generate one
+   */
+  public User(String id, long githubId, String login, String name, String email, String avatarUrl) {
+    super(id);
     this.githubId = githubId;
     this.login = login;
     this.name = name;

@@ -8,7 +8,8 @@ dependencies {
     api(platform(libs.aws.sdk.bom))
     api(libs.aws.s3)
     implementation(libs.spring.boot.core)
-    implementation(libs.spring.boot.starter.data.jpa)
+    // Repository interfaces and entity annotations are public API, so consumers need JPA at compile time.
+    api(libs.spring.boot.starter.data.jpa)
     implementation(libs.spring.boot.starter.flyway)
     runtimeOnly(libs.flyway.database.postgresql)
     runtimeOnly(libs.postgresql)

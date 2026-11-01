@@ -8,7 +8,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * A user's linked external account and its access token. {@code accessTokenEnc} holds Vault Transit
- * ciphertext; encryption is applied by the caller. Maps to {@code oauth_accounts}.
+ * ciphertext; the caller encrypts it with the row id, so the id must be known first. Maps to {@code
+ * oauth_accounts}.
  */
 @Entity
 @Table(name = "oauth_accounts")
@@ -35,12 +36,21 @@ public class OAuthAccount extends BaseEntity {
 
   protected OAuthAccount() {}
 
+  /**
+   * Creates a linked account.
+   *
+   * @param id the ULID to use, or {@code null} to generate one. Pass the id here when the token was
+   *     encrypted with it.
+   * @param accessTokenEnc the already-encrypted token
+   */
   public OAuthAccount(
+      String id,
       String userId,
       String provider,
       String providerAccountId,
       String accessTokenEnc,
       String scopes) {
+    super(id);
     this.userId = userId;
     this.provider = provider;
     this.providerAccountId = providerAccountId;

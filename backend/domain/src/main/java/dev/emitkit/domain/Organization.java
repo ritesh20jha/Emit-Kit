@@ -39,16 +39,20 @@ public class Organization extends BaseEntity {
   protected Organization() {}
 
   /**
-   * Creates an organization. {@code ownerUserId} is {@code null} when no user owns it. The id is
-   * assigned on persist.
+   * Creates an organization.
+   *
+   * @param id the ULID to use, or {@code null} to generate one
+   * @param ownerUserId the owning user's id, or {@code null} when no user owns it
    */
   public Organization(
+      String id,
       String vcsProvider,
       String vcsOrgId,
       String slug,
       String name,
       boolean personal,
       String ownerUserId) {
+    super(id);
     this.vcsProvider = vcsProvider;
     this.vcsOrgId = vcsOrgId;
     this.slug = slug;
