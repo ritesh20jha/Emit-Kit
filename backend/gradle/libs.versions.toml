@@ -8,6 +8,7 @@ aws-sdk = "2.57.8"
 spotless = "8.10.4"
 google-java-format = "2.0.0"
 ulid-creator = "5.2.3"
+spring-vault = "4.1.1"
 
 [libraries]
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -22,7 +23,12 @@ assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 archunit = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
 testcontainers-core = { module = "org.testcontainers:testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+testcontainers-vault = { module = "org.testcontainers:testcontainers-vault" }
 spotless-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
 jspecify = { module = "org.jspecify:jspecify" }
 ulid-creator = { module = "com.github.f4b6a3:ulid-creator", version.ref = "ulid-creator" }
+spring-vault-core = { module = "org.springframework.vault:spring-vault-core", version.ref = "spring-vault" }
+# Spring Vault needs Jackson on the classpath for its JSON bodies (optional there). Boot 4 manages Jackson 3.
+jackson-databind = { module = "tools.jackson.core:jackson-databind" }
