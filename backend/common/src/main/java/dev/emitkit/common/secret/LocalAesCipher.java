@@ -15,26 +15,18 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-/**
- * {@link SecretCipher} that encrypts locally with AES-256-GCM and a fixed, public test key. The
- * {@link SecretContext} is bound as the additional authenticated data, so a ciphertext only
- * decrypts under the context it was encrypted with.
- *
- * <p><b>For unit tests only.</b> The key is a constant in this source file, so anyone can decrypt
- * what this cipher produces. It must never be used in deployed environments; a profile guard
- * enforces that when the cipher is wired into Spring.
- */
+/** AES-256-GCM with a public test key and the {@link SecretContext} as AAD. Tests only. */
 public class LocalAesCipher implements SecretCipher {
 
   private static final String PREFIX = "local:v1:";
   private static final String TRANSFORMATION = "AES/GCM/NoPadding";
-  private static final String KEY_ALGORITHM = "AES";
   private static final int IV_BYTES = 12;
   private static final int TAG_BITS = 128;
   private static final int TAG_BYTES = TAG_BITS / 8;
   private static final String DECRYPTION_FAILED = "secret decryption failed";
   private static final byte[] TEST_KEY =
       HexFormat.of().parseHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+  private static final SecretKeySpec KEY = new SecretKeySpec(TEST_KEY, "AES");
   private static final SecureRandom RANDOM = new SecureRandom();
 
   @Override
@@ -43,7 +35,7 @@ public class LocalAesCipher implements SecretCipher {
     RANDOM.nextBytes(iv);
     try {
       Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-      cipher.init(Cipher.ENCRYPT_MODE, key(), new GCMParameterSpec(TAG_BITS, iv));
+      cipher.init(Cipher.ENCRYPT_MODE, KEY, new GCMParameterSpec(TAG_BITS, iv));
       cipher.updateAAD(aad(ctx));
       byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
       byte[] ivAndCiphertext =
@@ -72,7 +64,7 @@ public class LocalAesCipher implements SecretCipher {
     byte[] body = Arrays.copyOfRange(ivAndCiphertext, IV_BYTES, ivAndCiphertext.length);
     try {
       Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-      cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(TAG_BITS, iv));
+      cipher.init(Cipher.DECRYPT_MODE, KEY, new GCMParameterSpec(TAG_BITS, iv));
       cipher.updateAAD(aad(ctx));
       return new String(cipher.doFinal(body), StandardCharsets.UTF_8);
     } catch (GeneralSecurityException e) {
@@ -83,10 +75,6 @@ public class LocalAesCipher implements SecretCipher {
   @Override
   public List<String> decryptBatch(List<CipherItem> items) {
     return items.stream().map(item -> decrypt(item.ciphertext(), item.ctx())).toList();
-  }
-
-  private static SecretKeySpec key() {
-    return new SecretKeySpec(TEST_KEY, KEY_ALGORITHM);
   }
 
   private static byte[] aad(SecretContext ctx) {

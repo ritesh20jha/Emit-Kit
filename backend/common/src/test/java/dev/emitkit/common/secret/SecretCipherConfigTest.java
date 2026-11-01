@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -14,21 +16,11 @@ class SecretCipherConfigTest {
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner().withUserConfiguration(SecretCipherConfig.class);
 
-  @Test
-  void localCipherUnderProdProfile_failsStartup() {
+  @ParameterizedTest
+  @ValueSource(strings = {"prod", "staging"})
+  void localCipherUnderProdOrStaging_failsStartup(String profile) {
     runner
-        .withPropertyValues("spring.profiles.active=prod", "emitkit.vault.cipher=local")
-        .run(ctx ->
-            assertThat(ctx)
-                .hasFailed()
-                .getFailure()
-                .hasMessageContaining("LocalAesCipher is not allowed"));
-  }
-
-  @Test
-  void localCipherUnderStagingProfile_failsStartup() {
-    runner
-        .withPropertyValues("spring.profiles.active=staging", "emitkit.vault.cipher=local")
+        .withPropertyValues("spring.profiles.active=" + profile, "emitkit.vault.cipher=local")
         .run(ctx ->
             assertThat(ctx)
                 .hasFailed()
@@ -48,8 +40,7 @@ class SecretCipherConfigTest {
 
   @Test
   void appRoleSecretIdIsReadFromFile(@TempDir Path dir) throws Exception {
-    Path file = dir.resolve("secret-id");
-    Files.writeString(file, "  s3cr3t-id\n");
+    Path file = Files.writeString(dir.resolve("secret-id"), "  s3cr3t-id\n");
     var props =
         new VaultProperties(
             null, null, file.toString(), "emitkit-secrets", VaultProperties.CipherMode.VAULT);
@@ -58,22 +49,11 @@ class SecretCipherConfigTest {
   }
 
   @Test
-  void healthIndicatorRegisteredAsVault_whenCipherPresent() {
+  void vaultCipherSelectedByDefault_withoutConnectingAtStartup(@TempDir Path dir) throws Exception {
+    Path file = Files.writeString(dir.resolve("secret-id"), "s3cr3t-id\n");
+
     new ApplicationContextRunner()
         .withConfiguration(AutoConfigurations.of(SecretCipherConfig.class, VaultHealthConfig.class))
-        .withPropertyValues("spring.profiles.active=test", "emitkit.vault.cipher=local")
-        .run(ctx -> {
-          assertThat(ctx).hasNotFailed();
-          assertThat(ctx.getBean("vault")).isInstanceOf(VaultHealthIndicator.class);
-        });
-  }
-
-  @Test
-  void vaultCipherSelectedByDefault_withoutConnectingAtStartup(@TempDir Path dir) throws Exception {
-    Path file = dir.resolve("secret-id");
-    Files.writeString(file, "s3cr3t-id\n");
-
-    runner
         .withPropertyValues(
             "emitkit.vault.uri=http://127.0.0.1:1",
             "emitkit.vault.role-id=emitkit-api",
@@ -81,6 +61,7 @@ class SecretCipherConfigTest {
         .run(ctx -> {
           assertThat(ctx).hasNotFailed();
           assertThat(ctx.getBean(SecretCipher.class)).isInstanceOf(VaultTransitCipher.class);
+          assertThat(ctx.getBean("vault")).isInstanceOf(VaultHealthIndicator.class);
         });
   }
 }

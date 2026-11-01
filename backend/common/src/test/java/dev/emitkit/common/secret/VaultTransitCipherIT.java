@@ -7,6 +7,7 @@ import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import java.net.URI;
 import java.util.List;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.springframework.vault.authentication.TokenAuthentication;
 import org.springframework.vault.client.VaultEndpoint;
@@ -22,8 +23,7 @@ class VaultTransitCipherIT {
 
   @Container static VaultContainer<?> vault = newVault();
 
-  private final SecretContext ctx =
-      new SecretContext("projects", "webhook_secret_enc", "01J0000000000000000000000A");
+  private final SecretContext ctx = row("A");
   private final VaultTransitCipher cipher = cipherFor(vault);
 
   @Test
@@ -36,59 +36,59 @@ class VaultTransitCipherIT {
   @Test
   void ciphertextFromAnotherRow_failsToDecrypt() {
     String ct = cipher.encrypt("s3cret", ctx);
-    var other = new SecretContext("projects", "webhook_secret_enc", "01J0000000000000000000000B");
-    assertThatThrownBy(() -> cipher.decrypt(ct, other))
-        .isNotInstanceOf(SecretBackendException.class)
-        .isInstanceOfSatisfying(
-            AppException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.INTERNAL));
+    assertInternal(() -> cipher.decrypt(ct, row("B")));
   }
 
   @Test
   void decryptBatch_keepsOrder() {
-    var ctxA = new SecretContext("projects", "webhook_secret_enc", "01J0000000000000000000000A");
-    var ctxB = new SecretContext("projects", "webhook_secret_enc", "01J0000000000000000000000B");
-    var ctxC = new SecretContext("projects", "webhook_secret_enc", "01J0000000000000000000000C");
     List<CipherItem> items =
-        List.of(
-            new CipherItem(cipher.encrypt("alpha", ctxA), ctxA),
-            new CipherItem(cipher.encrypt("bravo", ctxB), ctxB),
-            new CipherItem(cipher.encrypt("charlie", ctxC), ctxC));
+        List.of(item("alpha", row("A")), item("bravo", row("B")), item("charlie", row("C")));
 
     assertThat(cipher.decryptBatch(items)).containsExactly("alpha", "bravo", "charlie");
   }
 
   @Test
   void decryptBatch_itemFailure_isInternalNotBackendFailure() {
-    var other = new SecretContext("projects", "webhook_secret_enc", "01J0000000000000000000000B");
-    List<CipherItem> items = List.of(new CipherItem(cipher.encrypt("s3cret", ctx), other));
+    List<CipherItem> items = List.of(new CipherItem(cipher.encrypt("s3cret", ctx), row("B")));
 
-    assertThatThrownBy(() -> cipher.decryptBatch(items))
+    assertInternal(() -> cipher.decryptBatch(items));
+  }
+
+  @Test
+  void decryptBatch_emptyInput_returnsEmptyWithoutCallingVault() {
+    assertThat(stoppedCipher().decryptBatch(List.of())).isEmpty();
+  }
+
+  @Test
+  void vaultDown_throwsSecretBackendException() {
+    VaultTransitCipher down = stoppedCipher();
+
+    assertThatThrownBy(() -> down.encrypt("x", ctx)).isInstanceOf(SecretBackendException.class);
+  }
+
+  private CipherItem item(String plaintext, SecretContext itemCtx) {
+    return new CipherItem(cipher.encrypt(plaintext, itemCtx), itemCtx);
+  }
+
+  private static void assertInternal(ThrowingCallable call) {
+    assertThatThrownBy(call)
         .isNotInstanceOf(SecretBackendException.class)
         .isInstanceOfSatisfying(
             AppException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.INTERNAL));
   }
 
-  @Test
-  void decryptBatch_emptyInput_returnsEmptyWithoutCallingVault() {
+  /** A dedicated container, so stopping it cannot break the shared one used by the other tests. */
+  private static VaultTransitCipher stoppedCipher() {
     try (VaultContainer<?> dedicated = newVault()) {
       dedicated.start();
-      VaultTransitCipher down = cipherFor(dedicated);
+      VaultTransitCipher cipher = cipherFor(dedicated);
       dedicated.stop();
-
-      assertThat(down.decryptBatch(List.of())).isEmpty();
+      return cipher;
     }
   }
 
-  @Test
-  void vaultDown_throwsSecretBackendException() {
-    // Dedicated container: stopping it must not break the shared one used by the other tests.
-    try (VaultContainer<?> dedicated = newVault()) {
-      dedicated.start();
-      VaultTransitCipher down = cipherFor(dedicated);
-      dedicated.stop();
-
-      assertThatThrownBy(() -> down.encrypt("x", ctx)).isInstanceOf(SecretBackendException.class);
-    }
+  private static SecretContext row(String id) {
+    return new SecretContext("projects", "webhook_secret_enc", id);
   }
 
   private static VaultContainer<?> newVault() {

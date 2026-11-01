@@ -6,10 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.context.annotation.Bean;
 
-/**
- * Registers the {@code vault} health component. It is a separate auto-configuration so that it is
- * evaluated after {@link SecretCipherConfig} has registered the {@link SecretCipher}.
- */
+/** Registers the {@code vault} health component after {@link SecretCipherConfig} has run. */
 @AutoConfiguration(after = SecretCipherConfig.class)
 @ConditionalOnClass(HealthIndicator.class)
 @ConditionalOnBean(SecretCipher.class)

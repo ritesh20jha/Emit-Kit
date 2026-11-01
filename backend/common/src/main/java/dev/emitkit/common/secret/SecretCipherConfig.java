@@ -1,5 +1,6 @@
 package dev.emitkit.common.secret;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Set;
 import org.springframework.beans.factory.DisposableBean;
@@ -19,19 +20,19 @@ import org.springframework.vault.client.VaultEndpoint;
 import org.springframework.vault.core.VaultTemplate;
 import org.springframework.web.client.RestClient;
 
-/**
- * Wires the {@link SecretCipher} selected by {@code emitkit.vault.cipher}.
- *
- * <p>Vault is never contacted at startup. The AppRole login happens on the first Transit call, so
- * an application starts and reports {@code vault} health DOWN while Vault is unavailable.
- */
+/** Wires the {@link SecretCipher} chosen by {@code emitkit.vault.cipher}. Lazy: no startup call. */
 @AutoConfiguration
 @EnableConfigurationProperties(VaultProperties.class)
 public class SecretCipherConfig implements DisposableBean {
 
   private static final Set<String> LOCAL_FORBIDDEN_PROFILES = Set.of("prod", "staging");
 
-  /** Runs token renewal. Created only for the Vault cipher; stopped when the context closes. */
+  /** Finite, so a blackholed Vault fails the probe instead of hanging the request. */
+  private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+
+  private static final Duration READ_TIMEOUT = Duration.ofSeconds(15);
+
+  /** Renews the session token; created only for the Vault cipher. */
   private ThreadPoolTaskScheduler sessionScheduler;
 
   @Bean
@@ -51,23 +52,24 @@ public class SecretCipherConfig implements DisposableBean {
   }
 
   private SecretCipher vaultCipher(VaultProperties props) {
-    String uri = required(props.uri(), "emitkit.vault.uri");
-    String roleId = required(props.roleId(), "emitkit.vault.role-id");
-
-    VaultEndpoint endpoint = VaultEndpoint.from(uri);
+    if (props.uri() == null || props.roleId() == null) {
+      throw new IllegalStateException(
+          "emitkit.vault.uri and emitkit.vault.role-id are required when emitkit.vault.cipher=vault");
+    }
+    VaultEndpoint endpoint = VaultEndpoint.from(props.uri());
+    SimpleClientHttpRequestFactory requests = new SimpleClientHttpRequestFactory();
+    requests.setConnectTimeout(CONNECT_TIMEOUT);
+    requests.setReadTimeout(READ_TIMEOUT);
     RestClientBuilder clientBuilder =
-        RestClientBuilder.builder()
-            .endpoint(endpoint)
-            .requestFactory(new SimpleClientHttpRequestFactory());
+        RestClientBuilder.builder().endpoint(endpoint).requestFactory(requests);
     RestClient restClient = clientBuilder.build();
     AppRoleAuthenticationOptions options =
         AppRoleAuthenticationOptions.builder()
-            .roleId(AppRoleAuthenticationOptions.RoleId.provided(roleId))
+            .roleId(AppRoleAuthenticationOptions.RoleId.provided(props.roleId()))
             .secretId(AppRoleAuthenticationOptions.SecretId.provided(props.secretId()))
             .build();
 
-    // A plain SimpleSessionManager would keep the first token forever. The lifecycle-aware one
-    // renews it and logs in lazily, on the first request.
+    // SimpleSessionManager would keep the first token forever; this one renews it.
     ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
     scheduler.setPoolSize(1);
     scheduler.setThreadNamePrefix("vault-session-");
@@ -83,19 +85,10 @@ public class SecretCipherConfig implements DisposableBean {
   }
 
   private static SecretCipher localCipher(Environment environment) {
-    // getActiveProfiles() also reads the spring.profiles.active property.
-    boolean forbidden =
-        Arrays.stream(environment.getActiveProfiles()).anyMatch(LOCAL_FORBIDDEN_PROFILES::contains);
-    if (forbidden) {
+    if (Arrays.stream(environment.getActiveProfiles())
+        .anyMatch(LOCAL_FORBIDDEN_PROFILES::contains)) {
       throw new IllegalStateException("LocalAesCipher is not allowed with profile prod/staging");
     }
     return new LocalAesCipher();
-  }
-
-  private static String required(String value, String property) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalStateException(property + " is required when emitkit.vault.cipher=vault");
-    }
-    return value;
   }
 }

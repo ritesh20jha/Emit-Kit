@@ -1,28 +1,21 @@
 package dev.emitkit.common.secret;
 
+import java.io.IOException;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.http.HttpStatus;
 import org.springframework.vault.client.VaultClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
-/**
- * Reports whether the {@link SecretCipher} can round-trip a value. Details carry only a reason, one
- * of {@code sealed}, {@code unreachable} or {@code error}; never the probe value, its ciphertext or
- * an exception message.
- */
+/** Round-trips a probe through the cipher. Details carry only {@code reason}, never values. */
 public final class VaultHealthIndicator implements HealthIndicator {
 
-  private static final String PROBE_PLAINTEXT = "emitkit-vault-health-probe";
+  private static final String PROBE = "emitkit-vault-health-probe";
   private static final SecretContext PROBE_CONTEXT = new SecretContext("health", "check", "0");
 
   private final SecretCipher cipher;
 
-  /**
-   * Creates the indicator.
-   *
-   * @param cipher the cipher to probe
-   */
   public VaultHealthIndicator(SecretCipher cipher) {
     this.cipher = cipher;
   }
@@ -30,37 +23,37 @@ public final class VaultHealthIndicator implements HealthIndicator {
   @Override
   public Health health() {
     try {
-      String ciphertext = cipher.encrypt(PROBE_PLAINTEXT, PROBE_CONTEXT);
-      if (PROBE_PLAINTEXT.equals(cipher.decrypt(ciphertext, PROBE_CONTEXT))) {
+      String ciphertext = cipher.encrypt(PROBE, PROBE_CONTEXT);
+      if (PROBE.equals(cipher.decrypt(ciphertext, PROBE_CONTEXT))) {
         return Health.up().build();
       }
       return down("error");
     } catch (SecretBackendException e) {
-      return down(isSealed(e) ? "sealed" : "unreachable");
+      return down(reason(e));
     } catch (RuntimeException e) {
       return down("error");
     }
   }
 
-  /**
-   * Vault answers 503 while it is sealed. A Transit call reports that as a {@link
-   * VaultClientResponseException}; a failed AppRole login reports it as a {@link
-   * RestClientResponseException} inside a {@code VaultLoginException}, so the whole chain is
-   * checked.
-   */
-  private static boolean isSealed(Throwable e) {
-    int unavailable = HttpStatus.SERVICE_UNAVAILABLE.value();
+  /** sealed: a 503 in the chain; unreachable: an I/O failure; otherwise error. */
+  private static String reason(Throwable e) {
+    boolean io = false;
     for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-      if (cause instanceof VaultClientResponseException response
-          && response.getStatusCode().value() == unavailable) {
-        return true;
+      if (isUnavailable(cause)) {
+        return "sealed";
       }
-      if (cause instanceof RestClientResponseException response
-          && response.getStatusCode().value() == unavailable) {
-        return true;
-      }
+      io |= cause instanceof IOException || cause instanceof ResourceAccessException;
     }
-    return false;
+    return io ? "unreachable" : "error";
+  }
+
+  /** Transit reports 503 as the first type, a failed AppRole login as the second. */
+  private static boolean isUnavailable(Throwable cause) {
+    int unavailable = HttpStatus.SERVICE_UNAVAILABLE.value();
+    return (cause instanceof VaultClientResponseException v
+            && v.getStatusCode().value() == unavailable)
+        || (cause instanceof RestClientResponseException r
+            && r.getStatusCode().value() == unavailable);
   }
 
   private static Health down(String reason) {
