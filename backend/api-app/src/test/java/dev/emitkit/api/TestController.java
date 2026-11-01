@@ -4,12 +4,14 @@ import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.util.Map;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -31,6 +33,11 @@ class TestController {
   @PostMapping("/test/items")
   String create(@Valid @RequestBody Item item) {
     return item.name();
+  }
+
+  @GetMapping("/test/range")
+  String range(@RequestParam @Min(1) int n) {
+    return "ok";
   }
 
   @GetMapping("/test/denied")
