@@ -3,9 +3,15 @@
 @import "@fontsource-variable/jetbrains-mono/index.css";
 @import "../ui/tokens.css";
 
-/* Drop Tailwind's default palette so feature code can only use design tokens. */
+/* `dark:` follows the app's theme (data-theme), not the OS setting. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Drop Tailwind's default scales so feature code can only use design tokens. */
 @theme {
   --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
 }
 
 /* `inline` keeps the utilities pointing at the runtime variables, so the dark theme overrides apply. */
@@ -28,6 +34,10 @@
   --color-status-neutral: var(--color-status-neutral);
 
   --spacing: var(--space-1);
+
+  /* Plain transition-* utilities follow the motion token, so reduced motion turns them off too. */
+  --default-transition-duration: var(--duration-fast);
+  --default-transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
   --radius-control: var(--radius-control);
   --radius-card: var(--radius-card);
   --font-sans: var(--font-sans);

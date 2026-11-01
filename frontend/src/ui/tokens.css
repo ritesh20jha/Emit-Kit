@@ -1,6 +1,8 @@
 /*
- * Design tokens (spec ov §4.3). Light values live on :root, dark values on [data-theme="dark"].
+ * Design tokens (spec ov §4.3). Light values live on :root, dark values on :root[data-theme="dark"].
  * Both sets use the same names, so components never branch on theme. app.css maps these into Tailwind.
+ * Keep this file unlayered: never wrap its @import in @layer. The @theme inline self-references in
+ * app.css rely on these unlayered declarations winning the cascade.
  */
 :root {
   color-scheme: light;
@@ -23,7 +25,7 @@
   --color-status-neutral: #5f6672;
 }
 
-[data-theme="dark"] {
+:root[data-theme="dark"] {
   color-scheme: dark;
 
   --color-bg: #0d1014;

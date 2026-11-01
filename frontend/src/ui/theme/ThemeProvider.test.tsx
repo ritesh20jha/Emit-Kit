@@ -25,9 +25,16 @@ function mockSystemDark(initial: boolean) {
 
 const wrapper = ({ children }: { children: ReactNode }) => <ThemeProvider>{children}</ThemeProvider>;
 
+const originalMatchMedia = window.matchMedia;
+
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
+});
+
+afterEach(() => {
+  window.matchMedia = originalMatchMedia;
+  vi.restoreAllMocks();
 });
 
 describe("ThemeProvider", () => {

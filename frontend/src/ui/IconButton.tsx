@@ -7,7 +7,7 @@ const SQUARE: Record<ButtonSize, string> = {
   md: "size-8 px-0",
 };
 
-export type IconButtonProps = Omit<ButtonProps, "children" | "aria-label"> & {
+export type IconButtonProps = Omit<ButtonProps, "children" | "aria-label" | "loading"> & {
   /** Accessible name. Required, because an icon alone has no text for screen readers. */
   label: string;
   children: ReactNode;

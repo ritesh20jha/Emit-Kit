@@ -1,9 +1,16 @@
-import { CircleCheck, CircleSlash, CircleX, Clock, CirclePause, LoaderCircle, type LucideIcon } from "lucide-react";
+import { Circle, CircleCheck, CircleSlash, CircleX, Clock, CirclePause, LoaderCircle, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 export type RunStatus = "QUEUED" | "RUNNING" | "AWAITING_APPROVAL" | "SUCCESS" | "FAILED" | "CANCELLED";
 
-const STATUS: Record<RunStatus, { label: string; icon: LucideIcon; tone: string; spin?: boolean }> = {
+interface StatusMeta {
+  label: string;
+  icon: LucideIcon;
+  tone: string;
+  spin?: boolean;
+}
+
+const STATUS: Record<RunStatus, StatusMeta> = {
   QUEUED: { label: "Queued", icon: Clock, tone: "text-status-neutral" },
   RUNNING: { label: "Running", icon: LoaderCircle, tone: "text-status-running", spin: true },
   AWAITING_APPROVAL: { label: "Awaiting approval", icon: CirclePause, tone: "text-status-awaiting" },
@@ -14,7 +21,12 @@ const STATUS: Record<RunStatus, { label: string; icon: LucideIcon; tone: string;
 
 /** Run status as icon + text. Colour is supplementary, so the label carries the meaning on its own. */
 export function StatusPill({ status, className }: { status: RunStatus; className?: string }) {
-  const { label, icon: Icon, tone, spin } = STATUS[status];
+  // A status the frontend does not know yet (e.g. added by the API) shows its raw value, not a crash.
+  const known: StatusMeta | undefined = STATUS[status];
+  const label = known?.label ?? status;
+  const Icon = known?.icon ?? Circle;
+  const tone = known?.tone ?? "text-status-neutral";
+  const spin = known?.spin;
   return (
     <span
       className={cn(

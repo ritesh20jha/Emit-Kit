@@ -9,3 +9,9 @@ test.each([
   expect(screen.getByText(label)).toBeVisible();
   expect(screen.getByTestId("status-icon")).toHaveAttribute("aria-hidden", "true");
 });
+
+test("an unknown status renders its raw value with a neutral icon instead of crashing", () => {
+  render(<StatusPill status={"PAUSED" as RunStatus} />);
+  expect(screen.getByText("PAUSED")).toBeVisible();
+  expect(screen.getByTestId("status-icon")).toHaveAttribute("aria-hidden", "true");
+});

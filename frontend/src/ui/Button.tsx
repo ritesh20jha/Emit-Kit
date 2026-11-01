@@ -40,6 +40,7 @@ export function Button({
   type = "button",
   className,
   children,
+  onClick,
   ref,
   ...props
 }: ButtonProps) {
@@ -47,9 +48,18 @@ export function Button({
     <button
       ref={ref}
       type={type}
-      disabled={disabled || loading}
+      disabled={disabled}
+      // aria-disabled, not disabled: a native disabled button drops keyboard focus mid-action.
+      aria-disabled={loading || undefined}
       aria-busy={loading || undefined}
-      className={cn(buttonClasses(variant, size), loading && "disabled:opacity-100", className)}
+      onClick={(event) => {
+        if (loading) {
+          event.preventDefault();
+          return;
+        }
+        onClick?.(event);
+      }}
+      className={cn(buttonClasses(variant, size), loading && "cursor-progress", className)}
       {...props}
     >
       <span className={cn("inline-flex items-center gap-2", loading && "opacity-0")}>{children}</span>
