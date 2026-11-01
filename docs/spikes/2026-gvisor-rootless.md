@@ -85,9 +85,11 @@ Each check in `deploy/sandbox/self-check.sh` is listed below for both options.
 - Mode A: delegation is set by a system-wide drop-in, `/etc/systemd/system/user@.service.d/delegate.conf`, which
   applies to every user manager on the host, not only `emitkit-sandbox`. The user manager is restarted before dockerd starts.
 - Mode B: `bridge: none` and `iptables: false` keep the dedicated daemon off `docker0` and the host's DOCKER*
-  iptables chains. Its containers have no network, which is what the sandbox needs.
-- Mode B, unverified: checks 1, 3, 4 and 5 run containers without `--network`. With `bridge: none` the default
-  network may not exist, so mode B may fail those checks for a reason unrelated to gVisor. Check this on the target host.
+  iptables chains. The daemon has no default bridge network, so a container started without `--network` may fail
+  to start (exit 125; reported in review, not reproduced here). Sandbox containers must always be started with an
+  explicit `--network none`, and must never be given a network. This is a constraint on SBX-03 and OPS-01.
+- All self-check containers run with `--network none`, in both modes, so mode B can pass on its own terms.
+  Not yet run on a target host.
 - The toolchain's `/proc` and file-watching behaviour under gVisor (per the v1 design) is not covered by these checks.
 - Option B: the app user must be in group `emitkit-sandbox` to use the socket.
 - The script overwrites the files it manages: `~emitkit-sandbox/.config/docker/daemon.json` and
