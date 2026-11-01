@@ -2,6 +2,7 @@ package dev.emitkit.api;
 
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.Map;
@@ -49,6 +50,12 @@ class TestController {
 
   @PostMapping("/api/v1/test")
   String apiPost() {
+    return "ok";
+  }
+
+  @GetMapping("/api/v1/test/session")
+  String session(HttpSession session) {
+    session.setAttribute("probe", "1");
     return "ok";
   }
 
