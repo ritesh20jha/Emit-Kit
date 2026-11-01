@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = "emitkit.cors.allowed-origins=http://localhost:5173")
 @AutoConfigureMockMvc
-@Import(RedisTestConfig.class)
+@Import({RedisTestConfig.class, PostgresTestConfig.class})
 class SecurityConfigTest {
 
   @Autowired private MockMvc mvc;

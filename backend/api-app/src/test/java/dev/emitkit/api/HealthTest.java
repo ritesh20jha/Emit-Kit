@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 
 @SpringBootTest(webEnvironment = RANDOM_PORT, properties = "management.server.port=0")
-@Import(RedisTestConfig.class)
+@Import({RedisTestConfig.class, PostgresTestConfig.class})
 class HealthTest {
 
   @LocalManagementPort private int managementPort;

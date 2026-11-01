@@ -20,6 +20,7 @@ dependencies {
     testImplementation(libs.spring.security.test)
     testImplementation(libs.spring.boot.testcontainers)
     testImplementation(libs.testcontainers.core)
+    testImplementation(libs.testcontainers.postgresql)
 }
 
 // The convention plugin disables bootJar until a main class exists; api-app has one now.

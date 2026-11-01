@@ -19,7 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * commit the response the way Tomcat does, so it cannot show the session being written.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(RedisTestConfig.class)
+@Import({RedisTestConfig.class, PostgresTestConfig.class})
 class AnonymousSessionTest {
 
   @LocalServerPort private int port;
