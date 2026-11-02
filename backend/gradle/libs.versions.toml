@@ -12,6 +12,7 @@ springdoc = "3.1.1"
 spring-vault = "4.1.1"
 swagger-parser = "2.1.48"
 jmustache = "1.16"
+java-diff-utils = "4.17"
 
 [libraries]
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -49,6 +50,7 @@ springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-w
 spring-vault-core = { module = "org.springframework.vault:spring-vault-core", version.ref = "spring-vault" }
 swagger-parser = { module = "io.swagger.parser.v3:swagger-parser", version.ref = "swagger-parser" }
 jmustache = { module = "com.samskivert:jmustache", version.ref = "jmustache" }
+java-diff-utils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "java-diff-utils" }
 # Spring Vault needs Jackson on the classpath for its JSON bodies (optional there). Boot 4 manages Jackson 3.
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }
 spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
