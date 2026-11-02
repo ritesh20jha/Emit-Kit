@@ -30,7 +30,7 @@ import org.testcontainers.rabbitmq.RabbitMQContainer;
 class RabbitTopologyIT {
 
   @Container @ServiceConnection
-  static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3-management");
+  static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:4.4.0-management-alpine");
 
   @Autowired private RabbitTemplate rabbitTemplate;
   @Autowired private ControlRecorder controlRecorder;

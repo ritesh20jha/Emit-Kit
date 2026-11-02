@@ -33,7 +33,8 @@ public final class Queues {
    * Returns the retry queue to park a job in after a failed attempt: attempt 1 maps to the 10 s
    * queue, attempt 2 to 60 s, and attempt 3 to 300 s.
    *
-   * @param attempt the attempt that just failed, from 1 to {@link #MAX_ATTEMPTS}
+   * @param attempt the attempt number of the retry being scheduled (failed attempt + 1), from 1 to
+   *     {@link #MAX_ATTEMPTS}
    * @return the retry queue name
    * @throws IllegalArgumentException if {@code attempt} is outside 1 to {@link #MAX_ATTEMPTS}
    */

@@ -1,5 +1,7 @@
 spring:
   rabbitmq:
+    username: ${SPRING_RABBITMQ_USERNAME:emitkit}
+    password: ${SPRING_RABBITMQ_PASSWORD:emitkit}
     listener:
       simple:
         acknowledge-mode: manual

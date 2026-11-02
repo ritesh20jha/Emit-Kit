@@ -11,7 +11,8 @@ dependencies {
     implementation(project(":ai"))
 
     implementation(libs.spring.boot.starter.amqp)
-    // The JSON converter is configured with a Jackson 3 ObjectMapper type, so it must compile here.
+    // spring-amqp marks Jackson optional, so the JSON converter needs it at runtime; its constructor
+    // overloads reference JsonMapper, so it is also needed at compile time.
     implementation(libs.jackson.databind)
 
     testImplementation(libs.spring.boot.test)
