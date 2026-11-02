@@ -8,6 +8,7 @@ aws-sdk = "2.57.8"
 spotless = "8.10.4"
 google-java-format = "2.0.0"
 ulid-creator = "5.2.3"
+springdoc = "3.1.1"
 spring-vault = "4.1.1"
 
 [libraries]
@@ -32,6 +33,15 @@ spotless-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", ver
 google-java-format = { module = "com.google.googlejavaformat:google-java-format", version.ref = "google-java-format" }
 jspecify = { module = "org.jspecify:jspecify" }
 ulid-creator = { module = "com.github.f4b6a3:ulid-creator", version.ref = "ulid-creator" }
+spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security" }
+spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+spring-security-test = { module = "org.springframework.security:spring-security-test" }
+spring-boot-starter-session-data-redis = { module = "org.springframework.boot:spring-boot-starter-session-data-redis" }
+spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
+springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 spring-vault-core = { module = "org.springframework.vault:spring-vault-core", version.ref = "spring-vault" }
 # Spring Vault needs Jackson on the classpath for its JSON bodies (optional there). Boot 4 manages Jackson 3.
 jackson-databind = { module = "tools.jackson.core:jackson-databind" }

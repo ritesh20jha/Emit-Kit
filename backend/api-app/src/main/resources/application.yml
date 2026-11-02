@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/emitkit}
+    username: ${SPRING_DATASOURCE_USERNAME:emitkit}
+    password: ${SPRING_DATASOURCE_PASSWORD:emitkit}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  session:
+    data:
+      redis:
+        namespace: emitkit
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health
+logging:
+  pattern:
+    level: "%5p [%X{runId:-},%X{orgId:-}]"
