@@ -157,4 +157,91 @@ class SpecParserOperationsTest {
     assertThat(put.requestBody().contentType()).isEqualTo("application/json");
     assertThat(put.responses().get("200").description()).isEqualTo("all good");
   }
+
+  @Test
+  void relativeExternalRefIsRejectedWithoutResolving() {
+    var r =
+        parser.parse(
+            """
+            openapi: 3.0.3
+            info: {title: Ext, version: "1"}
+            paths:
+              /pets:
+                get:
+                  operationId: getPets
+                  responses:
+                    "200": {$ref: 'secret.yaml#/Leaked'}
+            """);
+
+    assertThat(r.ok()).isFalse();
+    assertThat(r.errors()).containsExactly("external $ref not supported: secret.yaml#/Leaked");
+  }
+
+  @Test
+  void httpExternalRefIsRejectedWithoutFetching() {
+    var r =
+        parser.parse(
+            """
+            openapi: 3.0.3
+            info: {title: Ext, version: "1"}
+            paths:
+              /pets:
+                get:
+                  operationId: getPets
+                  responses:
+                    "200": {$ref: 'http://127.0.0.1:1/remote.yaml#/Remote'}
+            """);
+
+    assertThat(r.ok()).isFalse();
+    assertThat(r.errors())
+        .containsExactly("external $ref not supported: http://127.0.0.1:1/remote.yaml#/Remote");
+  }
+
+  @Test
+  void unresolvedInternalRefIsReported() {
+    var r =
+        parser.parse(
+            """
+            openapi: 3.0.3
+            info: {title: Dangling, version: "1"}
+            paths:
+              /pets:
+                get:
+                  operationId: getPets
+                  parameters:
+                    - {$ref: '#/components/parameters/Nope'}
+                  responses:
+                    "200": {description: ok}
+            """);
+
+    assertThat(r.ok()).isFalse();
+    assertThat(r.errors()).containsExactly("unresolved $ref: #/components/parameters/Nope");
+  }
+
+  @Test
+  void synthesizedIdDoesNotCollideWithExplicitId() {
+    var ops =
+        parser
+            .parse(
+                """
+                openapi: 3.0.3
+                info: {title: Dup, version: "1"}
+                paths:
+                  /users/by-id:
+                    get:
+                      operationId: getUsersById
+                      responses:
+                        "200": {description: ok}
+                  /users/{id}:
+                    get:
+                      responses:
+                        "200": {description: ok}
+                """)
+            .model()
+            .operations();
+
+    assertThat(ops)
+        .extracting(Operation::operationId, Operation::operationIdSynthesized)
+        .containsExactly(tuple("getUsersById", false), tuple("getUsersById2", true));
+  }
 }

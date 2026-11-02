@@ -15,11 +15,13 @@ import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -37,16 +39,29 @@ final class OperationMapper {
     if (api.getPaths() == null) {
       return operations;
     }
+    // Explicit ids are reserved first, so a synthesized id never takes one the document uses.
+    var taken = new HashSet<String>();
+    for (PathItem item : api.getPaths().values()) {
+      for (var op : operationsOf(item).values()) {
+        if (op != null && hasOperationId(op)) {
+          taken.add(op.getOperationId());
+        }
+      }
+    }
     for (var pathEntry : api.getPaths().entrySet()) {
       PathItem item = pathEntry.getValue();
       for (var methodEntry : operationsOf(item).entrySet()) {
         var op = methodEntry.getValue();
         if (op != null) {
-          operations.add(map(api, methodEntry.getKey(), pathEntry.getKey(), item, op));
+          operations.add(map(api, methodEntry.getKey(), pathEntry.getKey(), item, op, taken));
         }
       }
     }
     return operations;
+  }
+
+  private static boolean hasOperationId(io.swagger.v3.oas.models.Operation op) {
+    return op.getOperationId() != null && !op.getOperationId().isBlank();
   }
 
   // Methods in the order the model documents: get, put, post, delete, options, head, patch, trace.
@@ -68,9 +83,12 @@ final class OperationMapper {
       String method,
       String path,
       PathItem item,
-      io.swagger.v3.oas.models.Operation op) {
-    boolean synthesized = op.getOperationId() == null || op.getOperationId().isBlank();
-    String operationId = synthesized ? synthesizeId(method, path) : op.getOperationId();
+      io.swagger.v3.oas.models.Operation op,
+      Set<String> taken) {
+    boolean synthesized = !hasOperationId(op);
+    String operationId =
+        synthesized ? uniqueId(synthesizeId(method, path), taken) : op.getOperationId();
+    taken.add(operationId);
     String tag = op.getTags() == null || op.getTags().isEmpty() ? "default" : op.getTags().get(0);
     var security = op.getSecurity() != null ? op.getSecurity() : api.getSecurity();
     return new Operation(
@@ -101,6 +119,15 @@ final class OperationMapper {
       }
     }
     return id.toString();
+  }
+
+  /** Appends 2, 3, ... to a synthesized id until it is not taken: {@code getAB}, {@code getAB2}. */
+  private static String uniqueId(String base, Set<String> taken) {
+    String id = base;
+    for (int n = 2; taken.contains(id); n++) {
+      id = base + n;
+    }
+    return id;
   }
 
   private static String capitalize(String s) {

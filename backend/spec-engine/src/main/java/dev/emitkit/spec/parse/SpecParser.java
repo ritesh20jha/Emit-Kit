@@ -13,6 +13,7 @@ import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.converter.SwaggerConverter;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,7 +37,14 @@ public final class SpecParser {
     String format = content.stripLeading().startsWith("{") ? "json" : "yaml";
     List<String> errors = new ArrayList<>();
     try {
-      SwaggerParseResult swagger = read(content);
+      JsonNode root = readTree(content);
+      if (root != null) {
+        checkRefs(root, root, errors);
+      }
+      if (!errors.isEmpty()) {
+        return new ParseResult(null, errors, null, hash, format);
+      }
+      SwaggerParseResult swagger = read(content, root);
       errors.addAll(swagger.getMessages());
       OpenAPI api = swagger.getOpenAPI();
       if (api == null) {
@@ -60,20 +68,43 @@ public final class SpecParser {
   }
 
   /** Swagger 2.0 goes through the v2 converter; 3.x goes straight to the v3 parser. */
-  private static SwaggerParseResult read(String content) {
-    return isSwagger2(content)
+  private static SwaggerParseResult read(String content, @Nullable JsonNode root) {
+    return root != null && root.has("swagger")
         ? new SwaggerConverter().readContents(content, null, OPTIONS)
         : new OpenAPIV3Parser().readContents(content, null, OPTIONS);
   }
 
-  private static boolean isSwagger2(String content) {
+  /** Null when the content is not readable YAML or JSON; the v3 parser then reports it. */
+  private static @Nullable JsonNode readTree(String content) {
     try {
-      JsonNode root = Yaml.mapper().readTree(content);
-      return root != null && root.has("swagger");
+      return Yaml.mapper().readTree(content);
     } catch (JsonProcessingException e) {
-      // Unreadable document: the v3 parser reports the problem.
-      return false;
+      return null;
     }
+  }
+
+  /**
+   * Runs before swagger-parser, which would read local files and fetch URLs for external refs.
+   * Internal refs must point at an existing node of the document.
+   */
+  private static void checkRefs(JsonNode node, JsonNode root, List<String> errors) {
+    JsonNode ref = node.get("$ref");
+    if (ref != null && ref.isTextual()) {
+      String text = ref.asText();
+      if (!text.startsWith("#")) {
+        errors.add("external $ref not supported: " + text);
+      } else if (!resolves(root, text)) {
+        errors.add("unresolved $ref: " + text);
+      }
+    }
+    node.forEach(child -> checkRefs(child, root, errors));
+  }
+
+  /** {@code #/components/schemas/Pet}: a JSON pointer, percent-decoded, into the document. */
+  private static boolean resolves(JsonNode root, String ref) {
+    String pointer =
+        URLDecoder.decode(ref.substring(1).replace("+", "%2B"), StandardCharsets.UTF_8);
+    return (pointer.isEmpty() || pointer.startsWith("/")) && !root.at(pointer).isMissingNode();
   }
 
   private static ParseOptions options() {
