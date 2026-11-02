@@ -12,8 +12,3 @@ dependencies {
     testFixturesImplementation(platform(libs.spring.boot.bom))
     testFixturesImplementation(libs.java.diff.utils)
 }
-
-tasks.test {
-    // Forward -Dgolden.update=true from the Gradle invocation into the test JVM.
-    System.getProperty("golden.update")?.let { systemProperty("golden.update", it) }
-}

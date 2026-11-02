@@ -29,6 +29,8 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    // Forward -Dgolden.update=true from the Gradle invocation into every test JVM.
+    providers.systemProperty("golden.update").orNull?.let { systemProperty("golden.update", it) }
 }
 
 tasks.withType<JavaCompile>().configureEach {
