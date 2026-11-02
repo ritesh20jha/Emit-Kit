@@ -1,0 +1,13 @@
+spring:
+  rabbitmq:
+    username: ${SPRING_RABBITMQ_USERNAME:emitkit}
+    password: ${SPRING_RABBITMQ_PASSWORD:emitkit}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        concurrency: ${emitkit.worker.concurrency}
+emitkit:
+  worker:
+    concurrency: 4
+    retry-ttls: 10s,60s,300s
