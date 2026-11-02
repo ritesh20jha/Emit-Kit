@@ -19,7 +19,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 public abstract class PostgresIT {
 
   /** One container per JVM, shared by every subclass. Ryuk removes it when the JVM exits. */
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16");
+  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6-alpine");
 
   static {
     POSTGRES.start();

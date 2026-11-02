@@ -15,6 +15,6 @@ class PostgresTestConfig {
   @Bean
   @ServiceConnection
   PostgreSQLContainer postgresContainer() {
-    return new PostgreSQLContainer("postgres:16");
+    return new PostgreSQLContainer("postgres:18.6-alpine");
   }
 }
