@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info: {title: NoIds, version: "1"}
+paths:
+  /users/{id}:
+    get:
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: ok}
+  /users:
+    post:
+      responses:
+        "201": {description: created}

@@ -14,11 +14,13 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
@@ -79,7 +81,7 @@ final class OperationMapper {
         tag,
         op.getSummary(),
         op.getDescription(),
-        parameters(item, op),
+        parameters(path, item, op),
         requestBody(resolveBody(api, op.getRequestBody())),
         responses(api, op.getResponses()),
         securityNames(security),
@@ -89,7 +91,9 @@ final class OperationMapper {
   /** {@code GET /users/{id}} becomes {@code getUsersById}. */
   private static String synthesizeId(String method, String path) {
     String expanded =
-        PATH_PARAM.matcher(path).replaceAll(m -> " By" + capitalize(m.group(1)) + " ");
+        PATH_PARAM
+            .matcher(path)
+            .replaceAll(m -> Matcher.quoteReplacement(" By" + capitalize(m.group(1)) + " "));
     var id = new StringBuilder(method.toLowerCase(Locale.ROOT));
     for (String token : expanded.split("[^A-Za-z0-9]+")) {
       if (!token.isEmpty()) {
@@ -103,31 +107,65 @@ final class OperationMapper {
     return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
   }
 
-  // Path-level parameters first, then operation-level, in document order.
-  private static List<Parameter> parameters(PathItem item, io.swagger.v3.oas.models.Operation op) {
-    var params = new ArrayList<Parameter>();
-    addParameters(params, item.getParameters());
-    addParameters(params, op.getParameters());
+  /**
+   * Path-level parameters first, then operation-level; an operation-level parameter replaces a
+   * path-level one with the same name and location. Path parameters then follow the template order,
+   * and the rest keep document order.
+   */
+  private static List<Parameter> parameters(
+      String path, PathItem item, io.swagger.v3.oas.models.Operation op) {
+    var merged = new LinkedHashMap<String, Parameter>();
+    addParameters(merged, item.getParameters());
+    addParameters(merged, op.getParameters());
+    var pathParams = new ArrayList<Parameter>();
+    var others = new ArrayList<Parameter>();
+    for (var p : merged.values()) {
+      if (p.in() == ParamLocation.PATH) {
+        pathParams.add(p);
+      } else {
+        others.add(p);
+      }
+    }
+    var template = templateNames(path);
+    pathParams.sort(Comparator.comparingInt((Parameter p) -> templateRank(template, p.name())));
+    var params = new ArrayList<>(pathParams);
+    params.addAll(others);
     return params;
   }
 
   private static void addParameters(
-      List<Parameter> out, @Nullable List<io.swagger.v3.oas.models.parameters.Parameter> source) {
+      Map<String, Parameter> out,
+      @Nullable List<io.swagger.v3.oas.models.parameters.Parameter> source) {
     if (source == null) {
       return;
     }
     for (var p : source) {
       var in = location(p.getIn());
       if (in != null) {
-        out.add(
+        var param =
             new Parameter(
                 p.getName(),
                 in,
                 Boolean.TRUE.equals(p.getRequired()),
                 SchemaMapper.map(p.getSchema()),
-                p.getDescription()));
+                p.getDescription());
+        out.put(param.name() + "|" + param.in(), param);
       }
     }
+  }
+
+  private static List<String> templateNames(String path) {
+    var names = new ArrayList<String>();
+    var matcher = PATH_PARAM.matcher(path);
+    while (matcher.find()) {
+      names.add(matcher.group(1));
+    }
+    return names;
+  }
+
+  private static int templateRank(List<String> template, String name) {
+    int index = template.indexOf(name);
+    return index < 0 ? Integer.MAX_VALUE : index;
   }
 
   private static @Nullable ParamLocation location(@Nullable String in) {

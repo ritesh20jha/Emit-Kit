@@ -34,9 +34,10 @@ public final class SpecParser {
     Objects.requireNonNull(content, "content");
     String hash = sha256Hex(content);
     String format = content.stripLeading().startsWith("{") ? "json" : "yaml";
+    List<String> errors = new ArrayList<>();
     try {
       SwaggerParseResult swagger = read(content);
-      List<String> errors = new ArrayList<>(swagger.getMessages());
+      errors.addAll(swagger.getMessages());
       OpenAPI api = swagger.getOpenAPI();
       if (api == null) {
         if (errors.isEmpty()) {
@@ -52,8 +53,9 @@ public final class SpecParser {
       }
       return new ParseResult(toModel(api), errors, api.getInfo().getVersion(), hash, format);
     } catch (RuntimeException e) {
-      return new ParseResult(
-          null, List.of("could not parse document: " + e.getMessage()), null, hash, format);
+      String detail = e.getMessage() != null ? e.getMessage() : e.toString();
+      errors.add("could not parse document: " + detail);
+      return new ParseResult(null, errors, null, hash, format);
     }
   }
 

@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info: {title: Params, version: "1"}
+paths:
+  /users/{id}:
+    parameters:
+      - {name: limit, in: query, required: false, schema: {type: integer}}
+    get:
+      operationId: getUser
+      parameters:
+        - {name: limit, in: query, required: true, schema: {type: integer}}
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: ok}

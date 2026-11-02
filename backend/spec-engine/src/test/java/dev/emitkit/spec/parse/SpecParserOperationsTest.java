@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
+import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.model.Tag;
@@ -41,6 +42,39 @@ class SpecParserOperationsTest {
             tuple("listPets", "GET", "/pets"),
             tuple("createPet", "POST", "/pets"),
             tuple("getPet", "GET", "/pets/{petId}"));
+  }
+
+  private Operation only(ParseResult r) {
+    assertThat(r.ok()).as("errors: %s", r.errors()).isTrue();
+    assertThat(r.model().operations()).hasSize(1);
+    return r.model().operations().get(0);
+  }
+
+  @Test
+  void operationLevelParamWinsOnNameAndIn() {
+    var op = only(parser.parse(fixture("path-level-params.yaml")));
+    assertThat(op.parameters())
+        .extracting(Parameter::name, Parameter::required)
+        .containsExactly(tuple("id", true), tuple("limit", true));
+  }
+
+  @Test
+  void missingOperationId_isSynthesized() {
+    var ops = parser.parse(fixture("no-ids.yaml")).model().operations();
+    assertThat(ops).extracting(Operation::operationId).contains("getUsersById", "postUsers");
+    assertThat(ops).allMatch(Operation::operationIdSynthesized);
+  }
+
+  @Test
+  void invalidSpec_returnsErrorsWithoutThrowing() {
+    var r = parser.parse(fixture("invalid.yaml"));
+    assertThat(r.ok()).isFalse();
+    assertThat(r.errors()).isNotEmpty();
+  }
+
+  @Test
+  void notYamlAtAll_returnsErrors() {
+    assertThat(parser.parse("{{{").errors()).isNotEmpty();
   }
 
   @Test
