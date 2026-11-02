@@ -244,4 +244,22 @@ class SpecParserOperationsTest {
         .extracting(Operation::operationId, Operation::operationIdSynthesized)
         .containsExactly(tuple("getUsersById", false), tuple("getUsersById2", true));
   }
+
+  @Test
+  void unscannableDocumentFailsClosedWithoutSwagger() {
+    // Past the YAML reader's size limit, so the $ref pre-scan cannot read it.
+    String pad = "x".repeat(3_300_000);
+    var r =
+        parser.parse(
+            "{\"openapi\": \"3.0.3\", \"info\": {\"title\": \"Big\", \"version\": \"1\"},"
+                + " \"x-pad\": \""
+                + pad
+                + "\", \"paths\": {\"/pets\": {\"get\": {\"operationId\": \"getPets\","
+                + " \"responses\": {\"200\": {\"$ref\": \"secret.yaml#/Leaked\"}}}}}}");
+
+    assertThat(r.ok()).isFalse();
+    assertThat(r.model()).isNull();
+    assertThat(r.errors()).hasSize(1);
+    assertThat(r.errors().get(0)).startsWith("could not read document");
+  }
 }

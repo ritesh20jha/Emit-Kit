@@ -37,11 +37,11 @@ public final class SpecParser {
     String format = content.stripLeading().startsWith("{") ? "json" : "yaml";
     List<String> errors = new ArrayList<>();
     try {
-      JsonNode root = readTree(content);
+      JsonNode root = tree(content, errors);
       if (root != null) {
         checkRefs(root, root, errors);
       }
-      if (!errors.isEmpty()) {
+      if (root == null || !errors.isEmpty()) {
         return new ParseResult(null, errors, null, hash, format);
       }
       SwaggerParseResult swagger = read(content, root);
@@ -68,17 +68,26 @@ public final class SpecParser {
   }
 
   /** Swagger 2.0 goes through the v2 converter; 3.x goes straight to the v3 parser. */
-  private static SwaggerParseResult read(String content, @Nullable JsonNode root) {
-    return root != null && root.has("swagger")
+  private static SwaggerParseResult read(String content, JsonNode root) {
+    return root.has("swagger")
         ? new SwaggerConverter().readContents(content, null, OPTIONS)
         : new OpenAPIV3Parser().readContents(content, null, OPTIONS);
   }
 
-  /** Null when the content is not readable YAML or JSON; the v3 parser then reports it. */
-  private static @Nullable JsonNode readTree(String content) {
+  /**
+   * The tree the $ref scan runs on. Null, with an error recorded, when the document cannot be read:
+   * swagger-parser is then never called, because it would not be scanned.
+   */
+  private static @Nullable JsonNode tree(String content, List<String> errors) {
     try {
-      return Yaml.mapper().readTree(content);
+      JsonNode root = Yaml.mapper().readTree(content);
+      if (root == null || root.isMissingNode()) {
+        errors.add("could not read document: empty content");
+        return null;
+      }
+      return root;
     } catch (JsonProcessingException e) {
+      errors.add("could not read document: " + e.getOriginalMessage());
       return null;
     }
   }
