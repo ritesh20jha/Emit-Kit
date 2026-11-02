@@ -14,7 +14,9 @@ import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 
-@SpringBootTest(webEnvironment = RANDOM_PORT, properties = "management.server.port=0")
+@SpringBootTest(
+    webEnvironment = RANDOM_PORT,
+    properties = {"management.server.port=0", "emitkit.vault.cipher=local"})
 @Import({RedisTestConfig.class, PostgresTestConfig.class})
 class HealthTest {
 

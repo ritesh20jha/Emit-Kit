@@ -18,7 +18,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * Anonymous requests must not create a session. This runs on a real server because MockMvc does not
  * commit the response the way Tomcat does, so it cannot show the session being written.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = "emitkit.vault.cipher=local")
 @Import({RedisTestConfig.class, PostgresTestConfig.class})
 class AnonymousSessionTest {
 
