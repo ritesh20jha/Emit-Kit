@@ -22,12 +22,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
- * In-memory {@link VcsClient} for tests in other modules. Repos, branches, commits and files live
- * in maps. File shas come from {@link GitBlob#sha}, so they match GitHub. Commit messages, pull
- * request titles and bodies, comment bodies, and webhook secrets and events are not kept; every
- * call is recorded in {@link #calls()}. Not thread-safe.
+ * In-memory {@link VcsClient} for tests in other modules. Repos, branches, tags, commits and files
+ * live in maps; each commit belongs to one repo. File shas come from {@link GitBlob#sha}, so they
+ * match GitHub. Every public method is synchronized. Commit messages and webhook secrets and events
+ * are not kept.
  */
 public final class InMemoryVcsClient implements VcsClient {
 
@@ -38,90 +40,143 @@ public final class InMemoryVcsClient implements VcsClient {
   /** A call received by the fake: the method name and the repo it targeted, if any. */
   public record Call(String method, String repo) {}
 
-  /** One repository: its metadata, branch and tag heads (sha per name), pull requests, webhooks. */
-  private record Repo(
-      VcsRepo info,
-      Map<String, String> branches,
-      Map<String, String> tags,
-      List<PullRequest> pulls,
-      Map<Long, Webhook> webhooks) {}
+  /**
+   * A pull request as the fake keeps it, including the title and body that {@link PullRequest}
+   * drops.
+   */
+  public record FakePullRequest(
+      String repo, int number, String head, String base, String title, String body) {}
+
+  /** One repository's state. Maps are keyed by name, or by sha for commits. */
+  private static final class Repo {
+    final VcsRepo info;
+    final Map<String, String> branches = new LinkedHashMap<>();
+    final Map<String, String> tags = new LinkedHashMap<>();
+
+    /** Commit sha to its full file snapshot (path to content). */
+    final Map<String, Map<String, String>> commits = new HashMap<>();
+
+    final List<FakePullRequest> pulls = new ArrayList<>();
+    final Map<Integer, List<String>> comments = new HashMap<>();
+    final Map<Long, Webhook> webhooks = new LinkedHashMap<>();
+
+    Repo(VcsRepo info) {
+      this.info = info;
+    }
+  }
 
   private final Map<String, Repo> repos = new LinkedHashMap<>();
   private final Map<String, VcsOrg> orgs = new LinkedHashMap<>();
-
-  /** Commit sha to its full file snapshot (path to content). */
-  private final Map<String, Map<String, String>> commits = new HashMap<>();
-
   private final List<Call> calls = new ArrayList<>();
+  private final Map<String, RuntimeException> methodFailures = new HashMap<>();
   private RuntimeException failNext;
   private long commitCount;
   private long webhookCount;
 
-  /**
-   * Makes the next call to any method throw {@code error}. Only one failure is pending at a time.
-   */
-  public void failNext(RuntimeException error) {
+  /** Makes the next call to any method throw {@code error}. Only one such failure is pending. */
+  public synchronized void failNext(RuntimeException error) {
     this.failNext = Objects.requireNonNull(error, "error");
   }
 
+  /** Makes the next call to {@code method} throw {@code error}. Other methods are not affected. */
+  public synchronized void failNext(String method, RuntimeException error) {
+    methodFailures.put(method, Objects.requireNonNull(error, "error"));
+  }
+
   /** The calls received so far, in order. */
-  public List<Call> calls() {
+  public synchronized List<Call> calls() {
     return List.copyOf(calls);
   }
 
-  /** The commit sha at the head of {@code branch}. Not part of {@link VcsClient}. */
-  public String headSha(String repo, String branch) {
-    return requireBranch(repo(repo), branch);
+  /** The calls received so far to {@code method}, in order. */
+  public synchronized List<Call> calls(String method) {
+    return calls.stream().filter(call -> call.method().equals(method)).toList();
+  }
+
+  /** Replaces the organizations returned by {@link #listOrgs()}. */
+  public synchronized void orgs(VcsOrg... next) {
+    orgs.clear();
+    for (VcsOrg org : next) {
+      orgs.put(org.login(), org);
+    }
+  }
+
+  /** Names of the branches of {@code repo}. */
+  public synchronized Set<String> branches(String repo) {
+    return new TreeSet<>(repo(repo).branches.keySet());
+  }
+
+  /** Names of the branches of all repos. */
+  public synchronized Set<String> branches() {
+    return repos.values().stream()
+        .flatMap(r -> r.branches.keySet().stream())
+        .collect(Collectors.toCollection(TreeSet::new));
+  }
+
+  /** Tag names of {@code repo} mapped to the commit sha each points at. */
+  public synchronized Map<String, String> tags(String repo) {
+    return Map.copyOf(repo(repo).tags);
+  }
+
+  /** The webhooks registered on {@code repo} that are still present. */
+  public synchronized List<Webhook> webhooks(String repo) {
+    return List.copyOf(repo(repo).webhooks.values());
+  }
+
+  /** All pull requests of all repos, in creation order within each repo. */
+  public synchronized List<FakePullRequest> prs() {
+    return repos.values().stream().flatMap(r -> r.pulls.stream()).toList();
+  }
+
+  /** Comment bodies on pull request {@code prNumber} of {@code repo}, in order. */
+  public synchronized List<String> comments(String repo, int prNumber) {
+    return List.copyOf(repo(repo).comments.getOrDefault(prNumber, List.of()));
+  }
+
+  /** The file at {@code path} on the default branch of {@code repo}. Not recorded as a call. */
+  public synchronized FileContent file(String repo, String path) {
+    Repo r = repo(repo);
+    return fileAt(r, path, r.info.defaultBranch());
   }
 
   @Override
-  public List<VcsOrg> listOrgs() {
+  public synchronized List<VcsOrg> listOrgs() {
     recordCall("listOrgs", null);
     return List.copyOf(orgs.values());
   }
 
   @Override
-  public List<VcsRepo> listRepos() {
+  public synchronized List<VcsRepo> listRepos() {
     recordCall("listRepos", null);
-    return repos.values().stream().map(Repo::info).toList();
+    return repos.values().stream().map(r -> r.info).toList();
   }
 
   @Override
-  public VcsRepo createRepo(String org, String name, boolean isPrivate) {
+  public synchronized VcsRepo createRepo(String org, String name, boolean isPrivate) {
     String fullName = org + "/" + name;
     recordCall("createRepo", fullName);
     if (repos.containsKey(fullName)) {
       throw new VcsConflictException("repo already exists: " + fullName);
     }
-    var info = new VcsRepo(fullName, DEFAULT_BRANCH, isPrivate, Instant.now(), org);
-    var repo =
-        new Repo(
-            info,
-            new LinkedHashMap<>(Map.of(DEFAULT_BRANCH, newCommit(Map.of()))),
-            new LinkedHashMap<>(),
-            new ArrayList<>(),
-            new LinkedHashMap<>());
+    var repo = new Repo(new VcsRepo(fullName, DEFAULT_BRANCH, isPrivate, Instant.now(), org));
+    repo.branches.put(DEFAULT_BRANCH, newCommit(repo, Map.of()));
     repos.put(fullName, repo);
     orgs.putIfAbsent(org, new VcsOrg(org, org, org, false, VcsOrg.VcsRole.OWNER));
-    return info;
+    return repo.info;
   }
 
   @Override
-  public FileContent getFile(String repo, String path, String ref) {
+  public synchronized FileContent getFile(String repo, String path, String ref) {
     recordCall("getFile", repo);
-    String content = snapshot(repo, ref).get(path);
-    if (content == null) {
-      throw new VcsNotFoundException("file not found: " + path);
-    }
-    return new FileContent(content, GitBlob.sha(content));
+    return fileAt(repo(repo), path, ref);
   }
 
   @Override
-  public CommitRef putFile(
+  public synchronized CommitRef putFile(
       String repo, String path, String content, String expectedSha, String message) {
     recordCall("putFile", repo);
     Repo r = repo(repo);
-    String branch = r.info().defaultBranch();
+    String branch = r.info.defaultBranch();
     Map<String, String> files = new HashMap<>(branchFiles(r, branch));
     String current = files.get(path);
     if (expectedSha == null) {
@@ -138,31 +193,35 @@ public final class InMemoryVcsClient implements VcsClient {
   }
 
   @Override
-  public void createBranch(String repo, String name, String fromSha) {
+  public synchronized void createBranch(String repo, String name, String fromSha) {
     recordCall("createBranch", repo);
     Repo r = repo(repo);
-    if (r.branches().containsKey(name)) {
-      throw new VcsConflictException("branch already exists: " + name);
-    }
-    if (!commits.containsKey(fromSha)) {
+    if (!r.commits.containsKey(fromSha)) {
       throw new VcsNotFoundException("commit not found: " + fromSha);
     }
-    r.branches().put(name, fromSha);
-  }
-
-  @Override
-  public void deleteBranch(String repo, String name) {
-    recordCall("deleteBranch", repo);
-    if (repo(repo).branches().remove(name) == null) {
-      throw new VcsNotFoundException("branch not found: " + name);
+    String existing = r.branches.putIfAbsent(name, fromSha);
+    if (existing != null && !existing.equals(fromSha)) {
+      throw new VcsConflictException("branch already exists at another commit: " + name);
     }
   }
 
   @Override
-  public Map<String, String> listBlobShas(String repo, String ref, String pathPrefix) {
+  public synchronized String branchHead(String repo, String branch) {
+    recordCall("branchHead", repo);
+    return requireBranch(repo(repo), branch);
+  }
+
+  @Override
+  public synchronized void deleteBranch(String repo, String name) {
+    recordCall("deleteBranch", repo);
+    repo(repo).branches.remove(name);
+  }
+
+  @Override
+  public synchronized Map<String, String> listBlobShas(String repo, String ref, String pathPrefix) {
     recordCall("listBlobShas", repo);
     Map<String, String> shas = new TreeMap<>();
-    snapshot(repo, ref)
+    snapshot(repo(repo), ref)
         .forEach((path, content) -> {
           if (path.startsWith(pathPrefix)) {
             shas.put(path, GitBlob.sha(content));
@@ -172,7 +231,8 @@ public final class InMemoryVcsClient implements VcsClient {
   }
 
   @Override
-  public CommitRef commitTree(String repo, String branch, List<CommitFile> files, String message) {
+  public synchronized CommitRef commitTree(
+      String repo, String branch, List<CommitFile> files, String message) {
     recordCall("commitTree", repo);
     Repo r = repo(repo);
     Map<String, String> next = new HashMap<>(branchFiles(r, branch));
@@ -181,57 +241,61 @@ public final class InMemoryVcsClient implements VcsClient {
   }
 
   @Override
-  public PullRequest openPr(String repo, String head, String base, String title, String body) {
+  public synchronized PullRequest openPr(
+      String repo, String head, String base, String title, String body) {
     recordCall("openPr", repo);
     Repo r = repo(repo);
     requireBranch(r, head);
     requireBranch(r, base);
-    int number = r.pulls().size() + 1;
-    var pr = new PullRequest(number, WEB + repo + "/pull/" + number, head);
-    r.pulls().add(pr);
-    return pr;
+    var open =
+        r.pulls.stream().filter(p -> p.head().equals(head) && p.base().equals(base)).findFirst();
+    if (open.isPresent()) {
+      return pullRequest(open.get());
+    }
+    var pr = new FakePullRequest(repo, r.pulls.size() + 1, head, base, title, body);
+    r.pulls.add(pr);
+    return pullRequest(pr);
   }
 
   @Override
-  public void comment(String repo, int prNumber, String body) {
+  public synchronized void comment(String repo, int prNumber, String body) {
     recordCall("comment", repo);
-    if (prNumber < 1 || prNumber > repo(repo).pulls().size()) {
+    Repo r = repo(repo);
+    if (prNumber < 1 || prNumber > r.pulls.size()) {
       throw new VcsNotFoundException("pull request not found: " + prNumber);
     }
+    r.comments.computeIfAbsent(prNumber, n -> new ArrayList<>()).add(body);
   }
 
   @Override
-  public boolean createTag(String repo, String tag, String sha) {
+  public synchronized boolean createTag(String repo, String tag, String sha) {
     recordCall("createTag", repo);
     Repo r = repo(repo);
-    if (r.tags().containsKey(tag)) {
-      return false;
-    }
-    if (!commits.containsKey(sha)) {
+    if (!r.commits.containsKey(sha)) {
       throw new VcsNotFoundException("commit not found: " + sha);
     }
-    r.tags().put(tag, sha);
-    return true;
+    return r.tags.putIfAbsent(tag, sha) == null;
   }
 
   @Override
-  public Webhook registerWebhook(String repo, String url, String secret, Set<String> events) {
+  public synchronized Webhook registerWebhook(
+      String repo, String url, String secret, Set<String> events) {
     recordCall("registerWebhook", repo);
     var hook = new Webhook(++webhookCount, url);
-    repo(repo).webhooks().put(hook.id(), hook);
+    repo(repo).webhooks.put(hook.id(), hook);
     return hook;
   }
 
   @Override
-  public void deleteWebhook(String repo, long id) {
+  public synchronized void deleteWebhook(String repo, long id) {
     recordCall("deleteWebhook", repo);
-    if (repo(repo).webhooks().remove(id) == null) {
+    if (repo(repo).webhooks.remove(id) == null) {
       throw new VcsNotFoundException("webhook not found: " + id);
     }
   }
 
   @Override
-  public RateLimit rateLimit() {
+  public synchronized RateLimit rateLimit() {
     recordCall("rateLimit", null);
     return new RateLimit(
         RATE_LIMIT_PER_HOUR, RATE_LIMIT_PER_HOUR, Instant.now().plus(Duration.ofHours(1)));
@@ -239,9 +303,12 @@ public final class InMemoryVcsClient implements VcsClient {
 
   private void recordCall(String method, String repo) {
     calls.add(new Call(method, repo));
-    if (failNext != null) {
-      RuntimeException error = failNext;
+    RuntimeException error = methodFailures.remove(method);
+    if (error == null) {
+      error = failNext;
       failNext = null;
+    }
+    if (error != null) {
       throw error;
     }
   }
@@ -254,38 +321,51 @@ public final class InMemoryVcsClient implements VcsClient {
     return repo;
   }
 
-  /** The files at {@code ref}, which is a branch, a tag or a commit sha, in that order. */
-  private Map<String, String> snapshot(String repo, String ref) {
-    Repo r = repo(repo);
-    String sha = r.branches().getOrDefault(ref, r.tags().getOrDefault(ref, ref));
-    Map<String, String> files = commits.get(sha);
+  /**
+   * The files at {@code ref}, which is a branch, a tag or a commit sha of {@code r}, in that order.
+   */
+  private static Map<String, String> snapshot(Repo r, String ref) {
+    String sha = r.branches.getOrDefault(ref, r.tags.getOrDefault(ref, ref));
+    Map<String, String> files = r.commits.get(sha);
     if (files == null) {
       throw new VcsNotFoundException("ref not found: " + ref);
     }
     return files;
   }
 
-  private Map<String, String> branchFiles(Repo r, String branch) {
-    return commits.get(requireBranch(r, branch));
+  private static FileContent fileAt(Repo r, String path, String ref) {
+    String content = snapshot(r, ref).get(path);
+    if (content == null) {
+      throw new VcsNotFoundException("file not found: " + path);
+    }
+    return new FileContent(content, GitBlob.sha(content));
+  }
+
+  private static Map<String, String> branchFiles(Repo r, String branch) {
+    return r.commits.get(requireBranch(r, branch));
   }
 
   private static String requireBranch(Repo r, String branch) {
-    String sha = r.branches().get(branch);
+    String sha = r.branches.get(branch);
     if (sha == null) {
       throw new VcsNotFoundException("branch not found: " + branch);
     }
     return sha;
   }
 
-  private CommitRef moveBranch(Repo r, String branch, Map<String, String> files) {
-    String sha = newCommit(files);
-    r.branches().put(branch, sha);
-    return new CommitRef(sha, WEB + r.info().fullName() + "/commit/" + sha);
+  private static PullRequest pullRequest(FakePullRequest pr) {
+    return new PullRequest(pr.number(), WEB + pr.repo() + "/pull/" + pr.number(), pr.head());
   }
 
-  private String newCommit(Map<String, String> files) {
+  private CommitRef moveBranch(Repo r, String branch, Map<String, String> files) {
+    String sha = newCommit(r, files);
+    r.branches.put(branch, sha);
+    return new CommitRef(sha, WEB + r.info.fullName() + "/commit/" + sha);
+  }
+
+  private String newCommit(Repo r, Map<String, String> files) {
     String sha = String.format("%040x", ++commitCount);
-    commits.put(sha, Map.copyOf(files));
+    r.commits.put(sha, Map.copyOf(files));
     return sha;
   }
 }

@@ -25,10 +25,19 @@ public interface VcsClient {
    */
   CommitRef putFile(String repo, String path, String content, String expectedSha, String message);
 
-  /** Creates {@code name} pointing at the commit {@code fromSha}. */
+  /**
+   * Creates {@code name} pointing at the commit {@code fromSha}. If the branch already points there
+   * this is a no-op; if it points elsewhere the call fails with a conflict.
+   */
   void createBranch(String repo, String name, String fromSha);
 
-  /** Deletes a branch. */
+  /**
+   * The commit sha at the head of {@code branch}. Fails with not-found if repo or branch is
+   * missing.
+   */
+  String branchHead(String repo, String branch);
+
+  /** Deletes a branch. Deleting a branch that does not exist is a no-op. */
   void deleteBranch(String repo, String name);
 
   /**
@@ -39,7 +48,10 @@ public interface VcsClient {
   /** Commits {@code files} on top of {@code branch} in one commit and moves the branch to it. */
   CommitRef commitTree(String repo, String branch, List<CommitFile> files, String message);
 
-  /** Opens a pull request from {@code head} into {@code base}. */
+  /**
+   * Opens a pull request from {@code head} into {@code base}. If an open pull request for the same
+   * head and base already exists, that pull request is returned and none is created.
+   */
   PullRequest openPr(String repo, String head, String base, String title, String body);
 
   /** Adds a comment to a pull request. */
