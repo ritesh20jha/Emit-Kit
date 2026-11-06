@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import org.jspecify.annotations.Nullable;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
 import org.yaml.snakeyaml.nodes.MappingNode;
@@ -31,13 +33,13 @@ public final class LineIndex {
 
   private record Located(Node node, int line) {}
 
-  private record Ref(String container, String target) {}
-
   private final Map<String, Located> nodes;
-  private final List<Ref> refs;
+  // Container path to the $ref targets found directly in it, sorted by path.
+  private final TreeMap<String, List<String>> refs;
   private final @Nullable String failure;
 
-  private LineIndex(Map<String, Located> nodes, List<Ref> refs, @Nullable String failure) {
+  private LineIndex(
+      Map<String, Located> nodes, TreeMap<String, List<String>> refs, @Nullable String failure) {
     this.nodes = nodes;
     this.refs = refs;
     this.failure = failure;
@@ -46,14 +48,19 @@ public final class LineIndex {
   /** Indexes the document. A document that cannot be indexed safely yields a failure instead. */
   public static LineIndex of(String rawContent) {
     var walker = new Walker();
+    var options = new LoaderOptions();
+    // Alias expansion is bounded by the walk instead, and nesting matches swagger-parser.
+    options.setMaxAliasesForCollections(Integer.MAX_VALUE);
+    options.setNestingDepthLimit(50);
     try {
-      Node root = new Yaml().compose(new StringReader(rawContent));
+      Node root = new Yaml(options).compose(new StringReader(rawContent));
       if (root != null) {
         walker.walk(root, ROOT, startLine(root));
       }
       return new LineIndex(walker.nodes, walker.refs, null);
     } catch (YAMLException | IllegalStateException e) {
-      return new LineIndex(Map.of(), List.of(), "could not index the document: " + e.getMessage());
+      return new LineIndex(
+          Map.of(), new TreeMap<>(), "could not index the document: " + e.getMessage());
     }
   }
 
@@ -111,13 +118,17 @@ public final class LineIndex {
 
   /** Every {@code $ref} value at any depth under the path, in document order. */
   public List<String> refsUnder(String jsonPath) {
-    return refs.stream()
-        .filter(ref ->
-            ref.container().equals(jsonPath)
-                || ref.container().startsWith(jsonPath + ".")
-                || ref.container().startsWith(jsonPath + "["))
-        .map(Ref::target)
-        .toList();
+    // Containers that start with the path form one contiguous range of the sorted map.
+    var out = new ArrayList<String>();
+    for (var entry : refs.subMap(jsonPath, jsonPath + '\uFFFF').entrySet()) {
+      String container = entry.getKey();
+      if (container.equals(jsonPath)
+          || container.startsWith(jsonPath + ".")
+          || container.startsWith(jsonPath + "[")) {
+        out.addAll(entry.getValue());
+      }
+    }
+    return out;
   }
 
   /** {@code $.paths['/pets/{id}']}: the path item of a route template. */
@@ -148,7 +159,7 @@ public final class LineIndex {
   private static final class Walker {
 
     final Map<String, Located> nodes = new HashMap<>();
-    final List<Ref> refs = new ArrayList<>();
+    final TreeMap<String, List<String>> refs = new TreeMap<>();
     // The nodes on the current path. A node seen again on it is a recursive alias.
     private final Set<Node> ancestors = Collections.newSetFromMap(new IdentityHashMap<>());
     private int visited;
@@ -170,7 +181,7 @@ public final class LineIndex {
           if (tuple.getKeyNode() instanceof ScalarNode key) {
             if ("$ref".equals(key.getValue())
                 && tuple.getValueNode() instanceof ScalarNode target) {
-              refs.add(new Ref(path, target.getValue()));
+              refs.computeIfAbsent(path, k -> new ArrayList<>()).add(target.getValue());
             }
             walk(tuple.getValueNode(), member(path, key.getValue()), startLine(key));
           }

@@ -12,6 +12,7 @@ import dev.emitkit.spec.lint.rules.PathParamsDefinedRule;
 import dev.emitkit.spec.lint.rules.ServerUrlHttpsRule;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.parse.ParseResult;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -41,24 +42,28 @@ public final class SpecLinter {
   }
 
   /**
-   * Lints a parsed document. A document without a model yields one ERROR {@code spec-parse} issue
-   * per parse error. A document that cannot be indexed yields one such issue, and no rule runs.
+   * Lints a parsed document. Every parse error becomes an ERROR {@code spec-parse} issue. The rules
+   * run when there is a model, unless the document cannot be indexed, which stops them.
    */
   public List<LintIssue> lint(ParseResult parsed, String rawContent) {
+    var issues = new ArrayList<LintIssue>();
+    parsed.errors().forEach(error -> issues.add(parseIssue(error)));
     ApiModel model = parsed.model();
     if (model == null) {
-      return parsed.errors().stream()
-          .map(error -> new LintIssue("spec-parse", Severity.ERROR, "$", null, error))
-          .toList();
+      return List.copyOf(issues);
     }
     LineIndex lines = LineIndex.of(rawContent);
     if (lines.failure() != null) {
       // Without a complete index, raw-document rules would report false positives: stop here.
-      return List.of(new LintIssue("spec-parse", Severity.ERROR, "$", null, lines.failure()));
+      issues.add(parseIssue(lines.failure()));
+    } else {
+      RULES.forEach(rule -> issues.addAll(rule.check(model, rawContent, lines)));
     }
-    return RULES.stream()
-        .flatMap(rule -> rule.check(model, rawContent, lines).stream())
-        .sorted(ORDER)
-        .toList();
+    issues.sort(ORDER);
+    return List.copyOf(issues);
+  }
+
+  private static LintIssue parseIssue(String message) {
+    return new LintIssue("spec-parse", Severity.ERROR, "$", null, message);
   }
 }

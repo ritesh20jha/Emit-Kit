@@ -15,6 +15,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -72,18 +73,27 @@ class SpecLinterTest {
     return linter.lint(parser.parse(raw), raw);
   }
 
+  private static List<LintIssue> ofRule(List<LintIssue> issues, String ruleId) {
+    return issues.stream().filter(i -> i.ruleId().equals(ruleId)).toList();
+  }
+
   private static LintIssue only(List<LintIssue> issues) {
     assertThat(issues).hasSize(1);
     return issues.get(0);
   }
 
+  /** Fail fixtures whose swagger-parser messages are part of what they exercise. */
+  private static final Set<String> PARSER_MESSAGE_FIXTURES =
+      Set.of("operation-operationId-unique-fail.yaml", "path-params-defined-fail.yaml");
+
   @ParameterizedTest
   @MethodSource("ruleIds")
   void failFixtureRaisesRule_passFixtureDoesNot(String ruleId) {
-    assertThat(lint(fixture(ruleId + "-fail.yaml")))
-        .extracting(LintIssue::ruleId)
-        .contains(ruleId)
-        .doesNotContain("spec-parse");
+    String fail = ruleId + "-fail.yaml";
+    assertThat(lint(fixture(fail))).extracting(LintIssue::ruleId).contains(ruleId);
+    if (!PARSER_MESSAGE_FIXTURES.contains(fail)) {
+      assertThat(lint(fixture(fail))).extracting(LintIssue::ruleId).doesNotContain("spec-parse");
+    }
     assertThat(lint(fixture(ruleId + "-pass.yaml")))
         .extracting(LintIssue::ruleId)
         .doesNotContain(ruleId, "spec-parse");
@@ -93,16 +103,22 @@ class SpecLinterTest {
   void severitiesMatchSpec() {
     assertThat(linter.rules())
         .extracting(LintRule::id, LintRule::severity)
-        .contains(
+        .containsExactly(
+            tuple("operation-operationId", WARNING),
             tuple("operation-operationId-unique", ERROR),
+            tuple("operation-description", WARNING),
+            tuple("operation-tags", WARNING),
             tuple("path-params-defined", ERROR),
             tuple("no-unused-components", INFO),
+            tuple("info-contact", INFO),
+            tuple("info-description", INFO),
+            tuple("operationId-casing", WARNING),
             tuple("server-url-https", WARNING));
   }
 
   @Test
   void issuePointsAtLineAndPath() {
-    var i = only(lint(fixture("path-params-defined-fail.yaml")));
+    var i = only(ofRule(lint(fixture("path-params-defined-fail.yaml")), "path-params-defined"));
     assertThat(i.jsonPath()).isEqualTo("$.paths['/pets/{id}']");
     assertThat(i.line()).isEqualTo(6);
   }
@@ -127,6 +143,7 @@ class SpecLinterTest {
         .extracting(LintIssue::severity, LintIssue::line)
         .containsExactly(
             tuple(ERROR, 6),
+            tuple(ERROR, null),
             tuple(WARNING, 7),
             tuple(WARNING, 7),
             tuple(WARNING, 11),
@@ -182,13 +199,84 @@ class SpecLinterTest {
 
   @Test
   void composeFailure_isSurfacedInsteadOfFalsePositives() {
-    // SnakeYAML refuses more than 50 aliases of a collection; the index must say so.
-    String refs = "*b, ".repeat(60) + "*b";
-    String raw = HEADER + "base: &b {v: 1}\nlist: [" + refs + "]\n";
+    String raw = HEADER + "a: [";
     assertThat(lintWithModel(raw))
         .extracting(LintIssue::ruleId, LintIssue::severity)
         .containsExactly(tuple("spec-parse", ERROR));
     assertThat(lintWithModel(raw).get(0).message()).startsWith("could not index the document: ");
+  }
+
+  /** A valid document: one operation without tags, and one schema anchor. */
+  private static final String MANY_ALIASES_HEAD =
+      """
+      openapi: 3.0.3
+      info: {title: T, version: "1", description: d, contact: {email: a@example.com}}
+      paths:
+        /pets:
+          get:
+            operationId: listPets
+            description: List pets
+            responses: {"200": {description: ok}}
+      components:
+        schemas:
+          Shared: &shared {type: object}
+      """;
+
+  /** A valid document whose schemas form a chain, each referring to the next. */
+  private static final String CHAIN_HEAD =
+      """
+      openapi: 3.0.3
+      info: {title: T, version: "1", description: d, contact: {email: a@example.com}}
+      paths:
+        /x:
+          get:
+            operationId: getX
+            description: d
+            tags: [t]
+            responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/S0"}}}}}
+      components:
+        schemas:
+      """;
+
+  @Test
+  void validDocumentWithManyAliasesLintsNormally() {
+    var yaml = new StringBuilder(MANY_ALIASES_HEAD);
+    for (int i = 0; i < 55; i++) {
+      yaml.append("    S%d: *shared\n".formatted(i));
+    }
+    String raw = yaml.toString();
+    var parsed = parser.parse(raw);
+    assertThat(parsed.ok()).as("errors: %s", parsed.errors()).isTrue();
+    assertThat(linter.lint(parsed, raw))
+        .extracting(LintIssue::ruleId)
+        .contains("operation-tags")
+        .doesNotContain("spec-parse");
+  }
+
+  @Test
+  void parseErrorsAreReportedAlongsideRuleIssues() {
+    // swagger-parser reports the undeclared {id}; the model is still built and the rules run.
+    assertThat(lint(fixture("path-params-defined-fail.yaml")))
+        .extracting(LintIssue::ruleId, LintIssue::severity, LintIssue::line)
+        .containsExactly(tuple("path-params-defined", ERROR, 6), tuple("spec-parse", ERROR, null));
+  }
+
+  @Test
+  void chainedComponentsLintInLinearTime() {
+    int n = 20_000;
+    var yaml = new StringBuilder(CHAIN_HEAD);
+    for (int i = 0; i < n; i++) {
+      String next =
+          i + 1 < n ? "{$ref: \"#/components/schemas/S%d\"}".formatted(i + 1) : "{type: string}";
+      yaml.append("    S%d: {type: object, properties: {next: %s}}\n".formatted(i, next));
+    }
+    String raw = yaml.toString();
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(2),
+        () ->
+            assertThat(lintWithModel(raw))
+                .extracting(LintIssue::ruleId)
+                .doesNotContain("no-unused-components", "spec-parse"));
   }
 
   @Test
