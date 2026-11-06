@@ -33,6 +33,7 @@
   --color-status-failed: var(--color-status-failed);
   --color-status-awaiting: var(--color-status-awaiting);
   --color-status-neutral: var(--color-status-neutral);
+  --color-scrim: var(--color-scrim);
 
   --spacing: var(--space-1);
 
@@ -43,6 +44,11 @@
   --radius-card: var(--radius-card);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  /* Overlays only: a subtle lift on top of the 1px border. Dialogs, sheets, menus, tooltips and toasts. */
+  --shadow-overlay: 0 4px 12px rgb(0 0 0 / 0.12);
+  --animate-overlay-fade: overlay-fade var(--duration-fast) ease-out;
+  --animate-dialog-in: dialog-in var(--duration-fast) ease-out;
 
   --text-xs: var(--text-xs);
   --text-xs--line-height: var(--text-xs--line-height);
@@ -55,6 +61,31 @@
   --text-2xl: var(--text-2xl);
   --text-2xl--line-height: var(--text-2xl--line-height);
 
+}
+
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+/* Sonner ships 400ms transitions. Hold toasts to the motion token. Under reduced motion the token is 0ms,
+   and sonner's own reduced-motion rule (transition: none !important) applies on top. */
+[data-sonner-toaster] [data-sonner-toast] {
+  transition-duration: var(--duration-fast);
+}
+
+/* Sonner's unlayered `outline: 0` beats the :focus-visible ring in @layer base, so the toast ring is restated here, unlayered. */
+[data-sonner-toaster] [data-sonner-toast]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 @layer base {

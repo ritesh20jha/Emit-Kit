@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info: {title: Schemas, version: "1"}
+paths: {}
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+    Owner:
+      type: object
+      properties:
+        pet: {$ref: '#/components/schemas/Pet'}
+    DateField:
+      type: string
+      format: date-time
+    Status:
+      type: string
+      enum: [available, sold]
+    PetList:
+      type: array
+      items: {$ref: '#/components/schemas/Pet'}
+    Shape:
+      oneOf:
+        - $ref: '#/components/schemas/Circle'
+        - $ref: '#/components/schemas/Square'
+      discriminator:
+        propertyName: kind
+    Circle:
+      type: object
+      properties:
+        kind: {type: string}
+        radius: {type: number}
+    Square:
+      type: object
+      properties:
+        kind: {type: string}
+        side: {type: number}
+    Dog:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+        - type: object
+          properties:
+            bark: {type: boolean}
+    Nullable31:
+      type: [string, "null"]
+    MaybePet:
+      oneOf:
+        - $ref: '#/components/schemas/Pet'
+        - type: "null"
+    Labels:
+      type: object
+      additionalProperties: {type: string}
+    Node:
+      type: object
+      properties:
+        children:
+          type: array
+          items: {$ref: '#/components/schemas/Node'}
+    Anything: {}
+    Extended:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+      properties:
+        extra: {type: string}
+      required: [extra]
+    MaybeInt:
+      anyOf:
+        - {type: integer}
+        - {type: "null"}
+    Either:
+      anyOf:
+        - $ref: '#/components/schemas/Pet'
+        - {type: integer}
+    Map31:
+      additionalProperties: {type: string}
+    Free:
+      type: object
+      additionalProperties: true
+    DescribedPet:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+      description: A pet, described
