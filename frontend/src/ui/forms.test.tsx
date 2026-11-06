@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { type ReactElement, type ReactNode, useEffect } from "react";
+import { type ReactElement, type ReactNode, useEffect, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { Checkbox } from "./Checkbox";
 import { FormField } from "./FormField";
@@ -80,6 +80,60 @@ test("Select shows the selected option and is labelled by the FormField", () => 
     { defaultValues: { region: "eu" } },
   );
   expect(screen.getByRole("combobox", { name: "Region" })).toHaveTextContent("Europe");
+});
+
+test("Checkbox and Switch keep the global focus ring", () => {
+  render(
+    <>
+      <Checkbox aria-label="Agree" />
+      <Switch aria-label="Notify" />
+    </>,
+  );
+  // app.css draws the focus ring with :focus-visible; outline-none on these roots would hide it (WCAG 2.4.7).
+  expect(screen.getByRole("checkbox").className).not.toMatch(/\boutline-none\b/);
+  expect(screen.getByRole("switch").className).not.toMatch(/\boutline-none\b/);
+});
+
+test("SecretField takes typing when uncontrolled", async () => {
+  render(<SecretField isSet={false} label="AI key" />);
+  await userEvent.type(screen.getByLabelText("AI key"), "sk-123");
+  expect(screen.getByLabelText("AI key")).toHaveValue("sk-123");
+});
+
+test("SecretField takes typing through value and onChange when controlled", async () => {
+  function Controlled() {
+    const [value, setValue] = useState<string | null>(null);
+    return <SecretField isSet={false} label="AI key" value={value} onChange={setValue} />;
+  }
+  render(<Controlled />);
+  await userEvent.type(screen.getByLabelText("AI key"), "sk-123");
+  expect(screen.getByLabelText("AI key")).toHaveValue("sk-123");
+});
+
+test("SecretField follows a controlled replacing flag and returns to Key set when it clears", () => {
+  const { rerender } = render(<SecretField isSet label="AI key" replacing />);
+  expect(screen.getByLabelText("AI key")).toHaveFocus();
+  rerender(<SecretField isSet label="AI key" replacing={false} />);
+  expect(screen.getByText("Key set")).toBeInTheDocument();
+  expect(screen.queryByLabelText("AI key")).not.toBeInTheDocument();
+});
+
+test("SecretField Replace and Cancel report through onReplacingChange, onReplace and onChange", async () => {
+  const onReplace = vi.fn();
+  const onReplacingChange = vi.fn();
+  const onChange = vi.fn();
+  const { rerender } = render(
+    <SecretField isSet label="AI key" replacing={false} onReplace={onReplace} onReplacingChange={onReplacingChange} onChange={onChange} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Replace" }));
+  expect(onReplace).toHaveBeenCalledOnce();
+  expect(onReplacingChange).toHaveBeenLastCalledWith(true);
+  rerender(
+    <SecretField isSet label="AI key" replacing onReplace={onReplace} onReplacingChange={onReplacingChange} onChange={onChange} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(onChange).toHaveBeenLastCalledWith(null);
+  expect(onReplacingChange).toHaveBeenLastCalledWith(false);
 });
 
 test("Checkbox inside FormField toggles", async () => {

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { Button } from "./Button";
 import { SecretField, type SecretFieldProps } from "./SecretField";
 
 const meta = {
@@ -28,12 +29,33 @@ export const KeySet: Story = {
   ),
 };
 
-/** Replace opens an empty input; Cancel drops the typed value and returns to "Key set". */
+/**
+ * Replace opens an empty input; Cancel drops the typed value and returns to "Key set". Save stands in for a
+ * successful request: the consumer clears its draft and sets replacing back to false.
+ */
 function ReplaceFlowDemo(args: SecretFieldProps) {
+  const [replacing, setReplacing] = useState(false);
   const [value, setValue] = useState<string | null>(null);
   return (
     <div className="flex w-80 flex-col gap-2">
-      <SecretField {...args} value={value} onChange={setValue} />
+      <SecretField
+        {...args}
+        replacing={replacing}
+        onReplacingChange={setReplacing}
+        value={value}
+        onChange={setValue}
+      />
+      {replacing && (
+        <Button
+          size="sm"
+          onClick={() => {
+            setValue(null);
+            setReplacing(false);
+          }}
+        >
+          Save
+        </Button>
+      )}
       <p className="text-xs text-fg-muted">Pending replacement: {value === null ? "none (keep)" : "typed"}</p>
     </div>
   );

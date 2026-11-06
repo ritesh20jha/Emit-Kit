@@ -18,8 +18,9 @@ export function Switch({ className, ref, checked, onCheckedChange, onBlur, name,
       checked={control ? Boolean(control.value) : checked}
       onCheckedChange={chain(control ? (next: boolean) => control.onChange(next) : undefined, onCheckedChange)}
       onBlur={chain(control?.onBlur, onBlur)}
+      // No outline-none here: the global :focus-visible ring (app.css) is the keyboard focus indicator.
       className={cn(
-        "inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border-strong bg-bg-muted transition-colors duration-(--duration-fast) outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent data-[state=checked]:bg-accent aria-invalid:border-status-failed",
+        "inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border-strong bg-bg-muted transition-colors duration-(--duration-fast) disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent data-[state=checked]:bg-accent aria-invalid:border-status-failed",
         className,
       )}
     >
