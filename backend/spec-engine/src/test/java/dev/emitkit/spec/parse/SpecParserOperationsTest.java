@@ -9,9 +9,6 @@ import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.model.Tag;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -20,21 +17,10 @@ class SpecParserOperationsTest {
 
   private final SpecParser parser = new SpecParser();
 
-  private static String fixture(String name) {
-    try (var in = SpecParserOperationsTest.class.getResourceAsStream("/specs/" + name)) {
-      if (in == null) {
-        throw new IllegalArgumentException("missing fixture " + name);
-      }
-      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-  }
-
   @ParameterizedTest
   @ValueSource(strings = {"petstore-2.0.yaml", "petstore-3.0.json", "petstore-3.1.yaml"})
   void allVersionsGiveSameOperations(String file) {
-    var r = parser.parse(fixture(file));
+    var r = parser.parse(Fixtures.read(file));
     assertThat(r.ok()).as("errors: %s", r.errors()).isTrue();
     assertThat(r.model().operations())
         .extracting(Operation::operationId, Operation::method, Operation::path)
@@ -52,7 +38,7 @@ class SpecParserOperationsTest {
 
   @Test
   void operationLevelParamWinsOnNameAndIn() {
-    var op = only(parser.parse(fixture("path-level-params.yaml")));
+    var op = only(parser.parse(Fixtures.read("path-level-params.yaml")));
     assertThat(op.parameters())
         .extracting(Parameter::name, Parameter::required)
         .containsExactly(tuple("id", true), tuple("limit", true));
@@ -60,14 +46,14 @@ class SpecParserOperationsTest {
 
   @Test
   void missingOperationId_isSynthesized() {
-    var ops = parser.parse(fixture("no-ids.yaml")).model().operations();
+    var ops = parser.parse(Fixtures.read("no-ids.yaml")).model().operations();
     assertThat(ops).extracting(Operation::operationId).contains("getUsersById", "postUsers");
     assertThat(ops).allMatch(Operation::operationIdSynthesized);
   }
 
   @Test
   void invalidSpec_returnsErrorsWithoutThrowing() {
-    var r = parser.parse(fixture("invalid.yaml"));
+    var r = parser.parse(Fixtures.read("invalid.yaml"));
     assertThat(r.ok()).isFalse();
     assertThat(r.errors()).isNotEmpty();
   }
@@ -79,7 +65,7 @@ class SpecParserOperationsTest {
 
   @Test
   void formatDetected() {
-    assertThat(parser.parse(fixture("petstore-3.0.json")).format()).isEqualTo("json");
+    assertThat(parser.parse(Fixtures.read("petstore-3.0.json")).format()).isEqualTo("json");
   }
 
   @Test
@@ -89,7 +75,7 @@ class SpecParserOperationsTest {
 
   @Test
   void mapsInfoServersTagsSecurityAndOperationDetails() {
-    var r = parser.parse(fixture("petstore-3.0.json"));
+    var r = parser.parse(Fixtures.read("petstore-3.0.json"));
     var model = r.model();
 
     assertThat(r.infoVersion()).isEqualTo("1.0.0");
