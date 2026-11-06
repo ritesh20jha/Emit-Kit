@@ -92,6 +92,12 @@ test("RouteTabs marks the active route", async () => {
   expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
 });
 
+test("RouteTabs keeps the active tab when the page has search params", async () => {
+  await renderAt("/projects/p1/runs?status=failed", <RouteTabs tabs={TABS} />);
+  expect(screen.getByRole("link", { name: "Runs" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+});
+
 test("RouteTabs arrow keys and Home/End move focus between tabs", async () => {
   const user = userEvent.setup();
   await renderAt("/projects/p1", <RouteTabs tabs={TABS} />);

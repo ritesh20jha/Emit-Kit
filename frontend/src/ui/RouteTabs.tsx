@@ -44,7 +44,7 @@ export function RouteTabs({ tabs, label = "Sections" }: RouteTabsProps) {
                 links.current[index] = link;
               }}
               to={tab.to}
-              activeOptions={{ exact: true }}
+              activeOptions={{ exact: true, includeSearch: false }}
               className="-mb-px inline-flex h-9 items-center border-b-2 border-transparent px-3 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) hover:text-fg aria-[current=page]:border-accent aria-[current=page]:text-fg"
             >
               {tab.label}
