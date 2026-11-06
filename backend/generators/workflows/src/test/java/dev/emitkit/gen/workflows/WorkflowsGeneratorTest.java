@@ -96,6 +96,19 @@ class WorkflowsGeneratorTest {
   }
 
   @Test
+  void mavenWorkflowPinsGradleVersionOnSetupGradleStep() {
+    GeneratedFile maven = gen("Pets", ".emitkit/", List.of("java")).get(0);
+    List<Map<String, Object>> setupGradle =
+        steps(parse(maven)).stream()
+            .filter(
+                step -> String.valueOf(step.get("uses")).startsWith("gradle/actions/setup-gradle@"))
+            .toList();
+    assertThat(setupGradle).hasSize(1);
+    assertThat((Map<String, Object>) setupGradle.get(0).get("with"))
+        .containsEntry("gradle-version", "8.14.3");
+  }
+
+  @Test
   void actionsArePinnedByMajorVersion() {
     List<GeneratedFile> files = gen("Pets", ".emitkit/", List.of("typescript", "python", "java"));
     assertThat(files).hasSize(3);
