@@ -5,12 +5,15 @@ import static dev.emitkit.spec.lint.Severity.INFO;
 import static dev.emitkit.spec.lint.Severity.WARNING;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import dev.emitkit.spec.parse.ParseResult;
 import dev.emitkit.spec.parse.SpecParser;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -130,6 +133,62 @@ class SpecLinterTest {
             tuple(WARNING, 11),
             tuple(INFO, 2),
             tuple(INFO, 2));
+  }
+
+  /** Lints raw content against the model of a valid fixture, so the index is what gets tested. */
+  private List<LintIssue> lintWithModel(String raw) {
+    var model = parser.parse(fixture("operation-operationId-pass.yaml")).model();
+    return linter.lint(new ParseResult(model, List.of(), "1", "hash", "yaml"), raw);
+  }
+
+  /** Each level holds two aliases of the level below, so 24 levels expand to 2^24 leaves. */
+  private static String aliasLadder(int levels) {
+    var yaml = new StringBuilder(HEADER + "ladder0: &l0 {v: 1}\n");
+    for (int i = 1; i <= levels; i++) {
+      yaml.append("ladder%d: &l%d {a: *l%d, b: *l%d}\n".formatted(i, i, i - 1, i - 1));
+    }
+    return yaml.toString();
+  }
+
+  private static final String HEADER =
+      "openapi: 3.0.3\ninfo: {title: T, version: \"1\"}\npaths: {}\n";
+
+  @Test
+  void selfReferentialAnchor_isSurfacedWithoutRecursion() {
+    String raw = HEADER + "loop: &x {again: *x}\n";
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(10),
+        () ->
+            assertThat(lintWithModel(raw))
+                .extracting(LintIssue::ruleId, LintIssue::message)
+                .containsExactly(
+                    tuple(
+                        "spec-parse",
+                        "could not index the document: it contains a recursive alias")));
+  }
+
+  @Test
+  void aliasLadder_isBoundedAndSurfaced() {
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(10),
+        () ->
+            assertThat(lintWithModel(aliasLadder(24)))
+                .extracting(LintIssue::ruleId, LintIssue::message)
+                .containsExactly(
+                    tuple(
+                        "spec-parse",
+                        "could not index the document: it has more than 500000 nodes once aliases are expanded")));
+  }
+
+  @Test
+  void composeFailure_isSurfacedInsteadOfFalsePositives() {
+    // SnakeYAML refuses more than 50 aliases of a collection; the index must say so.
+    String refs = "*b, ".repeat(60) + "*b";
+    String raw = HEADER + "base: &b {v: 1}\nlist: [" + refs + "]\n";
+    assertThat(lintWithModel(raw))
+        .extracting(LintIssue::ruleId, LintIssue::severity)
+        .containsExactly(tuple("spec-parse", ERROR));
+    assertThat(lintWithModel(raw).get(0).message()).startsWith("could not index the document: ");
   }
 
   @Test

@@ -42,7 +42,7 @@ public final class SpecLinter {
 
   /**
    * Lints a parsed document. A document without a model yields one ERROR {@code spec-parse} issue
-   * per parse error, and no rule runs.
+   * per parse error. A document that cannot be indexed yields one such issue, and no rule runs.
    */
   public List<LintIssue> lint(ParseResult parsed, String rawContent) {
     ApiModel model = parsed.model();
@@ -52,6 +52,10 @@ public final class SpecLinter {
           .toList();
     }
     LineIndex lines = LineIndex.of(rawContent);
+    if (lines.failure() != null) {
+      // Without a complete index, raw-document rules would report false positives: stop here.
+      return List.of(new LintIssue("spec-parse", Severity.ERROR, "$", null, lines.failure()));
+    }
     return RULES.stream()
         .flatMap(rule -> rule.check(model, rawContent, lines).stream())
         .sorted(ORDER)

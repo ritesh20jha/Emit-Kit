@@ -3,10 +3,13 @@ package dev.emitkit.spec.lint;
 import dev.emitkit.spec.model.Operation;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
@@ -17,33 +20,46 @@ import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 
 /**
- * Maps JSON paths such as {@code $.paths['/pets/{id}'].get} to the raw document (YAML or JSON). A
- * member's line is the line of its key; a sequence item's line is the line where it starts.
+ * Maps JSON paths such as {@code $.paths['/pets/{id}'].get} to lines of the raw document. Aliases
+ * expand within limits; a recursive, too large or too deep document gives a {@link #failure()}.
  */
 public final class LineIndex {
 
   private static final String ROOT = "$";
+  private static final int MAX_NODES = 500_000;
+  private static final int MAX_DEPTH = 256;
 
   private record Located(Node node, int line) {}
 
-  private final Map<String, Located> nodes;
+  private record Ref(String container, String target) {}
 
-  private LineIndex(Map<String, Located> nodes) {
+  private final Map<String, Located> nodes;
+  private final List<Ref> refs;
+  private final @Nullable String failure;
+
+  private LineIndex(Map<String, Located> nodes, List<Ref> refs, @Nullable String failure) {
     this.nodes = nodes;
+    this.refs = refs;
+    this.failure = failure;
   }
 
-  /** Indexes the document; content SnakeYAML cannot compose gives an empty index. */
+  /** Indexes the document. A document that cannot be indexed safely yields a failure instead. */
   public static LineIndex of(String rawContent) {
-    var nodes = new HashMap<String, Located>();
+    var walker = new Walker();
     try {
       Node root = new Yaml().compose(new StringReader(rawContent));
       if (root != null) {
-        walk(root, ROOT, startLine(root), nodes);
+        walker.walk(root, ROOT, startLine(root));
       }
-    } catch (YAMLException e) {
-      nodes.clear();
+      return new LineIndex(walker.nodes, walker.refs, null);
+    } catch (YAMLException | IllegalStateException e) {
+      return new LineIndex(Map.of(), List.of(), "could not index the document: " + e.getMessage());
     }
-    return new LineIndex(nodes);
+  }
+
+  /** Why the document was not indexed, or null when the index is complete. */
+  public @Nullable String failure() {
+    return failure;
   }
 
   /** The 1-based line of the node at the path, or null when there is no such node. */
@@ -93,14 +109,15 @@ public final class LineIndex {
     return keys;
   }
 
-  /** Every {@code $ref} value at any depth under the node, in document order. */
+  /** Every {@code $ref} value at any depth under the path, in document order. */
   public List<String> refsUnder(String jsonPath) {
-    var refs = new ArrayList<String>();
-    var found = nodes.get(jsonPath);
-    if (found != null) {
-      collectRefs(found.node(), refs);
-    }
-    return refs;
+    return refs.stream()
+        .filter(ref ->
+            ref.container().equals(jsonPath)
+                || ref.container().startsWith(jsonPath + ".")
+                || ref.container().startsWith(jsonPath + "["))
+        .map(Ref::target)
+        .toList();
   }
 
   /** {@code $.paths['/pets/{id}']}: the path item of a route template. */
@@ -127,36 +144,44 @@ public final class LineIndex {
     return key.matches("[A-Za-z_][A-Za-z0-9_]*") ? parent + "." + key : parent + "['" + key + "']";
   }
 
-  private static void walk(Node node, String path, int line, Map<String, Located> out) {
-    out.put(path, new Located(node, line));
-    if (node instanceof MappingNode map) {
-      for (NodeTuple tuple : map.getValue()) {
-        if (tuple.getKeyNode() instanceof ScalarNode key) {
-          walk(tuple.getValueNode(), member(path, key.getValue()), startLine(key), out);
-        }
-      }
-    } else if (node instanceof SequenceNode seq) {
-      List<Node> items = seq.getValue();
-      for (int i = 0; i < items.size(); i++) {
-        walk(items.get(i), path + "[" + i + "]", startLine(items.get(i)), out);
-      }
-    }
-  }
+  /** Walks the expanded document, one visit per (alias-expanded) node, with limits. */
+  private static final class Walker {
 
-  private static void collectRefs(Node node, List<String> out) {
-    if (node instanceof MappingNode map) {
-      for (NodeTuple tuple : map.getValue()) {
-        if (tuple.getKeyNode() instanceof ScalarNode key
-            && "$ref".equals(key.getValue())
-            && tuple.getValueNode() instanceof ScalarNode target) {
-          out.add(target.getValue());
+    final Map<String, Located> nodes = new HashMap<>();
+    final List<Ref> refs = new ArrayList<>();
+    // The nodes on the current path. A node seen again on it is a recursive alias.
+    private final Set<Node> ancestors = Collections.newSetFromMap(new IdentityHashMap<>());
+    private int visited;
+
+    void walk(Node node, String path, int line) {
+      if (++visited > MAX_NODES) {
+        throw new IllegalStateException(
+            "it has more than " + MAX_NODES + " nodes once aliases are expanded");
+      }
+      if (!ancestors.add(node)) {
+        throw new IllegalStateException("it contains a recursive alias");
+      }
+      if (ancestors.size() > MAX_DEPTH) {
+        throw new IllegalStateException("it is nested more than " + MAX_DEPTH + " levels deep");
+      }
+      nodes.put(path, new Located(node, line));
+      if (node instanceof MappingNode map) {
+        for (NodeTuple tuple : map.getValue()) {
+          if (tuple.getKeyNode() instanceof ScalarNode key) {
+            if ("$ref".equals(key.getValue())
+                && tuple.getValueNode() instanceof ScalarNode target) {
+              refs.add(new Ref(path, target.getValue()));
+            }
+            walk(tuple.getValueNode(), member(path, key.getValue()), startLine(key));
+          }
         }
-        collectRefs(tuple.getValueNode(), out);
+      } else if (node instanceof SequenceNode seq) {
+        List<Node> items = seq.getValue();
+        for (int i = 0; i < items.size(); i++) {
+          walk(items.get(i), path + "[" + i + "]", startLine(items.get(i)));
+        }
       }
-    } else if (node instanceof SequenceNode seq) {
-      for (Node item : seq.getValue()) {
-        collectRefs(item, out);
-      }
+      ancestors.remove(node);
     }
   }
 
