@@ -1,5 +1,6 @@
 package dev.emitkit.spec.parse;
 
+import static dev.emitkit.spec.model.PrimitiveType.INTEGER;
 import static dev.emitkit.spec.model.PrimitiveType.STRING;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -115,6 +116,42 @@ class SchemaMapperTest {
   void recursiveSchemaTerminates() {
     assertThat(prop("Node", "children"))
         .isEqualTo(new ArraySchema(new RefSchema("Node", false, null), false, null));
+  }
+
+  @Test
+  void anyOfWithNullBecomesNullable() {
+    assertThat(map("MaybeInt")).isEqualTo(new PrimitiveSchema(INTEGER, null, true, null));
+  }
+
+  @Test
+  void anyOfWithSeveralOptionsIsAUnion() {
+    var s = (OneOfSchema) map("Either");
+    assertThat(s.options())
+        .containsExactly(
+            new RefSchema("Pet", false, null), new PrimitiveSchema(INTEGER, null, false, null));
+    assertThat(s.discriminator()).isNull();
+    assertThat(s.nullable()).isFalse();
+  }
+
+  @Test
+  void additionalPropertiesWithoutTypeIsAnObject() {
+    assertThat(((ObjectSchema) map("Map31")).additionalProperties())
+        .isEqualTo(new PrimitiveSchema(STRING, null, false, null));
+  }
+
+  @Test
+  void freeFormObjectIsOpen() {
+    assertThat(map("Free")).isEqualTo(new ObjectSchema(Map.of(), Set.of(), null, false, null));
+  }
+
+  @Test
+  void singlePartAllOfCollapsesKeepingDescription() {
+    assertThat(map("DescribedPet")).isEqualTo(new RefSchema("Pet", false, "A pet, described"));
+  }
+
+  @Test
+  void singlePartAllOfCollapsesKeepingNullable() {
+    assertThat(map("schemas-30.yaml", "NullableRef")).isEqualTo(new RefSchema("Pet", true, null));
   }
 
   @Test

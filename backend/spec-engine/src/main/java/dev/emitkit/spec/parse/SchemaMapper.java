@@ -48,9 +48,16 @@ final class SchemaMapper {
       return new RefSchema(refName(schema.get$ref()), nullable, description);
     }
     if (nonEmpty(schema.getOneOf())) {
-      return oneOf(schema, nullable, description);
+      return union(schema, schema.getOneOf(), nullable, description);
+    }
+    if (nonEmpty(schema.getAnyOf())) {
+      return union(schema, schema.getAnyOf(), nullable, description);
     }
     if (nonEmpty(schema.getAllOf())) {
+      // A lone part with no keywords of its own is that part, carrying nullable and description.
+      if (schema.getAllOf().size() == 1 && !hasObjectKeywords(schema)) {
+        return map(schema.getAllOf().get(0), nullable, description);
+      }
       var parts = new ArrayList<Schema>();
       for (var part : schema.getAllOf()) {
         parts.add(map(part));
@@ -65,7 +72,9 @@ final class SchemaMapper {
     if (type.isEmpty() && schema.getItems() != null) {
       type = "array";
     }
-    if (type.isEmpty() && schema.getProperties() != null) {
+    if (type.isEmpty()
+        && (schema.getProperties() != null || schema.getAdditionalProperties() != null)) {
+      // 3.1 has no implied type for additionalProperties; 3.0 parsers set one, so infer it here.
       type = "object";
     }
     if (nonEmpty(schema.getEnum())) {
@@ -80,13 +89,19 @@ final class SchemaMapper {
     };
   }
 
-  private static Schema oneOf(
+  /**
+   * A oneOf or anyOf. anyOf is approximated as a union: a value may match several members, which
+   * {@link OneOfSchema} does not say, so consumers treat it as a oneOf. A null member is dropped
+   * and sets nullable, which is how Pydantic writes Optional.
+   */
+  private static Schema union(
       io.swagger.v3.oas.models.media.Schema<?> schema,
+      List<io.swagger.v3.oas.models.media.Schema> members,
       boolean nullable,
       @Nullable String description) {
     var options = new ArrayList<io.swagger.v3.oas.models.media.Schema<?>>();
     boolean nullBranch = false;
-    for (io.swagger.v3.oas.models.media.Schema<?> option : schema.getOneOf()) {
+    for (io.swagger.v3.oas.models.media.Schema<?> option : members) {
       if (types(option).equals(Set.of(NULL_TYPE))) {
         nullBranch = true;
       } else {
@@ -134,11 +149,7 @@ final class SchemaMapper {
     }
     Set<String> required =
         schema.getRequired() == null ? Set.of() : new LinkedHashSet<>(schema.getRequired());
-    Schema additional =
-        schema.getAdditionalProperties() instanceof io.swagger.v3.oas.models.media.Schema<?> extra
-            ? map(extra)
-            : null;
-    return new ObjectSchema(properties, required, additional, nullable, description);
+    return new ObjectSchema(properties, required, additional(schema), nullable, description);
   }
 
   private static ObjectSchema open(boolean nullable, @Nullable String description) {
@@ -186,6 +197,19 @@ final class SchemaMapper {
   private static boolean hasObjectKeywords(io.swagger.v3.oas.models.media.Schema<?> schema) {
     return (schema.getProperties() != null && !schema.getProperties().isEmpty())
         || nonEmpty(schema.getRequired())
-        || schema.getAdditionalProperties() instanceof io.swagger.v3.oas.models.media.Schema<?>;
+        || additional(schema) != null;
+  }
+
+  /**
+   * The mapped value schema of additionalProperties, or null when absent or open. Swagger parses
+   * {@code additionalProperties: true} as an empty schema, which means no value constraint.
+   */
+  private static @Nullable Schema additional(io.swagger.v3.oas.models.media.Schema<?> schema) {
+    if (!(schema.getAdditionalProperties()
+        instanceof io.swagger.v3.oas.models.media.Schema<?> extra)) {
+      return null;
+    }
+    Schema value = map(extra);
+    return value.equals(open(false, null)) ? null : value;
   }
 }

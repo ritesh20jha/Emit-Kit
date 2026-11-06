@@ -66,3 +66,20 @@ components:
       properties:
         extra: {type: string}
       required: [extra]
+    MaybeInt:
+      anyOf:
+        - {type: integer}
+        - {type: "null"}
+    Either:
+      anyOf:
+        - $ref: '#/components/schemas/Pet'
+        - {type: integer}
+    Map31:
+      additionalProperties: {type: string}
+    Free:
+      type: object
+      additionalProperties: true
+    DescribedPet:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+      description: A pet, described

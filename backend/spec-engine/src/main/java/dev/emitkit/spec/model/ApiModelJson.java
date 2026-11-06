@@ -17,6 +17,8 @@ import tools.jackson.databind.module.SimpleModule;
  */
 public final class ApiModelJson {
 
+  // Jackson 3 ignores unknown properties but fails on null for a primitive: a new primitive or
+  // collection field in a model record makes older snapshots unreadable.
   private static final JsonMapper MAPPER =
       JsonMapper.builder()
           .addMixIn(Schema.class, SchemaMixin.class)

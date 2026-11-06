@@ -6,3 +6,9 @@ components:
     Nullable30:
       type: string
       nullable: true
+    Pet:
+      type: object
+    NullableRef:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+      nullable: true
