@@ -23,12 +23,14 @@ interface ErrorView {
   code?: string;
 }
 
+/** Any object with a message (an Error included) is shown; the code is optional. Anything else gets a generic line. */
 function describeError(error: unknown): ErrorView {
-  if (typeof error === "object" && error !== null && "message" in error && "code" in error) {
-    const { message, code } = error as FeedbackError;
-    if (typeof message === "string" && typeof code === "string") return { message, code };
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const { message, code } = error as Partial<FeedbackError>;
+    if (typeof message === "string" && message) {
+      return { message, code: typeof code === "string" ? code : undefined };
+    }
   }
-  if (error instanceof Error && error.message) return { message: error.message };
   return { message: "Something went wrong. Try again." };
 }
 

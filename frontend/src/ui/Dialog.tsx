@@ -40,19 +40,23 @@ export function DialogFrame({
   panelClassName,
   ...panelProps
 }: DialogFrameProps) {
+  // Preventing the dismissal events stops Radix from closing, controlled or not. Blocking inside onOpenChange
+  // would be too late for an uncontrolled dialog, whose internal state has already changed.
+  const block = (event: { preventDefault(): void }) => {
+    if (!dismissible) event.preventDefault();
+  };
   return (
-    <DialogPrimitive.Root
-      open={open}
-      defaultOpen={defaultOpen}
-      onOpenChange={(next) => {
-        if (!next && !dismissible) return;
-        onOpenChange?.(next);
-      }}
-    >
+    <DialogPrimitive.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>}
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-fg/40 motion-safe:animate-overlay-fade" />
-        <DialogPrimitive.Content className={cn(PANEL, panelClassName)} {...panelProps}>
+        <DialogPrimitive.Content
+          className={cn(PANEL, panelClassName)}
+          onEscapeKeyDown={block}
+          onPointerDownOutside={block}
+          onInteractOutside={block}
+          {...panelProps}
+        >
           <div className="flex flex-col gap-1 pr-8">
             <DialogPrimitive.Title className="text-base font-semibold text-fg">{title}</DialogPrimitive.Title>
             {description !== undefined && (
@@ -61,11 +65,14 @@ export function DialogFrame({
           </div>
           {children}
           {footer && <div className="flex justify-end gap-2">{footer}</div>}
-          <DialogPrimitive.Close asChild>
-            <IconButton label="Close" variant="ghost" size="sm" className="absolute top-3 right-3">
-              <X aria-hidden="true" className="size-4" />
-            </IconButton>
-          </DialogPrimitive.Close>
+          {/* Hidden rather than disabled: the close button is the one dismissal path the events above do not cover. */}
+          {dismissible && (
+            <DialogPrimitive.Close asChild>
+              <IconButton label="Close" variant="ghost" size="sm" className="absolute top-3 right-3">
+                <X aria-hidden="true" className="size-4" />
+              </IconButton>
+            </DialogPrimitive.Close>
+          )}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

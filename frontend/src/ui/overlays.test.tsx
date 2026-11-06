@@ -1,5 +1,5 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
 import { useState } from "react";
 import { Button } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -262,4 +262,79 @@ test("Sheet renders on the requested side with its title", async () => {
   const sheet = await screen.findByRole("dialog", { name: "Filters" });
   expect(sheet).toHaveAttribute("data-side", "left");
   expect(sheet).toHaveAccessibleDescription("Narrow the run list");
+});
+
+function UncontrolledDialog({ dismissible }: { dismissible?: boolean }) {
+  return (
+    <>
+      <Dialog
+        trigger={<Button variant="secondary">Open uncontrolled</Button>}
+        title="Keep open"
+        description="Stays until dismissed."
+        dismissible={dismissible}
+      >
+        <p>Body text</p>
+      </Dialog>
+      <Button variant="ghost">Page behind</Button>
+    </>
+  );
+}
+
+// Radix sets pointer-events: none on the page behind a modal; user-event would refuse to click through it.
+const clickThroughPage = { pointerEventsCheck: PointerEventsCheckLevel.Never };
+
+test("dismissible={false} keeps an uncontrolled dialog open on Escape and outside click", async () => {
+  const user = userEvent.setup(clickThroughPage);
+  render(<UncontrolledDialog dismissible={false} />);
+  await user.click(screen.getByRole("button", { name: "Open uncontrolled" }));
+  await screen.findByRole("dialog", { name: "Keep open" });
+
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Page behind", hidden: true }));
+
+  expect(screen.getByRole("dialog", { name: "Keep open" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+});
+
+test("an uncontrolled dialog closes on Escape and on outside click by default", async () => {
+  const user = userEvent.setup(clickThroughPage);
+  render(<UncontrolledDialog />);
+  await user.click(screen.getByRole("button", { name: "Open uncontrolled" }));
+  await screen.findByRole("dialog", { name: "Keep open" });
+  expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+  await user.click(screen.getByRole("button", { name: "Open uncontrolled" }));
+  await screen.findByRole("dialog", { name: "Keep open" });
+  await user.click(screen.getByRole("button", { name: "Page behind", hidden: true }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+test("toast.error without a code shows the message and no code element", async () => {
+  render(
+    <ThemeProvider>
+      <Toaster />
+    </ThemeProvider>,
+  );
+  act(() => toast.error({ message: "Could not save the spec." }));
+
+  expect(await screen.findByText("Could not save the spec.")).toBeInTheDocument();
+  expect(document.querySelector("code")).toBeNull();
+});
+
+test.each([
+  ["an object with a message and no code", { message: "Network is down." }, "Network is down."],
+  ["an Error instance", new Error("Timed out."), "Timed out."],
+  ["a rejection that is a plain string", "boom", "Something went wrong. Try again."],
+])("ConfirmDialog shows the message for %s", async (_label, rejection, shown) => {
+  const user = userEvent.setup();
+  const onConfirm = vi.fn().mockRejectedValue(rejection);
+  render(<ConfirmDialog open title="Save spec" confirmLabel="Save" onConfirm={onConfirm} />);
+  await user.click(screen.getByRole("button", { name: "Save" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(within(alert).getByText(shown)).toBeInTheDocument();
+  expect(alert.querySelector("code")).toBeNull();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
