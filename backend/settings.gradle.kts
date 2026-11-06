@@ -19,6 +19,7 @@ include(
     "vcs",
     "spec-engine",
     "generators:core",
+    "generators:workflows",
     "ai",
     "api-app",
     "worker-app",
