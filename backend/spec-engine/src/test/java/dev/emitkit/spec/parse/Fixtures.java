@@ -5,11 +5,11 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 
 /** Loads the test documents under {@code src/test/resources/specs}. */
-final class Fixtures {
+public final class Fixtures {
 
   private Fixtures() {}
 
-  static String read(String name) {
+  public static String read(String name) {
     try (var in = Fixtures.class.getResourceAsStream("/specs/" + name)) {
       if (in == null) {
         throw new IllegalArgumentException("missing fixture " + name);
