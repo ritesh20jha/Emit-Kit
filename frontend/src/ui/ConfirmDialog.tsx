@@ -1,0 +1,123 @@
+import { type ReactNode, useId, useState } from "react";
+import { Button } from "./Button";
+import { Dialog } from "./Dialog";
+import { Input } from "./Input";
+import { Label } from "./Label";
+import type { FeedbackError } from "./toast";
+
+export interface ConfirmDialogProps {
+  open: boolean;
+  onOpenChange?: (open: boolean) => void;
+  title: ReactNode;
+  description?: ReactNode;
+  confirmLabel: string;
+  tone?: "default" | "danger";
+  /** When set, confirm stays disabled until the user types this text exactly. */
+  typedConfirmation?: string;
+  /** Resolves on success, which closes the dialog. A rejection stays open and shows its message and code. */
+  onConfirm: () => Promise<void>;
+}
+
+interface ErrorView {
+  message: string;
+  code?: string;
+}
+
+function describeError(error: unknown): ErrorView {
+  if (typeof error === "object" && error !== null && "message" in error && "code" in error) {
+    const { message, code } = error as FeedbackError;
+    if (typeof message === "string" && typeof code === "string") return { message, code };
+  }
+  if (error instanceof Error && error.message) return { message: error.message };
+  return { message: "Something went wrong. Try again." };
+}
+
+/** Confirmation for an action that cannot be undone. Use tone "danger" for destructive actions. */
+export function ConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel,
+  tone = "default",
+  typedConfirmation,
+  onConfirm,
+}: ConfirmDialogProps) {
+  const [typed, setTyped] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<ErrorView | null>(null);
+  // Reset the typed text and the error when the dialog closes, so a reopen starts clean.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) {
+      setTyped("");
+      setError(null);
+    }
+  }
+  const inputId = useId();
+  const confirmed = typedConfirmation === undefined || typed === typedConfirmation;
+
+  async function confirm() {
+    setError(null);
+    setPending(true);
+    try {
+      await onConfirm();
+    } catch (failure) {
+      setError(describeError(failure));
+      setPending(false);
+      return;
+    }
+    setPending(false);
+    onOpenChange?.(false);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      dismissible={!pending}
+      title={title}
+      description={description}
+      footer={
+        <>
+          <Button variant="secondary" disabled={pending} autoFocus={typedConfirmation === undefined} onClick={() => onOpenChange?.(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant={tone === "danger" ? "danger" : "primary"}
+            disabled={!confirmed}
+            loading={pending}
+            onClick={confirm}
+          >
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      {typedConfirmation !== undefined && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={inputId}>
+            Type <code className="font-mono">{typedConfirmation}</code> to confirm
+          </Label>
+          <Input
+            id={inputId}
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            disabled={pending}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            className="font-mono"
+          />
+        </div>
+      )}
+      {error && (
+        <div role="alert" className="flex flex-col gap-0.5 text-sm">
+          <p className="text-status-failed">{error.message}</p>
+          {error.code && <code className="font-mono text-xs text-fg-muted">{error.code}</code>}
+        </div>
+      )}
+    </Dialog>
+  );
+}

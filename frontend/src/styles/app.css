@@ -44,6 +44,11 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
+  /* Overlays only: a subtle lift on top of the 1px border. Dialogs, sheets, menus, tooltips and toasts. */
+  --shadow-overlay: 0 4px 12px rgb(0 0 0 / 0.12);
+  --animate-overlay-fade: overlay-fade var(--duration-fast) ease-out;
+  --animate-dialog-in: dialog-in var(--duration-fast) ease-out;
+
   --text-xs: var(--text-xs);
   --text-xs--line-height: var(--text-xs--line-height);
   --text-sm: var(--text-sm);
@@ -55,6 +60,30 @@
   --text-2xl: var(--text-2xl);
   --text-2xl--line-height: var(--text-2xl--line-height);
 
+}
+
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+/* Sonner ships 400ms transitions. Hold toasts to the motion token, and drop them under reduced motion. */
+[data-sonner-toaster] [data-sonner-toast] {
+  transition-duration: var(--duration-fast);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toaster] [data-sonner-toast] {
+    transition: none;
+  }
 }
 
 @layer base {
