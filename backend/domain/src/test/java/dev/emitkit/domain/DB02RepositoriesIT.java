@@ -119,12 +119,27 @@ class DB02RepositoriesIT extends PostgresIT {
   }
 
   @Test
+  void languageSpecificColumns_roundTripAsNull() {
+    ProjectConfig c = config(1);
+    c.setNpmScope(null);
+    c.setPypiName(null);
+    c.setMavenGroupId(null);
+    configs.saveAndFlush(c);
+    em.clear();
+    assertThat(configs.findById(c.getId()))
+        .hasValueSatisfying(r -> {
+          assertThat(r.getNpmScope()).isNull();
+          assertThat(r.getPypiName()).isNull();
+          assertThat(r.getMavenGroupId()).isNull();
+        });
+  }
+
+  @Test
   void defaults_appliedByDatabaseAndByJavaConstructor() {
     String id = Ids.newUlid();
     jdbc.update(
-        "INSERT INTO project_configs (id, project_id, version, version_strategy, npm_scope,"
-            + " pypi_name, maven_group_id, created_by, created_at)"
-            + " VALUES (?, ?, 1, 'EMITKIT_MANAGED', '@acme', 'acme', 'dev.acme', ?, now())",
+        "INSERT INTO project_configs (id, project_id, version, version_strategy, created_by,"
+            + " created_at) VALUES (?, ?, 1, 'EMITKIT_MANAGED', ?, now())",
         id,
         project.getId(),
         user.getId());
@@ -159,13 +174,6 @@ class DB02RepositoriesIT extends PostgresIT {
 
   private ProjectConfig config(int version) {
     return new ProjectConfig(
-        null,
-        project.getId(),
-        version,
-        VersionStrategy.EMITKIT_MANAGED,
-        "@acme",
-        "acme",
-        "dev.acme",
-        user.getId());
+        null, project.getId(), version, VersionStrategy.EMITKIT_MANAGED, user.getId());
   }
 }

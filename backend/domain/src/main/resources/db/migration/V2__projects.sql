@@ -28,9 +28,9 @@ CREATE TABLE project_configs (
     outputs           jsonb        NOT NULL DEFAULT '[]'::jsonb,
     sdk_languages     jsonb        NOT NULL DEFAULT '[]'::jsonb,
     output_dir        varchar(255) NOT NULL DEFAULT '.emitkit/',
-    npm_scope         varchar(255) NOT NULL,
-    pypi_name         varchar(255) NOT NULL,
-    maven_group_id    varchar(255) NOT NULL,
+    npm_scope         varchar(255),
+    pypi_name         varchar(255),
+    maven_group_id    varchar(255),
     maven_artifact_id varchar(255),
     version_strategy  varchar(32)  NOT NULL CONSTRAINT project_configs_version_strategy_check
                           CHECK (version_strategy IN ('EMITKIT_MANAGED', 'SPEC_VERSION')),

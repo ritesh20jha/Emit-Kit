@@ -42,13 +42,13 @@ public class ProjectConfig extends BaseEntity {
   @Column(name = "output_dir", nullable = false, length = 255)
   private String outputDir = DEFAULT_OUTPUT_DIR;
 
-  @Column(name = "npm_scope", nullable = false, length = 255)
+  @Column(name = "npm_scope", length = 255)
   private String npmScope;
 
-  @Column(name = "pypi_name", nullable = false, length = 255)
+  @Column(name = "pypi_name", length = 255)
   private String pypiName;
 
-  @Column(name = "maven_group_id", nullable = false, length = 255)
+  @Column(name = "maven_group_id", length = 255)
   private String mavenGroupId;
 
   @Column(name = "maven_artifact_id", length = 255)
@@ -93,21 +93,11 @@ public class ProjectConfig extends BaseEntity {
    * @param createdBy the id of the user who saved this version
    */
   public ProjectConfig(
-      String id,
-      String projectId,
-      int version,
-      VersionStrategy versionStrategy,
-      String npmScope,
-      String pypiName,
-      String mavenGroupId,
-      String createdBy) {
+      String id, String projectId, int version, VersionStrategy versionStrategy, String createdBy) {
     super(id);
     this.projectId = projectId;
     this.version = version;
     this.versionStrategy = versionStrategy;
-    this.npmScope = npmScope;
-    this.pypiName = pypiName;
-    this.mavenGroupId = mavenGroupId;
     this.createdBy = createdBy;
   }
 
@@ -147,12 +137,24 @@ public class ProjectConfig extends BaseEntity {
     return npmScope;
   }
 
+  public void setNpmScope(String npmScope) {
+    this.npmScope = npmScope;
+  }
+
   public String getPypiName() {
     return pypiName;
   }
 
+  public void setPypiName(String pypiName) {
+    this.pypiName = pypiName;
+  }
+
   public String getMavenGroupId() {
     return mavenGroupId;
+  }
+
+  public void setMavenGroupId(String mavenGroupId) {
+    this.mavenGroupId = mavenGroupId;
   }
 
   public String getMavenArtifactId() {
