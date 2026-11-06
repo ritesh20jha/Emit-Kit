@@ -10,8 +10,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * Settings for the docs AI assistant, bound under {@code emitkit.ai}.
  *
  * <p>{@code emitkit.ai.gemini.default-model} is used when a project sets no model. The factory
- * fails if it is missing. {@code emitkit.ai.timeout} applies to each model call, and {@code
- * emitkit.ai.max-retries} counts the retries after a failed call.
+ * fails if it is missing. {@link ChatModelFactory#docsAssistant(String, String, String)} applies
+ * {@code emitkit.ai.timeout} to each model call and {@code emitkit.ai.max-retries} to the retries
+ * after a failed call. Nothing else reads these two settings.
  */
 @ConfigurationProperties("emitkit.ai")
 public record AiProperties(

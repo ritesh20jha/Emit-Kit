@@ -77,13 +77,14 @@ public final class GeminiDocsAiAssistant implements DocsAiAssistant {
         LOG.warn("Docs AI call interrupted for tag {}; using template examples", tag.name());
         return Map.of();
       } catch (Exception e) {
-        // Log the exception type only: messages can echo request URLs or key material.
+        // Log the cause's type only: messages can echo request URLs or key material, and the
+        // ExecutionException wrapper from the timeout path names nothing useful.
         LOG.warn(
             "Docs AI attempt {} of {} failed for tag {} ({})",
             attempt,
             attempts,
             tag.name(),
-            e.getClass().getSimpleName());
+            causeOf(e).getClass().getSimpleName());
       }
     }
     LOG.warn("Docs AI gave up for tag {}; using template examples", tag.name());
@@ -99,6 +100,10 @@ public final class GeminiDocsAiAssistant implements DocsAiAssistant {
       // Interrupts the model call if it is still running; a no-op once it has completed.
       future.cancel(true);
     }
+  }
+
+  private static Throwable causeOf(Exception e) {
+    return e instanceof ExecutionException && e.getCause() != null ? e.getCause() : e;
   }
 
   private List<OperationExamples> callModel(String prompt) {

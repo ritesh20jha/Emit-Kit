@@ -13,7 +13,6 @@ dependencies {
     compileOnly(libs.spring.boot.core)
     testImplementation(libs.spring.boot.core)
 
-    // Test-only SLF4J binding; the BOM manages the version. Avoids the NOP-logger warning.
-    testRuntimeOnly(platform(libs.spring.boot.bom))
+    // Test-only SLF4J binding. Avoids the NOP-logger warning.
     testRuntimeOnly(libs.logback.classic)
 }

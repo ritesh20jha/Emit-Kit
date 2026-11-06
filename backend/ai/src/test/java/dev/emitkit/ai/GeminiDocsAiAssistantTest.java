@@ -66,6 +66,7 @@ class GeminiDocsAiAssistantTest {
     var out = ai.examples(PETS, List.of(LIST_PETS, GET_PET));
 
     assertThat(out).isEmpty();
+    assertThat(fake.calls()).isEqualTo(2);
   }
 
   @Test
@@ -107,6 +108,29 @@ class GeminiDocsAiAssistantTest {
     var out = ai.examples(PETS, List.of(LIST_PETS, GET_PET));
 
     assertThat(out).containsOnlyKeys("listPets");
+  }
+
+  @Test
+  void prompt_omitsOperationSummariesAndDescriptions() {
+    String marker = "MARKER-7f3a9c";
+    var op =
+        new Operation(
+            "listPets",
+            false,
+            "GET",
+            "/pets",
+            "pets",
+            "summary " + marker,
+            "description " + marker,
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+
+    String prompt = DocsPrompt.render(PETS, List.of(op));
+
+    assertThat(prompt).contains("GET /pets").doesNotContain(marker);
   }
 
   private static Operation operation(String id, String method, String path, Parameter... params) {
