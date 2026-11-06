@@ -13,6 +13,7 @@ spring-vault = "4.1.1"
 swagger-parser = "2.1.48"
 jmustache = "1.16"
 java-diff-utils = "4.17"
+spring-ai = "2.0.2"
 
 [libraries]
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -59,3 +60,7 @@ spring-boot-starter-flyway = { module = "org.springframework.boot:spring-boot-st
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 postgresql = { module = "org.postgresql:postgresql" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+logback-classic = { module = "ch.qos.logback:logback-classic" }
+spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "spring-ai" }
+spring-ai-client-chat = { module = "org.springframework.ai:spring-ai-client-chat" }
+spring-ai-google-genai = { module = "org.springframework.ai:spring-ai-google-genai" }

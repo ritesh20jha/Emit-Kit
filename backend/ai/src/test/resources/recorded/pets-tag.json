@@ -1,0 +1,22 @@
+[
+  {
+    "operationId": "listPets",
+    "examples": {
+      "curl": "curl -s \"https://api.example.com/v1/pets?limit=10\" -H \"Authorization: Bearer YOUR_API_KEY\"",
+      "typescript": "const pets = await client.listPets({ limit: 10 });",
+      "python": "pets = client.list_pets(limit=10)",
+      "java": "var pets = client.listPets(10);",
+      "notes": "Returns one page of pets. Use limit to control the page size."
+    }
+  },
+  {
+    "operationId": "getPet",
+    "examples": {
+      "curl": "curl -s \"https://api.example.com/v1/pets/42\" -H \"Authorization: Bearer YOUR_API_KEY\"",
+      "typescript": "const pet = await client.getPet({ petId: 42 });",
+      "python": "pet = client.get_pet(pet_id=42)",
+      "java": "var pet = client.getPet(42);",
+      "notes": "Returns 404 when no pet has the given id."
+    }
+  }
+]

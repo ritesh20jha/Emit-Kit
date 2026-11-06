@@ -7,6 +7,9 @@ spring:
         acknowledge-mode: manual
         prefetch: 1
         concurrency: ${emitkit.worker.concurrency}
+  ai:
+    model:
+      chat: none
 emitkit:
   worker:
     concurrency: 4

@@ -11,6 +11,9 @@ spring:
     data:
       redis:
         namespace: emitkit
+  ai:
+    model:
+      chat: none
 management:
   server:
     port: 8081
