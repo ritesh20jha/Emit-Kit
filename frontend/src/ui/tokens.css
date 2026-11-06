@@ -25,6 +25,8 @@
   --color-status-failed: #b42318;
   --color-status-awaiting: #b45309;
   --color-status-neutral: #5f6672;
+  /* Backdrop behind modal overlays. Dark gets a near-black scrim: a light one would wash the page out. */
+  --color-scrim: rgb(21 24 29 / 0.4);
 }
 
 :root[data-theme="dark"] {
@@ -47,6 +49,7 @@
   --color-status-failed: #f87171;
   --color-status-awaiting: #fbbf24;
   --color-status-neutral: #8b94a3;
+  --color-scrim: rgb(0 0 0 / 0.6);
 }
 
 :root {
