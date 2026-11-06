@@ -15,6 +15,8 @@
   --color-fg-subtle: #5f6672;
   --color-border: #d9dde3;
   --color-border-strong: #b8bfc9;
+  /* Borders that carry state: input edges, checkbox and switch outlines. WCAG 1.4.11 needs 3:1 on bg and bg-muted. */
+  --color-border-control: #7c8490;
   --color-accent: #3451d1;
   --color-accent-fg: #ffffff;
   --color-focus: #3451d1;
@@ -36,6 +38,7 @@
   --color-fg-subtle: #8b94a3;
   --color-border: #2a313b;
   --color-border-strong: #3d4653;
+  --color-border-control: #6b7483;
   --color-accent: #8ea2ff;
   --color-accent-fg: #0d1014;
   --color-focus: #8ea2ff;

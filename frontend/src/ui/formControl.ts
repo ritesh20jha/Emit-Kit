@@ -15,7 +15,7 @@ export interface FormControlState {
 
 /** Surface shared by text-like controls (Input, Textarea, Select trigger). */
 export const FIELD_SURFACE =
-  "w-full min-w-0 rounded-control border border-border-strong bg-bg text-fg placeholder:text-fg-subtle transition-colors duration-(--duration-fast) disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-status-failed";
+  "w-full min-w-0 rounded-control border border-border-control bg-bg text-fg placeholder:text-fg-subtle transition-colors duration-(--duration-fast) disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-status-failed";
 
 export const FormControlContext = createContext<FormControlState | null>(null);
 

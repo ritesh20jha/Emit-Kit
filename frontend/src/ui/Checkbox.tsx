@@ -24,7 +24,7 @@ export function Checkbox({ className, ref, checked, onCheckedChange, onBlur, nam
       onBlur={chain(control?.onBlur, onBlur)}
       // No outline-none here: the global :focus-visible ring (app.css) is the keyboard focus indicator.
       className={cn(
-        "inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-border-strong bg-bg transition-colors duration-(--duration-fast) disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent aria-invalid:border-status-failed",
+        "inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-border-control bg-bg transition-colors duration-(--duration-fast) disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=indeterminate]:border-accent data-[state=indeterminate]:bg-accent aria-invalid:border-status-failed",
         className,
       )}
     >

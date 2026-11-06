@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactElement, type ReactNode, useEffect, useState } from "react";
-import { FormProvider, useForm } from "react-hook-form";
+import { FormProvider, type Resolver, type ResolverError, type ResolverSuccess, useForm } from "react-hook-form";
 import { Checkbox } from "./Checkbox";
 import { FormField } from "./FormField";
 import { Input } from "./Input";
@@ -80,6 +80,63 @@ test("Select shows the selected option and is labelled by the FormField", () => 
     { defaultValues: { region: "eu" } },
   );
   expect(screen.getByRole("combobox", { name: "Region" })).toHaveTextContent("Europe");
+});
+
+test("SecretField reports null, never an empty string, when the input is cleared", async () => {
+  const onChange = vi.fn();
+  render(<SecretField isSet label="AI key" onChange={onChange} />);
+  await userEvent.click(screen.getByRole("button", { name: "Replace" }));
+  await userEvent.type(screen.getByLabelText("AI key"), "sk-123");
+  await userEvent.clear(screen.getByLabelText("AI key"));
+  expect(onChange).toHaveBeenLastCalledWith(null);
+  expect(onChange).not.toHaveBeenCalledWith("");
+});
+
+test("SecretField asks browsers not to autofill a saved login, and consumers cannot override it", () => {
+  render(<SecretField isSet={false} label="AI key" autoComplete="current-password" />);
+  const input = screen.getByLabelText("AI key");
+  expect(input).toHaveAttribute("autocomplete", "new-password");
+  expect(input).toHaveAttribute("data-1p-ignore");
+  expect(input).toHaveAttribute("data-lpignore", "true");
+  expect(input).toHaveAttribute("data-bwignore", "true");
+});
+
+test("Cancel returns focus to Replace, so keyboard focus is not lost", async () => {
+  render(<SecretField isSet label="AI key" />);
+  await userEvent.click(screen.getByRole("button", { name: "Replace" }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Replace" })).toHaveFocus();
+});
+
+test("Replace describes itself with the field name and the Key set status", () => {
+  render(<SecretField isSet label="AI key" />);
+  const replace = screen.getByRole("button", { name: "Replace" });
+  expect(replace).toHaveAccessibleDescription("AI key Key set");
+});
+
+test("a failed submit focuses the invalid input", async () => {
+  const pass = (values: Record<string, unknown>): ResolverSuccess<Record<string, unknown>> => ({ values, errors: {} });
+  const fail = (): ResolverError<Record<string, unknown>> => ({
+    values: {},
+    errors: { pypiName: { type: "required", message: "Required" } },
+  });
+  const resolver: Resolver<Record<string, unknown>> = async (values) => (values.pypiName ? pass(values) : fail());
+  function Form() {
+    const methods = useForm<Record<string, unknown>>({ resolver, defaultValues: { pypiName: "" } });
+    return (
+      <FormProvider {...methods}>
+        <form onSubmit={methods.handleSubmit(() => {})}>
+          <FormField name="pypiName" label="PyPI name">
+            <Input />
+          </FormField>
+          <button type="submit">Save</button>
+        </form>
+      </FormProvider>
+    );
+  }
+  render(<Form />);
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(screen.getByLabelText("PyPI name")).toHaveFocus();
 });
 
 test("Checkbox and Switch keep the global focus ring", () => {
