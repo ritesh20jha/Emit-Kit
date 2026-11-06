@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "./Button";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Dialog } from "./Dialog";
@@ -36,22 +36,22 @@ function TrapHarness() {
   const [open, setOpen] = useState(false);
   return (
     <>
-    <Dialog
-      open={open}
-      onOpenChange={setOpen}
-      title="Edit project"
-      description="Changes apply to the next run."
-      trigger={<Button variant="secondary">Open dialog</Button>}
-      footer={
-        <>
-          <Button variant="secondary">First</Button>
-          <Button>Last</Button>
-        </>
-      }
-    >
-      <p>Body text</p>
-    </Dialog>
-    <Button variant="ghost">Page action</Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Edit project"
+        description="Changes apply to the next run."
+        trigger={<Button variant="secondary">Open dialog</Button>}
+        footer={
+          <>
+            <Button variant="secondary">First</Button>
+            <Button>Last</Button>
+          </>
+        }
+      >
+        <p>Body text</p>
+      </Dialog>
+      <Button variant="ghost">Page action</Button>
     </>
   );
 }
@@ -195,11 +195,7 @@ test("typed text resets when the ConfirmDialog is reopened", async () => {
 });
 
 test("toast.error shows the message and the code in mono", async () => {
-  render(
-    <ThemeProvider>
-      <Toaster />
-    </ThemeProvider>,
-  );
+  render(<ThemeProvider><Toaster /></ThemeProvider>);
   act(() => toast.error({ code: "SPEC_CONFLICT", message: "Someone else changed this file." }));
 
   expect(await screen.findByText("Someone else changed this file.")).toBeInTheDocument();
@@ -209,11 +205,7 @@ test("toast.error shows the message and the code in mono", async () => {
 });
 
 test("toast.success shows the message", async () => {
-  render(
-    <ThemeProvider>
-      <Toaster />
-    </ThemeProvider>,
-  );
+  render(<ThemeProvider><Toaster /></ThemeProvider>);
   act(() => toast.success("Synced"));
   expect(await screen.findByText("Synced")).toBeInTheDocument();
 });
@@ -267,12 +259,7 @@ test("Sheet renders on the requested side with its title", async () => {
 function UncontrolledDialog({ dismissible }: { dismissible?: boolean }) {
   return (
     <>
-      <Dialog
-        trigger={<Button variant="secondary">Open uncontrolled</Button>}
-        title="Keep open"
-        description="Stays until dismissed."
-        dismissible={dismissible}
-      >
+      <Dialog trigger={<Button variant="secondary">Open uncontrolled</Button>} title="Keep open" description="Stays until dismissed." dismissible={dismissible}>
         <p>Body text</p>
       </Dialog>
       <Button variant="ghost">Page behind</Button>
@@ -312,11 +299,7 @@ test("an uncontrolled dialog closes on Escape and on outside click by default", 
 });
 
 test("toast.error without a code shows the message and no code element", async () => {
-  render(
-    <ThemeProvider>
-      <Toaster />
-    </ThemeProvider>,
-  );
+  render(<ThemeProvider><Toaster /></ThemeProvider>);
   act(() => toast.error({ message: "Could not save the spec." }));
 
   expect(await screen.findByText("Could not save the spec.")).toBeInTheDocument();
@@ -337,4 +320,33 @@ test.each([
   expect(within(alert).getByText(shown)).toBeInTheDocument();
   expect(alert.querySelector("code")).toBeNull();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
+});
+
+function MenuOpensConfirm() {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <DropdownMenu trigger={<Button ref={triggerRef} variant="secondary">Actions</Button>}>
+        <DropdownMenuItem onSelect={() => setOpen(true)}>Delete project</DropdownMenuItem>
+      </DropdownMenu>
+      <ConfirmDialog open={open} onOpenChange={setOpen} title="Delete project" confirmLabel="Delete" onConfirm={vi.fn()} returnFocusRef={triggerRef} />
+    </>
+  );
+}
+
+test("closing a ConfirmDialog opened from a menu item returns focus to the menu trigger", async () => {
+  const user = userEvent.setup();
+  render(<MenuOpensConfirm />);
+  const trigger = screen.getByRole("button", { name: "Actions" });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const item = await screen.findByRole("menuitem", { name: "Delete project" });
+  await waitFor(() => expect(item).toHaveFocus());
+  await user.keyboard("{Enter}");
+  expect(await screen.findByRole("dialog", { name: "Delete project" })).toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await waitFor(() => expect(trigger).toHaveFocus());
 });

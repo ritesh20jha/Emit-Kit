@@ -1,13 +1,13 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { cn } from "@/lib/utils/cn";
 import { IconButton } from "./IconButton";
 
 const PANEL = "fixed z-50 flex flex-col gap-4 border-border-control bg-bg p-5 text-fg shadow-overlay";
 
 const CENTER =
-  "left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-card border motion-safe:animate-dialog-in";
+  "left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-card border motion-safe:animate-dialog-in";
 
 export interface DialogFrameProps {
   open?: boolean;
@@ -15,6 +15,12 @@ export interface DialogFrameProps {
   onOpenChange?: (open: boolean) => void;
   /** The opener. Focus returns to it when the dialog closes. */
   trigger?: ReactNode;
+  /**
+   * Takes focus when the dialog closes, in place of the opener. Set it when the dialog was opened from something
+   * that unmounts on select, such as a menu item: Radix would otherwise return focus to that removed node and
+   * focus would fall to <body>.
+   */
+  returnFocusRef?: RefObject<HTMLElement | null>;
   title: ReactNode;
   /** Under the title. Leave it out only when there is nothing to add: no description is wired then. */
   description?: ReactNode;
@@ -32,6 +38,7 @@ export function DialogFrame({
   defaultOpen,
   onOpenChange,
   trigger,
+  returnFocusRef,
   title,
   description,
   children,
@@ -49,12 +56,18 @@ export function DialogFrame({
     <DialogPrimitive.Root open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger && <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>}
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-fg/40 motion-safe:animate-overlay-fade" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-scrim motion-safe:animate-overlay-fade" />
         <DialogPrimitive.Content
           className={cn(PANEL, panelClassName)}
           onEscapeKeyDown={block}
           onPointerDownOutside={block}
           onInteractOutside={block}
+          onCloseAutoFocus={(event) => {
+            if (returnFocusRef?.current) {
+              event.preventDefault();
+              returnFocusRef.current.focus();
+            }
+          }}
           {...panelProps}
         >
           <div className="flex flex-col gap-1 pr-8">

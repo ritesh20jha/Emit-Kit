@@ -33,6 +33,7 @@
   --color-status-failed: var(--color-status-failed);
   --color-status-awaiting: var(--color-status-awaiting);
   --color-status-neutral: var(--color-status-neutral);
+  --color-scrim: var(--color-scrim);
 
   --spacing: var(--space-1);
 
@@ -75,15 +76,16 @@
   }
 }
 
-/* Sonner ships 400ms transitions. Hold toasts to the motion token, and drop them under reduced motion. */
+/* Sonner ships 400ms transitions. Hold toasts to the motion token. Under reduced motion the token is 0ms,
+   and sonner's own reduced-motion rule (transition: none !important) applies on top. */
 [data-sonner-toaster] [data-sonner-toast] {
   transition-duration: var(--duration-fast);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-sonner-toaster] [data-sonner-toast] {
-    transition: none;
-  }
+/* Sonner's unlayered `outline: 0` beats the :focus-visible ring in @layer base, so the toast ring is restated here, unlayered. */
+[data-sonner-toaster] [data-sonner-toast]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 @layer base {

@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, type RefObject, useId, useState } from "react";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { Input } from "./Input";
@@ -11,11 +11,15 @@ export interface ConfirmDialogProps {
   title: ReactNode;
   description?: ReactNode;
   confirmLabel: string;
+  /** Label of the dismiss button. Defaults to "Cancel". */
+  cancelLabel?: string;
   tone?: "default" | "danger";
   /** When set, confirm stays disabled until the user types this text exactly. */
   typedConfirmation?: string;
   /** Resolves on success, which closes the dialog. A rejection stays open and shows its message and code. */
   onConfirm: () => Promise<void>;
+  /** Element that takes focus on close. Pass it when the dialog was opened from a menu item (see DialogFrame). */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 interface ErrorView {
@@ -41,9 +45,11 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel = "Cancel",
   tone = "default",
   typedConfirmation,
   onConfirm,
+  returnFocusRef,
 }: ConfirmDialogProps) {
   const [typed, setTyped] = useState("");
   const [pending, setPending] = useState(false);
@@ -79,12 +85,13 @@ export function ConfirmDialog({
       open={open}
       onOpenChange={onOpenChange}
       dismissible={!pending}
+      returnFocusRef={returnFocusRef}
       title={title}
       description={description}
       footer={
         <>
-          <Button variant="secondary" disabled={pending} autoFocus={typedConfirmation === undefined} onClick={() => onOpenChange?.(false)}>
-            Cancel
+          <Button variant="secondary" disabled={pending} onClick={() => onOpenChange?.(false)}>
+            {cancelLabel}
           </Button>
           <Button
             variant={tone === "danger" ? "danger" : "primary"}
@@ -107,7 +114,6 @@ export function ConfirmDialog({
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
             disabled={pending}
-            autoFocus
             autoComplete="off"
             spellCheck={false}
             className="font-mono"
