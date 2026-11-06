@@ -11,26 +11,12 @@ import dev.emitkit.spec.model.OneOfSchema;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.RefSchema;
 import dev.emitkit.spec.model.Schema;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SchemaMapperTest {
-
-  private static String fixture(String name) {
-    try (var in = SchemaMapperTest.class.getResourceAsStream("/specs/" + name)) {
-      if (in == null) {
-        throw new IllegalArgumentException("missing fixture " + name);
-      }
-      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-  }
 
   private static final SpecParser PARSER = new SpecParser();
 
@@ -39,7 +25,7 @@ class SchemaMapperTest {
   }
 
   private static Schema map(String file, String name) {
-    var r = PARSER.parse(fixture(file));
+    var r = PARSER.parse(Fixtures.read(file));
     assertThat(r.ok()).as("errors: %s", r.errors()).isTrue();
     return r.model().schemas().get(name);
   }
@@ -85,6 +71,21 @@ class SchemaMapperTest {
   @Test
   void allOfParts() {
     assertThat(((AllOfSchema) map("Dog")).parts()).hasSize(2);
+  }
+
+  @Test
+  void allOfSiblingsBecomeTrailingObjectPart() {
+    var s = (AllOfSchema) map("Extended");
+    assertThat(s.parts()).hasSize(2);
+    assertThat(s.parts().get(0)).isEqualTo(new RefSchema("Pet", false, null));
+    assertThat(s.parts().get(1))
+        .isEqualTo(
+            new ObjectSchema(
+                Map.of("extra", new PrimitiveSchema(STRING, null, false, null)),
+                Set.of("extra"),
+                null,
+                false,
+                null));
   }
 
   @Test

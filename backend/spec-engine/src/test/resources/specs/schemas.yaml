@@ -60,3 +60,9 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Node'}
     Anything: {}
+    Extended:
+      allOf:
+        - $ref: '#/components/schemas/Pet'
+      properties:
+        extra: {type: string}
+      required: [extra]

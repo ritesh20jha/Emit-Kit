@@ -55,6 +55,10 @@ final class SchemaMapper {
       for (var part : schema.getAllOf()) {
         parts.add(map(part));
       }
+      if (hasObjectKeywords(schema)) {
+        // Keywords written beside allOf describe the object as a whole: they become a last part.
+        parts.add(object(schema, false, null));
+      }
       return new AllOfSchema(parts, nullable, description);
     }
     String type = concreteType(schema);
@@ -176,5 +180,12 @@ final class SchemaMapper {
 
   private static boolean nonEmpty(@Nullable List<?> list) {
     return list != null && !list.isEmpty();
+  }
+
+  /** Object keywords that sit beside an allOf, rather than inside one of its parts. */
+  private static boolean hasObjectKeywords(io.swagger.v3.oas.models.media.Schema<?> schema) {
+    return (schema.getProperties() != null && !schema.getProperties().isEmpty())
+        || nonEmpty(schema.getRequired())
+        || schema.getAdditionalProperties() instanceof io.swagger.v3.oas.models.media.Schema<?>;
   }
 }
