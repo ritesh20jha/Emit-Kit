@@ -69,7 +69,7 @@ class WorkflowsGeneratorTest {
 
   @Test
   void titleWithYamlSpecialCharsKeepsWorkflowValid() {
-    String title = "Pets: \"v2\" # draft \\ beta";
+    String title = "Pets: \"v2\" # draft \\ beta\nsecond line";
     List<GeneratedFile> files = gen(title, ".emitkit/", List.of("typescript", "python", "java"));
     assertThat(files).hasSize(3);
     for (GeneratedFile f : files) {
@@ -106,6 +106,21 @@ class WorkflowsGeneratorTest {
     assertThat(setupGradle).hasSize(1);
     assertThat((Map<String, Object>) setupGradle.get(0).get("with"))
         .containsEntry("gradle-version", "8.14.3");
+  }
+
+  @Test
+  void checkoutDoesNotPersistCredentials() {
+    List<GeneratedFile> files = gen("Pets", ".emitkit/", List.of("typescript", "python", "java"));
+    assertThat(files).hasSize(3);
+    for (GeneratedFile f : files) {
+      List<Map<String, Object>> checkout =
+          steps(parse(f)).stream()
+              .filter(step -> String.valueOf(step.get("uses")).startsWith("actions/checkout@"))
+              .toList();
+      assertThat(checkout).hasSize(1);
+      assertThat((Map<String, Object>) checkout.get(0).get("with"))
+          .containsEntry("persist-credentials", false);
+    }
   }
 
   @Test

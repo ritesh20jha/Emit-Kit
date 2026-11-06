@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -23,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: <% workDir %>
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build
         working-directory: <% workDir %>
