@@ -50,6 +50,7 @@ spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-te
 springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
 spring-vault-core = { module = "org.springframework.vault:spring-vault-core", version.ref = "spring-vault" }
 swagger-parser = { module = "io.swagger.parser.v3:swagger-parser", version.ref = "swagger-parser" }
+snakeyaml = { module = "org.yaml:snakeyaml" }
 jmustache = { module = "com.samskivert:jmustache", version.ref = "jmustache" }
 java-diff-utils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "java-diff-utils" }
 # Spring Vault needs Jackson on the classpath for its JSON bodies (optional there). Boot 4 manages Jackson 3.

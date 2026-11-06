@@ -1,0 +1,7 @@
+openapi: 3.0.3
+info: {title: Pets, version: "1", description: Pet API, contact: {email: a@example.com}}
+servers: [{url: "https://api.example.com"}]
+paths:
+  /pets/{id}:
+    get: {operationId: getPet, description: Get a pet, parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Pet"}}}}}}
+components: {schemas: {Pet: {type: object}}}
