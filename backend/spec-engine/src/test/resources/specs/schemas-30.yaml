@@ -1,0 +1,8 @@
+openapi: 3.0.3
+info: {title: Schemas30, version: "1"}
+paths: {}
+components:
+  schemas:
+    Nullable30:
+      type: string
+      nullable: true

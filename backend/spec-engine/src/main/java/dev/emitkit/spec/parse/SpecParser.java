@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Info;
+import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.model.Tag;
@@ -132,7 +133,18 @@ public final class SpecParser {
         securitySchemes(api),
         tags(api),
         OperationMapper.map(api),
-        Map.of());
+        schemas(api));
+  }
+
+  /** Named component schemas, in document order. */
+  private static Map<String, Schema> schemas(OpenAPI api) {
+    var out = new LinkedHashMap<String, Schema>();
+    if (api.getComponents() != null && api.getComponents().getSchemas() != null) {
+      api.getComponents()
+          .getSchemas()
+          .forEach((name, schema) -> out.put(name, SchemaMapper.map(schema)));
+    }
+    return out;
   }
 
   private static List<Server> servers(OpenAPI api) {
