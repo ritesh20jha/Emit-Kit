@@ -22,6 +22,12 @@
             "type": "array"
           }
         },
+        "required": [
+          "avatarUrl",
+          "id",
+          "login",
+          "orgs"
+        ],
         "type": "object"
       },
       "MemberResponse": {
@@ -54,6 +60,13 @@
             "type": "string"
           }
         },
+        "required": [
+          "avatarUrl",
+          "login",
+          "role",
+          "roleSource",
+          "userId"
+        ],
         "type": "object"
       },
       "OrgDetail": {
@@ -86,6 +99,14 @@
             "type": "string"
           }
         },
+        "required": [
+          "id",
+          "isPersonal",
+          "memberCount",
+          "name",
+          "role",
+          "slug"
+        ],
         "type": "object"
       },
       "OrgMembership": {
@@ -111,6 +132,13 @@
             "type": "string"
           }
         },
+        "required": [
+          "isPersonal",
+          "name",
+          "orgId",
+          "role",
+          "slug"
+        ],
         "type": "object"
       },
       "OrgSummary": {
@@ -140,6 +168,14 @@
             "type": "string"
           }
         },
+        "required": [
+          "id",
+          "isPersonal",
+          "memberCount",
+          "name",
+          "role",
+          "slug"
+        ],
         "type": "object"
       },
       "QuotaResponse": {
@@ -157,6 +193,11 @@
             "type": "string"
           }
         },
+        "required": [
+          "limit",
+          "remaining",
+          "resetAt"
+        ],
         "type": "object"
       },
       "UpdateRoleRequest": {

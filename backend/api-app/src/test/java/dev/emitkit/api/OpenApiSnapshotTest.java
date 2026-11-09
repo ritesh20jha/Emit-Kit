@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,6 +18,7 @@ import tools.jackson.core.util.DefaultIndenter;
 import tools.jackson.core.util.DefaultPrettyPrinter;
 import tools.jackson.core.util.Separators;
 import tools.jackson.core.util.Separators.Spacing;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -52,19 +55,32 @@ class OpenApiSnapshotTest {
 
   @Test
   void apiDocsMatchCommittedFile() throws Exception {
-    String served =
-        mvc.perform(get("/v3/api-docs"))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    String normalized = normalize(served);
+    String normalized = normalize(servedDocument());
 
     if (Boolean.getBoolean("openapi.update")) {
       Files.writeString(COMMITTED, normalized);
       return;
     }
     assertThat(normalized).isEqualTo(Files.readString(COMMITTED));
+  }
+
+  /** Response fields are required in the contract, so generated types have no optional fields. */
+  @Test
+  void meResponseRequiresEveryFieldButNullableName() throws Exception {
+    JsonNode required =
+        MAPPER.readTree(servedDocument()).at("/components/schemas/MeResponse/required");
+    Set<String> names = new HashSet<>();
+    required.forEach(name -> names.add(name.asString()));
+
+    assertThat(names).contains("id", "login", "avatarUrl", "orgs").doesNotContain("name");
+  }
+
+  private String servedDocument() throws Exception {
+    return mvc.perform(get("/v3/api-docs"))
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
   }
 
   /** Sorted keys at every depth, two-space indent, trailing newline: one canonical text. */

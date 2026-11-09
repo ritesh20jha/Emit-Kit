@@ -128,58 +128,58 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         MeResponse: {
-            avatarUrl?: string;
-            id?: string;
-            login?: string;
+            avatarUrl: string;
+            id: string;
+            login: string;
             name?: string;
-            orgs?: components["schemas"]["OrgMembership"][];
+            orgs: components["schemas"]["OrgMembership"][];
         };
         MemberResponse: {
-            avatarUrl?: string;
-            login?: string;
+            avatarUrl: string;
+            login: string;
             name?: string;
             /** @enum {string} */
-            role?: "ADMIN" | "EDITOR" | "VIEWER";
+            role: "ADMIN" | "EDITOR" | "VIEWER";
             /** @enum {string} */
-            roleSource?: "SYNC" | "MANUAL";
-            userId?: string;
+            roleSource: "SYNC" | "MANUAL";
+            userId: string;
         };
         OrgDetail: {
-            id?: string;
-            isPersonal?: boolean;
+            id: string;
+            isPersonal: boolean;
             /** Format: int32 */
-            memberCount?: number;
-            name?: string;
+            memberCount: number;
+            name: string;
             /** @enum {string} */
-            role?: "ADMIN" | "EDITOR" | "VIEWER";
-            slug?: string;
+            role: "ADMIN" | "EDITOR" | "VIEWER";
+            slug: string;
             vcsOrgId?: string;
         };
         OrgMembership: {
-            isPersonal?: boolean;
-            name?: string;
-            orgId?: string;
+            isPersonal: boolean;
+            name: string;
+            orgId: string;
             /** @enum {string} */
-            role?: "ADMIN" | "EDITOR" | "VIEWER";
-            slug?: string;
+            role: "ADMIN" | "EDITOR" | "VIEWER";
+            slug: string;
         };
         OrgSummary: {
-            id?: string;
-            isPersonal?: boolean;
+            id: string;
+            isPersonal: boolean;
             /** Format: int32 */
-            memberCount?: number;
-            name?: string;
+            memberCount: number;
+            name: string;
             /** @enum {string} */
-            role?: "ADMIN" | "EDITOR" | "VIEWER";
-            slug?: string;
+            role: "ADMIN" | "EDITOR" | "VIEWER";
+            slug: string;
         };
         QuotaResponse: {
             /** Format: int32 */
-            limit?: number;
+            limit: number;
             /** Format: int32 */
-            remaining?: number;
+            remaining: number;
             /** Format: date-time */
-            resetAt?: string;
+            resetAt: string;
         };
         UpdateRoleRequest: {
             /** @enum {string} */

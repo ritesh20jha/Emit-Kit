@@ -1,7 +1,15 @@
 package dev.emitkit.api.org;
 
+import static io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED;
+
 import dev.emitkit.domain.Role;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /** An organization in the signed-in user's list, with their role and the member count. */
 public record OrgSummary(
-    String id, String slug, String name, boolean isPersonal, Role role, int memberCount) {}
+    @Schema(requiredMode = REQUIRED) String id,
+    @Schema(requiredMode = REQUIRED) String slug,
+    @Schema(requiredMode = REQUIRED) String name,
+    @Schema(requiredMode = REQUIRED) boolean isPersonal,
+    @Schema(requiredMode = REQUIRED) Role role,
+    @Schema(requiredMode = REQUIRED) int memberCount) {}
