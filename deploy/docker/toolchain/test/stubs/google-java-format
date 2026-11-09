@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stub google-java-format: appends a marker to each .java argument, then exits STUB_GJF_EXIT.
+for f in "$@"; do
+  case $f in
+    *.java) printf '\n// formatted-by-stub\n' >> "$f" ;;
+  esac
+done
+exit "${STUB_GJF_EXIT:-0}"

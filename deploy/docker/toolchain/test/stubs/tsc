@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stub tsc: prints STUB_TSC_OUTPUT (printf %b escapes) and STUB_TSC_BYTES 'x' characters, then exits STUB_TSC_EXIT.
+printf '%b' "${STUB_TSC_OUTPUT:-}"
+if [ -n "${STUB_TSC_BYTES:-}" ]; then
+  head -c "$STUB_TSC_BYTES" /dev/zero | tr '\0' x
+fi
+exit "${STUB_TSC_EXIT:-0}"
