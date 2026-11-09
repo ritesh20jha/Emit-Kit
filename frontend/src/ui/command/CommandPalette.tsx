@@ -1,5 +1,5 @@
-import { Command as Cmdk } from "cmdk";
-import { useLayoutEffect, useRef, useState } from "react";
+import { Command as Cmdk, defaultFilter } from "cmdk";
+import { type ComponentProps, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { DialogFrame } from "../Dialog";
 import { FIELD_SURFACE } from "../formControl";
@@ -10,6 +10,12 @@ import { useShortcut } from "./ShortcutsProvider";
 // Width is 100% minus 2rem, so the palette fits a 360px phone with a 16px gutter on each side.
 const PANEL =
   "left-1/2 top-[max(1rem,12dvh)] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden rounded-card border p-0 motion-safe:animate-dialog-in";
+
+// cmdk also scores the item's value, which is the command id. Ids are keys, not text the user can see, so the query
+// is scored against the label and keywords only. The best single word wins, which keeps a query from matching
+// letters spread across two different words.
+const filterByLabel: NonNullable<ComponentProps<typeof Cmdk>["filter"]> = (_value, search, keywords = []) =>
+  Math.max(0, ...keywords.map((word) => defaultFilter(word, search)));
 
 const GROUP_HEADING =
   "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-fg-muted";
@@ -56,7 +62,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
       title={<span className="sr-only">Command palette</span>}
       panelClassName={PANEL}
     >
-      <Cmdk label="Search commands" loop vimBindings={false}>
+      <Cmdk label="Search commands" loop vimBindings={false} filter={filterByLabel}>
         <div className="border-b border-border p-2">
           <Cmdk.Input
             placeholder="Search projects, runs and actions"

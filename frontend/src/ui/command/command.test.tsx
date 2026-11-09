@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useRef } from "react";
 import type { MockInstance } from "vitest";
 import { Button } from "../Button";
 import { type Command, CommandPalette, CommandRegistryProvider, ShortcutsHelp, ShortcutsProvider, useCommands, useShortcut } from "./index";
@@ -162,6 +163,26 @@ test("mod+k toggles the palette closed when it is already open", async () => {
   await waitFor(() => expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument());
 });
 
+function FocusSearchHarness() {
+  const searchRef = useRef<HTMLInputElement>(null);
+  useShortcut("/", () => searchRef.current?.focus());
+  return <input ref={searchRef} aria-label="Search" />;
+}
+
+test("/ moves focus to the search field without typing the slash into it", async () => {
+  const user = userEvent.setup();
+  render(
+    <ShortcutsProvider>
+      <FocusSearchHarness />
+    </ShortcutsProvider>,
+  );
+  await user.keyboard("/");
+
+  const search = screen.getByRole("textbox", { name: "Search" });
+  expect(search).toHaveFocus();
+  expect(search).toHaveValue("");
+});
+
 test("Escape closes the palette and focus returns to the element that had it", async () => {
   const user = userEvent.setup();
   render(<Harness commands={[{ id: "a", group: "Go", label: "Projects", run: vi.fn() }]} />);
@@ -202,6 +223,21 @@ test("keywords match the query as well as the label", async () => {
   await user.type(screen.getByRole("combobox"), "team");
 
   expect(screen.getAllByRole("option")).toEqual([screen.getByRole("option", { name: "Invite people" })]);
+});
+
+test("the query matches labels and keywords, not command ids", async () => {
+  const user = userEvent.setup();
+  render(<Harness commands={[{ id: "nav-projects", group: "Go", label: "Open dashboard", run: vi.fn() }]} />);
+  await user.keyboard("{Control>}k{/Control}");
+  const search = await screen.findByRole("combobox");
+
+  await user.type(search, "nav");
+  expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  expect(screen.getByText("No results")).toBeInTheDocument();
+
+  await user.clear(search);
+  await user.type(search, "dash");
+  expect(screen.getByRole("option", { name: "Open dashboard" })).toBeInTheDocument();
 });
 
 test("the palette is a named dialog with a labelled combobox and a listbox", async () => {

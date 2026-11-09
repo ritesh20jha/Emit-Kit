@@ -130,11 +130,10 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 
       if (fired.length > 0) {
         resetSequence();
-        for (const binding of fired) {
-          // Every mod shortcut takes over the browser's own, such as Ctrl+S saving the page.
-          if (binding.steps.some((step) => step.mod)) event.preventDefault();
-          binding.run();
-        }
+        // Stops the key's default action, such as typing "/" into a field that the handler has just focused.
+        // The browser's own mod shortcuts, such as Ctrl+S saving the page, are stopped the same way.
+        event.preventDefault();
+        for (const binding of fired) binding.run();
         return;
       }
 
