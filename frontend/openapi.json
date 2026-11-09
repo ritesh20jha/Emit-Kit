@@ -1,0 +1,439 @@
+{
+  "components": {
+    "schemas": {
+      "MeResponse": {
+        "properties": {
+          "avatarUrl": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orgs": {
+            "items": {
+              "$ref": "#/components/schemas/OrgMembership"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "avatarUrl",
+          "id",
+          "login",
+          "name",
+          "orgs"
+        ],
+        "type": "object"
+      },
+      "MemberResponse": {
+        "properties": {
+          "avatarUrl": {
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "roleSource": {
+            "$ref": "#/components/schemas/RoleSource"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "avatarUrl",
+          "login",
+          "name",
+          "role",
+          "roleSource",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "OrgDetail": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isPersonal": {
+            "type": "boolean"
+          },
+          "memberCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "vcsOrgId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "isPersonal",
+          "memberCount",
+          "name",
+          "role",
+          "slug",
+          "vcsOrgId"
+        ],
+        "type": "object"
+      },
+      "OrgMembership": {
+        "properties": {
+          "isPersonal": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "isPersonal",
+          "name",
+          "orgId",
+          "role",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "OrgSummary": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isPersonal": {
+            "type": "boolean"
+          },
+          "memberCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "isPersonal",
+          "memberCount",
+          "name",
+          "role",
+          "slug"
+        ],
+        "type": "object"
+      },
+      "QuotaResponse": {
+        "properties": {
+          "limit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "remaining": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "resetAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "limit",
+          "remaining",
+          "resetAt"
+        ],
+        "type": "object"
+      },
+      "Role": {
+        "enum": [
+          "ADMIN",
+          "EDITOR",
+          "VIEWER"
+        ],
+        "type": "string"
+      },
+      "RoleSource": {
+        "enum": [
+          "SYNC",
+          "MANUAL"
+        ],
+        "type": "string"
+      },
+      "UpdateRoleRequest": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "EmitKit API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/me": {
+      "get": {
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get the signed-in user and their organizations",
+        "tags": [
+          "Me"
+        ]
+      }
+    },
+    "/me/sync-orgs": {
+      "post": {
+        "operationId": "syncOrgs",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "Re-sync the signed-in user's organizations from the VCS provider",
+        "tags": [
+          "Me"
+        ]
+      }
+    },
+    "/me/vcs-quota": {
+      "get": {
+        "operationId": "vcsQuota",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get the signed-in user's remaining VCS API quota",
+        "tags": [
+          "Me"
+        ]
+      }
+    },
+    "/orgs": {
+      "get": {
+        "operationId": "listOrgs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the organizations the signed-in user belongs to",
+        "tags": [
+          "Orgs"
+        ]
+      }
+    },
+    "/orgs/{orgId}": {
+      "get": {
+        "operationId": "getOrg",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get one organization",
+        "tags": [
+          "Orgs"
+        ]
+      }
+    },
+    "/orgs/{orgId}/members": {
+      "get": {
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the members of an organization",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/orgs/{orgId}/members/{userId}": {
+      "patch": {
+        "operationId": "updateMemberRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Change a member's role",
+        "tags": [
+          "Members"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "description": "The signed-in user, their organizations and VCS quota.",
+      "name": "Me"
+    },
+    {
+      "description": "Members of an organization and their roles.",
+      "name": "Members"
+    },
+    {
+      "description": "Organizations the signed-in user belongs to.",
+      "name": "Orgs"
+    }
+  ]
+}

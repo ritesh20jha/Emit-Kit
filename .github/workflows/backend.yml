@@ -4,11 +4,21 @@ on:
   pull_request:
     paths:
       - 'backend/**'
+      - 'scripts/export-openapi.sh'
+      - 'frontend/openapi.json'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/src/lib/api/generated/**'
       - '.github/workflows/backend.yml'
   push:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'scripts/export-openapi.sh'
+      - 'frontend/openapi.json'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/src/lib/api/generated/**'
       - '.github/workflows/backend.yml'
 
 permissions:
@@ -35,3 +45,38 @@ jobs:
       - name: Build
         working-directory: backend
         run: ./gradlew build
+
+      # Runs after ./gradlew build. The build's snapshot test already fails on a stale openapi.json, so
+      # this step adds the generated client and reports any drift as a readable failure.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Export OpenAPI
+        run: scripts/export-openapi.sh
+
+      - name: Generate API client
+        working-directory: frontend
+        run: pnpm gen:api
+
+      # `git status --porcelain` also reports new, untracked files that `git diff` would miss.
+      - name: Check committed contract is current
+        run: |
+          changes="$(git status --porcelain -- frontend/openapi.json frontend/src/lib/api/generated)"
+          if [ -n "$changes" ]; then
+            echo "::error::frontend/openapi.json or the generated API client is out of date."
+            echo "Run scripts/export-openapi.sh and (cd frontend && pnpm gen:api), then commit the result."
+            echo "$changes"
+            git --no-pager diff -- frontend/openapi.json frontend/src/lib/api/generated
+            exit 1
+          fi

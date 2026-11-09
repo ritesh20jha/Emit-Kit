@@ -23,5 +23,10 @@ dependencies {
     testImplementation(libs.testcontainers.postgresql)
 }
 
+// -Dopenapi.update=true (scripts/export-openapi.sh) makes OpenApiSnapshotTest rewrite the committed spec.
+tasks.withType<Test>().configureEach {
+    providers.systemProperty("openapi.update").orNull?.let { systemProperty("openapi.update", it) }
+}
+
 // The convention plugin disables bootJar until a main class exists; api-app has one now.
 tasks.named("bootJar") { enabled = true }

@@ -1,7 +1,12 @@
 package dev.emitkit.api.config;
 
+import io.swagger.v3.core.jackson.ModelResolver;
 import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.Paths;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.servers.Server;
+import java.util.List;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -9,9 +14,39 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class OpenApiConfig {
 
+  /**
+   * The prefix the controllers map. The document leaves it out, see {@link #apiBaseCustomizer()}.
+   */
+  static final String API_BASE = "/api/v1";
+
+  static {
+    // swagger-core reads this flag while it resolves models, so set it before the first document is
+    // built: enums such as Role become named component schemas instead of inline string unions.
+    ModelResolver.enumsAsRef = true;
+  }
+
   /** The API description; paths are added by springdoc from the controllers. */
   @Bean
   public OpenAPI emitkitOpenApi() {
     return new OpenAPI().info(new Info().title("EmitKit API").version("v1"));
+  }
+
+  /**
+   * Makes paths relative to {@code /api/v1} and names that as the only server, so the generated
+   * client is built with {@code baseUrl: "/api/v1"} and calls {@code GET("/me")}. Controllers keep
+   * their full mappings.
+   */
+  @Bean
+  public OpenApiCustomizer apiBaseCustomizer() {
+    return openApi -> {
+      Paths relative = new Paths();
+      openApi
+          .getPaths()
+          .forEach((path, item) ->
+              relative.addPathItem(
+                  path.startsWith(API_BASE) ? path.substring(API_BASE.length()) : path, item));
+      openApi.setPaths(relative);
+      openApi.setServers(List.of(new Server().url(API_BASE)));
+    };
   }
 }

@@ -2,6 +2,7 @@ package dev.emitkit.api;
 
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -16,8 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Test-only endpoints. The error endpoints throw what ProblemDetailsAdvice must map; the /api/v1
- * and /webhooks endpoints let SecurityConfigTest exercise the filter chains.
+ * and /webhooks endpoints let SecurityConfigTest exercise the filter chains. @Hidden keeps them out
+ * of the OpenAPI document, which must describe the production contract only.
  */
+@Hidden
 @RestController
 class TestController {
 
