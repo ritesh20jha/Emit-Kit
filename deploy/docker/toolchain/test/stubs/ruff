@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stub ruff: `format` appends a marker to every .py file under the cwd; `check` only exits.
+# Like real ruff, writes .ruff_cache unless RUFF_NO_CACHE=true.
+[ "${RUFF_NO_CACHE:-}" = true ] || { mkdir -p .ruff_cache && : > .ruff_cache/CACHEDIR.TAG; }
+if [ "$1" = format ]; then
+  find . -type f -name '*.py' -exec sh -c 'printf "\n# formatted-by-stub\n" >> "$1"' sh {} \;
+fi
+exit "${STUB_RUFF_EXIT:-0}"
