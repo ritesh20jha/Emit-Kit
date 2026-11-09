@@ -21,6 +21,11 @@ export interface DialogFrameProps {
    * focus would fall to <body>.
    */
   returnFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Runs when the dialog closes, before focus is returned. Calling preventDefault on the event stops both the
+   * returnFocusRef focus and Radix's own restore, so the callback can move focus itself.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   title: ReactNode;
   /** Under the title. Leave it out only when there is nothing to add: no description is wired then. */
   description?: ReactNode;
@@ -39,6 +44,7 @@ export function DialogFrame({
   onOpenChange,
   trigger,
   returnFocusRef,
+  onCloseAutoFocus,
   title,
   description,
   children,
@@ -63,6 +69,8 @@ export function DialogFrame({
           onPointerDownOutside={block}
           onInteractOutside={block}
           onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (event.defaultPrevented) return;
             if (returnFocusRef?.current) {
               event.preventDefault();
               returnFocusRef.current.focus();
