@@ -4,11 +4,21 @@ on:
   pull_request:
     paths:
       - 'backend/**'
+      - 'scripts/export-openapi.sh'
+      - 'frontend/openapi.json'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/src/lib/api/generated/**'
       - '.github/workflows/backend.yml'
   push:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'scripts/export-openapi.sh'
+      - 'frontend/openapi.json'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - 'frontend/src/lib/api/generated/**'
       - '.github/workflows/backend.yml'
 
 permissions:
@@ -35,3 +45,28 @@ jobs:
       - name: Build
         working-directory: backend
         run: ./gradlew build
+
+      # Regenerate the OpenAPI document and API client; any difference from the committed files fails.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Export OpenAPI
+        run: scripts/export-openapi.sh
+
+      - name: Generate API client
+        working-directory: frontend
+        run: pnpm gen:api
+
+      - name: Check committed contract is current
+        run: git diff --exit-code frontend/openapi.json frontend/src/lib/api/generated
