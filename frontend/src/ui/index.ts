@@ -27,3 +27,4 @@ export { type FeedbackError, toast } from "./toast";
 export { Tooltip, type TooltipProps } from "./Tooltip";
 export { type ResolvedTheme, ThemeProvider, type ThemeMode } from "./theme/ThemeProvider";
 export { useTheme } from "./theme/useTheme";
+export * from "./command";
