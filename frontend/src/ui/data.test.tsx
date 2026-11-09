@@ -130,9 +130,26 @@ test("RouteTabs arrow keys and Home/End move focus between tabs", async () => {
 test("RouteTabs keeps all seven tabs in a nav that scrolls sideways instead of overflowing", async () => {
   await renderAt("/projects/p1", <RouteTabs tabs={SEVEN_TABS} />);
   const nav = screen.getByRole("navigation", { name: "Sections" });
-  expect(nav).toHaveClass("overflow-x-auto");
+  expect(nav).toHaveClass("overflow-x-auto", "-m-1", "p-1", "scroll-px-1");
   expect(nav.querySelector("ul")).toHaveClass("w-max", "min-w-full");
   expect(within(nav).getAllByRole("link")).toHaveLength(7);
+});
+
+test("RouteTabs scrolls each focused tab into view, so its focus ring is not cut off at the nav edge", async () => {
+  const user = userEvent.setup();
+  // jsdom has no scrollIntoView. Stub it on the prototype for this test only.
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+  try {
+    await renderAt("/projects/p1", <RouteTabs tabs={SEVEN_TABS} />);
+    const links = screen.getAllByRole("link");
+    for (let i = 0; i < links.length; i++) await user.tab();
+    expect(links.at(-1)).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest", inline: "nearest" });
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(links.at(-1));
+  } finally {
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+  }
 });
 
 test("ErrorState shows the message and code, and Retry calls onRetry", async () => {

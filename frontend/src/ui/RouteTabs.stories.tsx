@@ -21,6 +21,13 @@ export const Default: Story = {};
 
 // Seven tabs overflow a 360px viewport: the nav scrolls sideways and keeps every link reachable.
 export const ManyTabs: Story = {
+  decorators: [
+    (Story) => (
+      <div className="w-[360px]">
+        <Story />
+      </div>
+    ),
+  ],
   args: {
     tabs: [
       { to: "/projects/p1", label: "Overview" },
