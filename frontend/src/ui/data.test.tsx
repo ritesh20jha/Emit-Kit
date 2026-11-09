@@ -58,7 +58,8 @@ afterEach(() => {
 async function renderAt(path: string, ui: ReactNode) {
   const root = createRootRoute();
   const page = () => <>{ui}</>;
-  const routes = ["/projects/p1", "/projects/p1/runs", "/projects/p1/settings"].map((to) =>
+  const paths = ["/projects/p1", "/projects/p1/runs", "/projects/p1/settings", "/projects/p1/secrets", "/projects/p1/members", "/projects/p1/webhooks", "/projects/p1/audit"];
+  const routes = paths.map((to) =>
     createRoute({ getParentRoute: () => root, path: to, component: page }),
   );
   const router = createRouter({
@@ -74,6 +75,14 @@ const TABS = [
   { to: "/projects/p1", label: "Overview" },
   { to: "/projects/p1/runs", label: "Runs" },
   { to: "/projects/p1/settings", label: "Settings" },
+];
+
+const SEVEN_TABS = [
+  ...TABS,
+  { to: "/projects/p1/secrets", label: "Secrets" },
+  { to: "/projects/p1/members", label: "Members" },
+  { to: "/projects/p1/webhooks", label: "Webhooks" },
+  { to: "/projects/p1/audit", label: "Audit log" },
 ];
 
 const RUNS = [
@@ -116,6 +125,14 @@ test("RouteTabs arrow keys and Home/End move focus between tabs", async () => {
   expect(overview).toHaveFocus();
   await user.keyboard("{End}");
   expect(settings).toHaveFocus();
+});
+
+test("RouteTabs keeps all seven tabs in a nav that scrolls sideways instead of overflowing", async () => {
+  await renderAt("/projects/p1", <RouteTabs tabs={SEVEN_TABS} />);
+  const nav = screen.getByRole("navigation", { name: "Sections" });
+  expect(nav).toHaveClass("overflow-x-auto");
+  expect(nav.querySelector("ul")).toHaveClass("w-max", "min-w-full");
+  expect(within(nav).getAllByRole("link")).toHaveLength(7);
 });
 
 test("ErrorState shows the message and code, and Retry calls onRetry", async () => {
@@ -207,8 +224,21 @@ test("Breadcrumbs links earlier items and marks the last as the current page", a
 
 test("CodeBlock scroll region is keyboard focusable with an accessible name", () => {
   render(<CodeBlock code="npm test" language="bash" />);
-  const region = screen.getByRole("region", { name: "Code" });
+  const region = screen.getByRole("region", { name: "bash code" });
   region.focus();
   expect(region).toHaveFocus();
   expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+});
+
+test("CodeBlock regions are named by language, fall back to Code, and label overrides", () => {
+  render(
+    <>
+      <CodeBlock code="on: push" language="yaml" />
+      <CodeBlock code="plain output" />
+      <CodeBlock code="emitkit generate" language="bash" label="Generate command" />
+    </>,
+  );
+  expect(screen.getByRole("region", { name: "yaml code" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Code" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Generate command" })).toBeInTheDocument();
 });

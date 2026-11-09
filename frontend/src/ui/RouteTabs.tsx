@@ -35,8 +35,8 @@ export function RouteTabs({ tabs, label = "Sections" }: RouteTabsProps) {
   }
 
   return (
-    <nav aria-label={label}>
-      <ul onKeyDown={moveFocus} className="flex gap-1 border-b border-border">
+    <nav aria-label={label} className="overflow-x-auto">
+      <ul onKeyDown={moveFocus} className="flex w-max min-w-full gap-1 border-b border-border">
         {tabs.map((tab, index) => (
           <li key={tab.to}>
             <Link
