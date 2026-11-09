@@ -46,7 +46,8 @@ jobs:
         working-directory: backend
         run: ./gradlew build
 
-      # Regenerate the OpenAPI document and API client; any difference from the committed files fails.
+      # Runs after ./gradlew build. The build's snapshot test already fails on a stale openapi.json, so
+      # this step adds the generated client and reports any drift as a readable failure.
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: frontend/package.json
@@ -68,5 +69,14 @@ jobs:
         working-directory: frontend
         run: pnpm gen:api
 
+      # `git status --porcelain` also reports new, untracked files that `git diff` would miss.
       - name: Check committed contract is current
-        run: git diff --exit-code frontend/openapi.json frontend/src/lib/api/generated
+        run: |
+          changes="$(git status --porcelain -- frontend/openapi.json frontend/src/lib/api/generated)"
+          if [ -n "$changes" ]; then
+            echo "::error::frontend/openapi.json or the generated API client is out of date."
+            echo "Run scripts/export-openapi.sh and (cd frontend && pnpm gen:api), then commit the result."
+            echo "$changes"
+            git --no-pager diff -- frontend/openapi.json frontend/src/lib/api/generated
+            exit 1
+          fi

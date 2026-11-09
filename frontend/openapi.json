@@ -13,7 +13,10 @@
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "orgs": {
             "items": {
@@ -26,6 +29,7 @@
           "avatarUrl",
           "id",
           "login",
+          "name",
           "orgs"
         ],
         "type": "object"
@@ -39,22 +43,16 @@
             "type": "string"
           },
           "name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "role": {
-            "enum": [
-              "ADMIN",
-              "EDITOR",
-              "VIEWER"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/Role"
           },
           "roleSource": {
-            "enum": [
-              "SYNC",
-              "MANUAL"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/RoleSource"
           },
           "userId": {
             "type": "string"
@@ -63,6 +61,7 @@
         "required": [
           "avatarUrl",
           "login",
+          "name",
           "role",
           "roleSource",
           "userId"
@@ -85,18 +84,16 @@
             "type": "string"
           },
           "role": {
-            "enum": [
-              "ADMIN",
-              "EDITOR",
-              "VIEWER"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/Role"
           },
           "slug": {
             "type": "string"
           },
           "vcsOrgId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -105,7 +102,8 @@
           "memberCount",
           "name",
           "role",
-          "slug"
+          "slug",
+          "vcsOrgId"
         ],
         "type": "object"
       },
@@ -121,12 +119,7 @@
             "type": "string"
           },
           "role": {
-            "enum": [
-              "ADMIN",
-              "EDITOR",
-              "VIEWER"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/Role"
           },
           "slug": {
             "type": "string"
@@ -157,12 +150,7 @@
             "type": "string"
           },
           "role": {
-            "enum": [
-              "ADMIN",
-              "EDITOR",
-              "VIEWER"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/Role"
           },
           "slug": {
             "type": "string"
@@ -200,15 +188,25 @@
         ],
         "type": "object"
       },
+      "Role": {
+        "enum": [
+          "ADMIN",
+          "EDITOR",
+          "VIEWER"
+        ],
+        "type": "string"
+      },
+      "RoleSource": {
+        "enum": [
+          "SYNC",
+          "MANUAL"
+        ],
+        "type": "string"
+      },
       "UpdateRoleRequest": {
         "properties": {
           "role": {
-            "enum": [
-              "ADMIN",
-              "EDITOR",
-              "VIEWER"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/Role"
           }
         },
         "required": [
@@ -224,13 +222,13 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/me": {
+    "/me": {
       "get": {
         "operationId": "me",
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MeResponse"
                 }
@@ -245,7 +243,7 @@
         ]
       }
     },
-    "/api/v1/me/sync-orgs": {
+    "/me/sync-orgs": {
       "post": {
         "operationId": "syncOrgs",
         "responses": {
@@ -259,13 +257,13 @@
         ]
       }
     },
-    "/api/v1/me/vcs-quota": {
+    "/me/vcs-quota": {
       "get": {
         "operationId": "vcsQuota",
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/QuotaResponse"
                 }
@@ -280,13 +278,13 @@
         ]
       }
     },
-    "/api/v1/orgs": {
+    "/orgs": {
       "get": {
         "operationId": "listOrgs",
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
                   "items": {
                     "$ref": "#/components/schemas/OrgSummary"
@@ -304,7 +302,7 @@
         ]
       }
     },
-    "/api/v1/orgs/{orgId}": {
+    "/orgs/{orgId}": {
       "get": {
         "operationId": "getOrg",
         "parameters": [
@@ -320,7 +318,7 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OrgDetail"
                 }
@@ -335,7 +333,7 @@
         ]
       }
     },
-    "/api/v1/orgs/{orgId}/members": {
+    "/orgs/{orgId}/members": {
       "get": {
         "operationId": "listMembers",
         "parameters": [
@@ -351,7 +349,7 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
                   "items": {
                     "$ref": "#/components/schemas/MemberResponse"
@@ -365,11 +363,11 @@
         },
         "summary": "List the members of an organization",
         "tags": [
-          "Orgs"
+          "Members"
         ]
       }
     },
-    "/api/v1/orgs/{orgId}/members/{userId}": {
+    "/orgs/{orgId}/members/{userId}": {
       "patch": {
         "operationId": "updateMemberRole",
         "parameters": [
@@ -403,7 +401,7 @@
         "responses": {
           "200": {
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MemberResponse"
                 }
@@ -414,15 +412,14 @@
         },
         "summary": "Change a member's role",
         "tags": [
-          "Orgs"
+          "Members"
         ]
       }
     }
   },
   "servers": [
     {
-      "description": "Generated server url",
-      "url": "http://localhost"
+      "url": "/api/v1"
     }
   ],
   "tags": [
@@ -431,7 +428,11 @@
       "name": "Me"
     },
     {
-      "description": "Organizations the signed-in user belongs to, and their members.",
+      "description": "Members of an organization and their roles.",
+      "name": "Members"
+    },
+    {
+      "description": "Organizations the signed-in user belongs to.",
       "name": "Orgs"
     }
   ]

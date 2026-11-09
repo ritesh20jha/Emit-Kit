@@ -1,4 +1,4 @@
-package dev.emitkit.api.org;
+package dev.emitkit.api.orgs;
 
 import static io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED;
 

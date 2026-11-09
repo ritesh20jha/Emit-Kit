@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/v1/me": {
+    "/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -21,7 +21,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/sync-orgs": {
+    "/me/sync-orgs": {
         parameters: {
             query?: never;
             header?: never;
@@ -38,7 +38,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/vcs-quota": {
+    "/me/vcs-quota": {
         parameters: {
             query?: never;
             header?: never;
@@ -55,7 +55,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/orgs": {
+    "/orgs": {
         parameters: {
             query?: never;
             header?: never;
@@ -72,7 +72,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/orgs/{orgId}": {
+    "/orgs/{orgId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -89,7 +89,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/orgs/{orgId}/members": {
+    "/orgs/{orgId}/members": {
         parameters: {
             query?: never;
             header?: never;
@@ -106,7 +106,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/orgs/{orgId}/members/{userId}": {
+    "/orgs/{orgId}/members/{userId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -131,17 +131,15 @@ export interface components {
             avatarUrl: string;
             id: string;
             login: string;
-            name?: string;
+            name: string | null;
             orgs: components["schemas"]["OrgMembership"][];
         };
         MemberResponse: {
             avatarUrl: string;
             login: string;
-            name?: string;
-            /** @enum {string} */
-            role: "ADMIN" | "EDITOR" | "VIEWER";
-            /** @enum {string} */
-            roleSource: "SYNC" | "MANUAL";
+            name: string | null;
+            role: components["schemas"]["Role"];
+            roleSource: components["schemas"]["RoleSource"];
             userId: string;
         };
         OrgDetail: {
@@ -150,17 +148,15 @@ export interface components {
             /** Format: int32 */
             memberCount: number;
             name: string;
-            /** @enum {string} */
-            role: "ADMIN" | "EDITOR" | "VIEWER";
+            role: components["schemas"]["Role"];
             slug: string;
-            vcsOrgId?: string;
+            vcsOrgId: string | null;
         };
         OrgMembership: {
             isPersonal: boolean;
             name: string;
             orgId: string;
-            /** @enum {string} */
-            role: "ADMIN" | "EDITOR" | "VIEWER";
+            role: components["schemas"]["Role"];
             slug: string;
         };
         OrgSummary: {
@@ -169,8 +165,7 @@ export interface components {
             /** Format: int32 */
             memberCount: number;
             name: string;
-            /** @enum {string} */
-            role: "ADMIN" | "EDITOR" | "VIEWER";
+            role: components["schemas"]["Role"];
             slug: string;
         };
         QuotaResponse: {
@@ -181,9 +176,12 @@ export interface components {
             /** Format: date-time */
             resetAt: string;
         };
+        /** @enum {string} */
+        Role: "ADMIN" | "EDITOR" | "VIEWER";
+        /** @enum {string} */
+        RoleSource: "SYNC" | "MANUAL";
         UpdateRoleRequest: {
-            /** @enum {string} */
-            role: "ADMIN" | "EDITOR" | "VIEWER";
+            role: components["schemas"]["Role"];
         };
     };
     responses: never;
@@ -209,7 +207,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["MeResponse"];
+                    "application/json": components["schemas"]["MeResponse"];
                 };
             };
         };
@@ -247,7 +245,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["QuotaResponse"];
+                    "application/json": components["schemas"]["QuotaResponse"];
                 };
             };
         };
@@ -267,7 +265,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["OrgSummary"][];
+                    "application/json": components["schemas"]["OrgSummary"][];
                 };
             };
         };
@@ -289,7 +287,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["OrgDetail"];
+                    "application/json": components["schemas"]["OrgDetail"];
                 };
             };
         };
@@ -311,7 +309,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["MemberResponse"][];
+                    "application/json": components["schemas"]["MemberResponse"][];
                 };
             };
         };
@@ -338,7 +336,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["MemberResponse"];
+                    "application/json": components["schemas"]["MemberResponse"];
                 };
             };
         };

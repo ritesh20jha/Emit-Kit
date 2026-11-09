@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -25,6 +26,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * The contract ticket's endpoints: every one answers 501 NOT_IMPLEMENTED until its feature ticket
@@ -69,24 +71,36 @@ class CON01ContractTest {
         .andExpect(jsonPath("$.errors[0].field").value("role"));
   }
 
+  @Test
+  @WithMockUser
+  void patchRoleRejectsUnknownRole() throws Exception {
+    mvc.perform(
+            patch("/api/v1/orgs/org1/members/user1")
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"OWNER\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+  }
+
+  /** The body column is empty for requests that carry none; only PATCH reads a body. */
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
-    "GET,/api/v1/me",
-    "GET,/api/v1/me/vcs-quota",
-    "POST,/api/v1/me/sync-orgs",
-    "GET,/api/v1/orgs",
-    "GET,/api/v1/orgs/org1",
-    "GET,/api/v1/orgs/org1/members",
-    "PATCH,/api/v1/orgs/org1/members/user1"
+    "GET,/api/v1/me,",
+    "GET,/api/v1/me/vcs-quota,",
+    "POST,/api/v1/me/sync-orgs,",
+    "GET,/api/v1/orgs,",
+    "GET,/api/v1/orgs/org1,",
+    "GET,/api/v1/orgs/org1/members,",
+    "PATCH,/api/v1/orgs/org1/members/user1,{\"role\":\"EDITOR\"}"
   })
-  void contractEndpointIs501(String method, String path) throws Exception {
-    // A valid body is sent to every request; only the PATCH endpoint reads it.
-    mvc.perform(
-            request(HttpMethod.valueOf(method), path)
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"role\":\"EDITOR\"}"))
+  void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
+    MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());
+    if (body != null) {
+      request.contentType(MediaType.APPLICATION_JSON).content(body);
+    }
+    mvc.perform(request)
         .andExpect(status().is(501))
         .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
   }

@@ -1,4 +1,4 @@
-package dev.emitkit.api.org;
+package dev.emitkit.api.orgs;
 
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
@@ -13,31 +13,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Organizations and their members. Bodies are stubs until the feature tickets replace them. */
+/** Members of an organization. Bodies are stubs until the feature tickets replace them. */
 @RestController
-@RequestMapping("/api/v1/orgs")
-@Tag(name = "Orgs", description = "Organizations the signed-in user belongs to, and their members.")
-public class OrgController {
+@RequestMapping("/api/v1/orgs/{orgId}/members")
+@Tag(name = "Members", description = "Members of an organization and their roles.")
+public class MembersController {
 
   @GetMapping
-  @Operation(summary = "List the organizations the signed-in user belongs to")
-  public List<OrgSummary> listOrgs() {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
-  }
-
-  @GetMapping("/{orgId}")
-  @Operation(summary = "Get one organization")
-  public OrgDetail getOrg(@PathVariable("orgId") String orgId) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
-  }
-
-  @GetMapping("/{orgId}/members")
   @Operation(summary = "List the members of an organization")
   public List<MemberResponse> listMembers(@PathVariable("orgId") String orgId) {
     throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
   }
 
-  @PatchMapping("/{orgId}/members/{userId}")
+  @PatchMapping("/{userId}")
   @Operation(summary = "Change a member's role")
   public MemberResponse updateMemberRole(
       @PathVariable("orgId") String orgId,

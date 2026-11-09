@@ -6,7 +6,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
  * Pins the served OpenAPI document to frontend/openapi.json, the input of the generated TypeScript
  * client. Run with -Dopenapi.update=true (see scripts/export-openapi.sh) to rewrite the file
  * instead of comparing. Both paths use the same normalizer, so the export and the check cannot
- * drift.
+ * drift. The other tests pin the shape the frontend relies on.
  */
 @SpringBootTest(
     properties = {
@@ -64,15 +67,90 @@ class OpenApiSnapshotTest {
     assertThat(normalized).isEqualTo(Files.readString(COMMITTED));
   }
 
-  /** Response fields are required in the contract, so generated types have no optional fields. */
+  /**
+   * Every property is either required or nullable. Generated types then never have an optional
+   * field the server always sends, and a field the server may send as null is typed as null.
+   */
   @Test
-  void meResponseRequiresEveryFieldButNullableName() throws Exception {
-    JsonNode required =
-        MAPPER.readTree(servedDocument()).at("/components/schemas/MeResponse/required");
-    Set<String> names = new HashSet<>();
-    required.forEach(name -> names.add(name.asString()));
+  void everyPropertyIsRequiredOrNullable() throws Exception {
+    List<String> violations = new ArrayList<>();
+    Set<String> schemaNames = new HashSet<>();
+    for (Map.Entry<String, JsonNode> schema : apiDocs().at("/components/schemas").properties()) {
+      schemaNames.add(schema.getKey());
+      JsonNode required = schema.getValue().path("required");
+      for (Map.Entry<String, JsonNode> property :
+          schema.getValue().path("properties").properties()) {
+        boolean isRequired = listed(required, property.getKey());
+        boolean isNullable = listed(property.getValue().path("type"), "null");
+        if (!isRequired && !isNullable) {
+          violations.add(schema.getKey() + "." + property.getKey());
+        }
+      }
+    }
 
-    assertThat(names).contains("id", "login", "avatarUrl", "orgs").doesNotContain("name");
+    assertThat(schemaNames).as("component schemas").contains("MeResponse", "OrgDetail");
+    assertThat(violations)
+        .as("properties that are neither required nor nullable (schema.property)")
+        .isEmpty();
+  }
+
+  @Test
+  void meResponseNameIsRequiredAndNullable() throws Exception {
+    JsonNode name = apiDocs().at("/components/schemas/MeResponse/properties/name");
+    JsonNode required = apiDocs().at("/components/schemas/MeResponse/required");
+
+    assertThat(listed(required, "name")).as("MeResponse.name required").isTrue();
+    assertThat(listed(name.path("type"), "null")).as("MeResponse.name nullable").isTrue();
+  }
+
+  /** The client is built with baseUrl /api/v1, so paths are relative to it. */
+  @Test
+  void pathsAreRelativeToTheApiBase() throws Exception {
+    JsonNode doc = apiDocs();
+
+    assertThat(doc.at("/servers").size()).as("server entries").isEqualTo(1);
+    assertThat(doc.at("/servers/0/url").asString()).isEqualTo("/api/v1");
+    Set<String> paths = new HashSet<>();
+    doc.at("/paths").propertyNames().forEach(paths::add);
+    assertThat(paths)
+        .containsExactlyInAnyOrder(
+            "/me",
+            "/me/vcs-quota",
+            "/me/sync-orgs",
+            "/orgs",
+            "/orgs/{orgId}",
+            "/orgs/{orgId}/members",
+            "/orgs/{orgId}/members/{userId}");
+  }
+
+  @Test
+  void membersOperationsAreTaggedMembers() throws Exception {
+    JsonNode doc = apiDocs();
+
+    assertThat(listed(doc.at("/paths/~1orgs~1{orgId}~1members/get/tags"), "Members")).isTrue();
+    assertThat(listed(doc.at("/paths/~1orgs~1{orgId}~1members~1{userId}/patch/tags"), "Members"))
+        .isTrue();
+  }
+
+  @Test
+  void responsesAreJson() throws Exception {
+    JsonNode content = apiDocs().at("/paths/~1me/get/responses/200/content");
+
+    assertThat(content.propertyNames()).containsExactly("application/json");
+  }
+
+  @Test
+  void roleAndRoleSourceAreNamedSchemas() throws Exception {
+    JsonNode doc = apiDocs();
+
+    assertThat(doc.at("/components/schemas/Role/enum").size()).isEqualTo(3);
+    assertThat(doc.at("/components/schemas/RoleSource/enum").size()).isEqualTo(2);
+    assertThat(doc.at("/components/schemas/OrgMembership/properties/role/$ref").asString())
+        .isEqualTo("#/components/schemas/Role");
+  }
+
+  private JsonNode apiDocs() throws Exception {
+    return MAPPER.readTree(servedDocument());
   }
 
   private String servedDocument() throws Exception {
@@ -81,6 +159,16 @@ class OpenApiSnapshotTest {
         .andReturn()
         .getResponse()
         .getContentAsString();
+  }
+
+  /** True when the JSON array contains the value. */
+  private static boolean listed(JsonNode array, String value) {
+    for (JsonNode item : array) {
+      if (item.asString().equals(value)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Sorted keys at every depth, two-space indent, trailing newline: one canonical text. */

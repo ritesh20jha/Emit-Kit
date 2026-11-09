@@ -1,4 +1,4 @@
-package dev.emitkit.api.org;
+package dev.emitkit.api.orgs;
 
 import dev.emitkit.domain.Role;
 import jakarta.validation.constraints.NotNull;
