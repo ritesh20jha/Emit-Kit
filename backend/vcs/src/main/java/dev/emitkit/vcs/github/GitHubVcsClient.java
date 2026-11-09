@@ -60,9 +60,11 @@ final class GitHubVcsClient implements VcsClient {
           new VcsOrg(String.valueOf(me.getId()), me.getLogin(), me.getName(), true, VcsRole.OWNER));
       for (GHMembership membership : me.listOrgMemberships(GHMembership.State.ACTIVE)) {
         GHOrganization org = membership.getOrganization();
+        // Membership payloads carry no name, and getName() would fetch the org per call. The login
+        // doubles as the display name so that listing costs no extra requests.
         var role = membership.getRole() == GHMembership.Role.ADMIN ? VcsRole.OWNER : VcsRole.MEMBER;
         orgs.add(
-            new VcsOrg(String.valueOf(org.getId()), org.getLogin(), org.getName(), false, role));
+            new VcsOrg(String.valueOf(org.getId()), org.getLogin(), org.getLogin(), false, role));
       }
       return orgs;
     } catch (IOException | GHException e) {

@@ -10,6 +10,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static java.util.stream.Collectors.joining;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -165,8 +166,18 @@ class GitHubVcsClientFilesTest {
     assertThat(client.listOrgs())
         .containsExactly(
             new VcsOrg("7", "ritesh", "Ritesh Jha", true, VcsRole.OWNER),
-            new VcsOrg("1", "acme", "Acme", false, VcsRole.OWNER),
-            new VcsOrg("2", "beta", "Beta", false, VcsRole.MEMBER));
+            new VcsOrg("1", "acme", "acme", false, VcsRole.OWNER),
+            new VcsOrg("2", "beta", "beta", false, VcsRole.MEMBER));
+  }
+
+  @Test
+  void listOrgs_fetchesNoOrgDetails_soForbiddenOrgsDoNotFailTheListing() {
+    stubFor(
+        get(urlPathEqualTo("/user/memberships/orgs")).willReturn(okJson(body("memberships.json"))));
+    stubFor(get(urlPathMatching("/orgs/.*")).willReturn(aResponse().withStatus(403)));
+
+    assertThat(client.listOrgs()).hasSize(3);
+    verify(0, getRequestedFor(urlPathMatching("/orgs/.*")));
   }
 
   @Test
@@ -299,6 +310,26 @@ class GitHubVcsClientFilesTest {
         .isInstanceOf(VcsNotFoundException.class);
 
     assertThat(seen).containsExactly(new Seen(4998, RESET_AT), new Seen(4997, RESET_AT));
+  }
+
+  @Test
+  void rateLimitListenerFailure_doesNotFailTheCall(WireMockRuntimeInfo wm) {
+    client =
+        provider(
+                wm,
+                (remaining, reset) -> {
+                  throw new IllegalStateException("redis down");
+                })
+            .forUser("t");
+    stubFor(
+        get(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .willReturn(
+                okJson(body("contents.json"))
+                    .withHeader("X-RateLimit-Remaining", "4998")
+                    .withHeader("X-RateLimit-Reset", RESET)));
+
+    assertThat(client.getFile("acme/api", "openapi.yaml", "main"))
+        .isEqualTo(new FileContent("openapi: 3.1.0", "sha1"));
   }
 
   @Test

@@ -24,6 +24,8 @@ import org.kohsuke.github.extras.okhttp3.OkHttpGitHubConnector;
  */
 public final class GitHubVcsProvider implements VcsProvider {
 
+  private static final System.Logger LOG = System.getLogger(GitHubVcsProvider.class.getName());
+
   private final GitHubProperties props;
   private final TokenSource tokens;
   private final OkHttpClient http;
@@ -81,12 +83,8 @@ public final class GitHubVcsProvider implements VcsProvider {
   private static OkHttpClient httpClient(GitHubProperties props, RateLimitListener listener) {
     var builder =
         new OkHttpClient.Builder()
-            // GitHub marks responses as fresh for a minute. max-age=0 forces revalidation, so a
-            // read right after a write is not stale. A 304 does not count against the quota.
-            .addInterceptor(chain ->
-                chain.proceed(
-                    chain.request().newBuilder().header("Cache-Control", "max-age=0").build()))
             // A network interceptor sees every real response, including 304s, and not cache hits.
+            // The connector sends Cache-Control: max-age=0, so cached responses are revalidated.
             .addNetworkInterceptor(chain -> {
               Response response = chain.proceed(chain.request());
               if (listener != null) {
@@ -106,11 +104,19 @@ public final class GitHubVcsProvider implements VcsProvider {
     if (remaining == null || reset == null) {
       return;
     }
+    int left;
+    Instant resetAt;
     try {
-      listener.onHeaders(
-          Integer.parseInt(remaining.trim()), Instant.ofEpochSecond(Long.parseLong(reset.trim())));
-    } catch (NumberFormatException ignored) {
-      // A malformed header is not a quota reading.
+      left = Integer.parseInt(remaining.trim());
+      resetAt = Instant.ofEpochSecond(Long.parseLong(reset.trim()));
+    } catch (NumberFormatException malformed) {
+      return; // A malformed header is not a quota reading.
+    }
+    try {
+      listener.onHeaders(left, resetAt);
+    } catch (RuntimeException e) {
+      // The quota is advisory: a failing listener must not fail the GitHub call.
+      LOG.log(System.Logger.Level.WARNING, "Rate-limit listener failed; call continues", e);
     }
   }
 }
