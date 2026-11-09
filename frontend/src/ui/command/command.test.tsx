@@ -1,9 +1,18 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { MockInstance } from "vitest";
 import { Button } from "../Button";
-import { type Command, CommandPalette, CommandRegistryProvider, ShortcutsHelp, ShortcutsProvider, useCommands, useShortcut } from "./index";
+import { Dialog } from "../Dialog";
+import {
+  type Command,
+  CommandPalette,
+  CommandRegistryProvider,
+  ShortcutsHelp,
+  ShortcutsProvider,
+  useCommands,
+  useShortcut,
+} from "./index";
 
 // cmdk measures its list with ResizeObserver and scrolls the selected row into view. jsdom has neither.
 globalThis.ResizeObserver ??= class {
@@ -20,10 +29,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
-  for (const spy of consoleSpies) {
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
-  }
+  // Capture the output, then restore every spy before asserting, so a failing assertion cannot leak a spy.
+  const output = consoleSpies.flatMap((spy) => spy.mock.calls);
+  for (const spy of consoleSpies) spy.mockRestore();
+  consoleSpies = [];
+  expect(output).toEqual([]);
 });
 
 /** Registers commands while mounted. Unmounting it (or passing null) removes them from the palette. */
@@ -143,7 +153,7 @@ test("g p does not complete when the second key comes after 1 s", () => {
   expect(onGo).not.toHaveBeenCalled();
 });
 
-test("mod+s fires inside an input and prevents the browser save", async () => {
+test("mod+s fires inside an input and prevents the browser save", () => {
   const onSave = vi.fn();
   render(<ShortcutHarness onSave={onSave} />);
   const field = screen.getByRole("textbox", { name: "Page field" });
@@ -183,6 +193,94 @@ test("/ moves focus to the search field without typing the slash into it", async
   expect(search).toHaveValue("");
 });
 
+test("a repeated keydown fires nothing, so holding mod+k does not toggle the palette", () => {
+  render(<Harness commands={[{ id: "a", group: "Go", label: "Projects", run: vi.fn() }]} />);
+
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true, repeat: true });
+  expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument();
+
+  // The same key without repeat still opens the palette, so the guard is the only reason it stayed closed.
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  expect(screen.getByRole("dialog", PALETTE)).toBeInTheDocument();
+});
+
+test("mod+k uses Cmd on macOS and Ctrl+K does not open the palette there", () => {
+  const platform = Object.getOwnPropertyDescriptor(window.navigator, "platform");
+  Object.defineProperty(window.navigator, "platform", { value: "MacIntel", configurable: true });
+  try {
+    render(<Harness commands={[{ id: "a", group: "Go", label: "Projects", run: vi.fn() }]} />);
+
+    fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    expect(screen.getByRole("dialog", PALETTE)).toBeInTheDocument();
+  } finally {
+    if (platform) Object.defineProperty(window.navigator, "platform", platform);
+    else delete (window.navigator as { platform?: string }).platform;
+  }
+});
+
+test("a command that moves focus keeps it on its target after Enter", async () => {
+  const user = userEvent.setup();
+  const run = vi.fn(() => screen.getByLabelText("Page field").focus());
+  render(<Harness commands={[{ id: "focus", group: "Go", label: "Focus page field", run }]} />);
+  const target = screen.getByLabelText("Page field");
+
+  await user.keyboard("{Control>}k{/Control}");
+  await screen.findByRole("dialog", PALETTE);
+  await user.keyboard("{Enter}");
+
+  expect(run).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument());
+  await waitFor(() => expect(target).toHaveFocus());
+});
+
+test("choosing a command with the pointer also keeps focus on its target", async () => {
+  const user = userEvent.setup();
+  const run = vi.fn(() => screen.getByLabelText("Page field").focus());
+  render(<Harness commands={[{ id: "focus", group: "Go", label: "Focus page field", run }]} />);
+  const target = screen.getByLabelText("Page field");
+
+  await user.keyboard("{Control>}k{/Control}");
+  await user.click(await screen.findByRole("option", { name: "Focus page field" }));
+
+  expect(run).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument());
+  await waitFor(() => expect(target).toHaveFocus());
+});
+
+function RenameHarness() {
+  const [renameOpen, setRenameOpen] = useState(false);
+  useCommands([{ id: "rename", group: "Actions", label: "Rename project", run: () => setRenameOpen(true) }], []);
+  return (
+    <>
+      <CommandPalette />
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen} title="Rename project">
+        <input aria-label="New name" />
+      </Dialog>
+    </>
+  );
+}
+
+test("a command that opens another dialog still opens it after the palette closes", async () => {
+  const user = userEvent.setup();
+  render(
+    <ShortcutsProvider>
+      <CommandRegistryProvider>
+        <RenameHarness />
+      </CommandRegistryProvider>
+    </ShortcutsProvider>,
+  );
+
+  await user.keyboard("{Control>}k{/Control}");
+  await screen.findByRole("dialog", PALETTE);
+  await user.keyboard("{Enter}");
+
+  expect(await screen.findByRole("dialog", { name: "Rename project" })).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument());
+});
+
 test("Escape closes the palette and focus returns to the element that had it", async () => {
   const user = userEvent.setup();
   render(<Harness commands={[{ id: "a", group: "Go", label: "Projects", run: vi.fn() }]} />);
@@ -195,6 +293,19 @@ test("Escape closes the palette and focus returns to the element that had it", a
 
   await waitFor(() => expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument());
   expect(pageAction).toHaveFocus();
+});
+
+test("Escape closes the palette without running a command", async () => {
+  const user = userEvent.setup();
+  const run = vi.fn();
+  render(<Harness commands={[{ id: "a", group: "Go", label: "Projects", run }]} />);
+  await user.keyboard("{Control>}k{/Control}");
+  await screen.findByRole("dialog", PALETTE);
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => expect(screen.queryByRole("dialog", PALETTE)).not.toBeInTheDocument());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(run).not.toHaveBeenCalled();
 });
 
 test("typing a query with no match shows No results", async () => {

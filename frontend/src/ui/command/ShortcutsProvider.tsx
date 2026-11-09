@@ -110,7 +110,8 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing || MODIFIER_KEYS.has(event.key)) return;
+      // A held key auto-repeats, and a repeat must not fire again: held mod+k would otherwise toggle the palette.
+      if (event.repeat || event.isComposing || MODIFIER_KEYS.has(event.key)) return;
 
       // Typing in a field never continues a sequence started elsewhere.
       const editable = isEditableTarget(event.target);
