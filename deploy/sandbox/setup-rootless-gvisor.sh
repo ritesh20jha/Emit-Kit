@@ -14,7 +14,7 @@ MODE=""
 ACK=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --mode) MODE="${2:-}"; shift 2 ;;
+    --mode) [ $# -ge 2 ] || usage; MODE="$2"; shift 2 ;;
     --i-know-runsc-fails-rootless) ACK=1; shift ;;
     *) usage ;;
   esac
@@ -34,11 +34,18 @@ esac
 [ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
 
 RUNSC_SRC=${RUNSC_SRC:-/usr/bin/runsc}
-DAEMON_JSON='{"runtimes":{"runsc":{"path":"/usr/local/bin/runsc","runtimeArgs":["--platform=systrap"]}}}'
+# SECURITY: under --mode rootful, whoever can use the socket (group emitkit-sandbox) has root on the host.
+# default-runtime runsc is defence in depth only: a client can still ask for --runtime=runc.
+# See "Security under B" in docs/spikes/2026-gvisor-rootless.md. Who joins the group is an OPS-01 decision.
+DAEMON_JSON='{"default-runtime":"runsc","runtimes":{"runsc":{"path":"/usr/local/bin/runsc","runtimeArgs":["--platform=systrap"]}}}'
 UID_SANDBOX=10010
 
 id -u emitkit-sandbox >/dev/null 2>&1 || useradd --uid "$UID_SANDBOX" --create-home --shell /usr/sbin/nologin emitkit-sandbox
-install -m 0755 "$RUNSC_SRC" /usr/local/bin/runsc
+if [ "$(readlink -f "$RUNSC_SRC")" = /usr/local/bin/runsc ]; then
+  echo "RUNSC_SRC is already /usr/local/bin/runsc; skipping copy" >&2
+else
+  install -m 0755 "$RUNSC_SRC" /usr/local/bin/runsc
+fi
 /usr/local/bin/runsc --version
 
 if [ "$MODE" = rootless ]; then
@@ -62,7 +69,7 @@ Description=EmitKit sandbox Docker daemon (gVisor, dedicated)
 
 [Service]
 RuntimeDirectory=emitkit-sandbox
-ExecStart=/usr/bin/dockerd --host unix:///run/emitkit-sandbox/docker.sock --group emitkit-sandbox --data-root /var/lib/emitkit-sandbox/docker --exec-root /run/emitkit-sandbox/exec --pidfile /run/emitkit-sandbox/docker.pid --config-file /etc/emitkit-sandbox/daemon.json --bridge none
+ExecStart=/usr/bin/dockerd --host unix:///run/emitkit-sandbox/docker.sock --group emitkit-sandbox --data-root /var/lib/emitkit-sandbox/docker --exec-root /run/emitkit-sandbox/exec --pidfile /run/emitkit-sandbox/docker.pid --config-file /etc/emitkit-sandbox/daemon.json --bridge none --iptables=false --ip6tables=false --containerd-namespace emitkit-sandbox --containerd-plugins-namespace emitkit-sandbox-plugins
 Delegate=yes
 KillMode=process
 Restart=on-failure

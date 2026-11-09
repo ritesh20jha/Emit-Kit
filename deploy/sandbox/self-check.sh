@@ -25,9 +25,11 @@ out=$(run --memory 64m $IMG cat /sys/fs/cgroup/memory/memory.limit_in_bytes) \
 [ "$out" = 67108864 ] || fail "memory limit (memory.limit_in_bytes=$out)"
 echo "ok: memory 64m"
 
-# Fork failure is observed, not inferred from exit codes. Each iteration prints launchN
-# before forking. Under --pids-limit 32 busybox sh dies silently (exit 2) at a fork, so the
-# last launchN line is the fork that failed. Without a limit all 100 forks run: forked-100.
+# Fork failure is inferred from the shell dying after a launchN marker. Each iteration prints
+# launchN before forking. Under --pids-limit 32 the shell dies silently with rc 2 at a fork
+# (observed; the cause is not explained, and busybox usually prints "can't fork", so the sandbox
+# may be dying instead). The last launchN line is the fork that failed. Without a limit all 100
+# forks run: forked-100. SBX-03 must not depend on rc 2; this check only needs rc != 0.
 rc=0
 out=$(run --pids-limit 32 $IMG sh -c 'echo started; i=0; while [ $i -lt 100 ]; do echo launch$i; sleep 5 & i=$((i+1)); done; echo forked-100; wait') || rc=$?
 grep -qx started <<<"$out" || fail "pids-limited container did not start (docker error above)"
