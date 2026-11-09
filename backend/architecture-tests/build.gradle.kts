@@ -8,6 +8,7 @@ dependencies {
     testImplementation(project(":vcs"))
     testImplementation(project(":spec-engine"))
     testImplementation(project(":generators:core"))
+    testImplementation(project(":generators:workflows"))
     testImplementation(project(":ai"))
     testImplementation(project(":api-app"))
     testImplementation(project(":worker-app"))
