@@ -1,5 +1,12 @@
 import type { Preview } from "@storybook/react-vite";
+import { createMemoryHistory, createRootRoute, createRouter, RouterContextProvider } from "@tanstack/react-router";
 import "../src/styles/app.css";
+
+// Link-based stories (RouteTabs, Breadcrumbs) need a router. A memory router on a project page keeps them deterministic.
+const storyRouter = createRouter({
+  routeTree: createRootRoute(),
+  history: createMemoryHistory({ initialEntries: ["/projects/p1/runs"] }),
+});
 
 type Theme = "light" | "dark";
 
@@ -24,9 +31,11 @@ const preview: Preview = {
       const theme: Theme = context.globals.theme === "dark" ? "dark" : "light";
       document.documentElement.dataset.theme = theme;
       return (
-        <div className="min-h-screen bg-bg p-4 text-fg">
-          <Story />
-        </div>
+        <RouterContextProvider router={storyRouter}>
+          <div className="min-h-screen bg-bg p-4 text-fg">
+            <Story />
+          </div>
+        </RouterContextProvider>
       );
     },
   ],
