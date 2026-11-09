@@ -27,10 +27,10 @@ Commands run 2026-11-09 on the spike host:
 | gVisor (`dmesg` has gVisor) | container does not start | ok | ok |
 | `--network none` | not reached | ok (`UNREACHABLE`) | ok |
 | `--memory 64m` (`memory.limit_in_bytes`) | not reached | FAIL: `15625715712` (host RAM, no limit) | ok: `67108864` |
-| `--pids-limit 32` (`ok=N` of 100 forks) | not reached | FAIL: `ok=100` | ok: no `ok=100`, shell aborts |
+| `--pids-limit 32` (shell dies at a fork) | not reached | FAIL: all 100 forks ran (`forked-100`, rc 0) | ok: shell dies at fork of child 0 or 1, rc 2 (varies per run) |
 | `--cpus 1` (`cfs_quota_us cfs_period_us`) | not reached | FAIL: `-1 100000` | ok: `100000 100000` |
 
-Final self-check runs: system daemon GREEN twice (`sandbox ok`, exit 0). Negative control (pids limit removed from a copy) gave `FAIL: pids limit not enforced`. Nonexistent socket gave `FAIL: no Docker daemon`.
+Final self-check runs (after the pids fix in the fix round): system daemon GREEN twice (`sandbox ok`, exit 0; pids fork failure at child 0 in one run and child 1 in the other). Negative controls on the system daemon: (a) pids limit removed from a copy gives `FAIL: pids limit not enforced (all 100 forks succeeded)`; (b) a copy where the shell exits after `started`, before any fork, gives `FAIL: shell did not die at a fork (rc=2, last=none)`. Nonexistent socket gives `FAIL: no Docker daemon`.
 
 ## Option A probe log
 
@@ -49,20 +49,32 @@ Conclusion: under rootless Docker, runsc cannot create its sandbox cgroup on thi
 ## Other findings
 
 - gVisor exposes the memory limit at `/sys/fs/cgroup/memory/memory.limit_in_bytes` (cgroup v1 layout). `memory.max` does not exist inside the sandbox. The brief's path was corrected.
-- Sandbox processes (sentry, gofer) count against `--pids-limit`. On the system daemon, limits 8 and 16 fail to start the container, 24 fails to start it, 32 starts but the shell aborts on the first extra fork, and 48 and 64 run `seq`. The spec's limit of 256 was not measured. 32 is close to the floor.
-- A `$(seq 100)` loop under `--pids-limit 32` gave a false result when the substitution's fork failed, so the pids check uses a builtin loop that counts successful forks.
+- Sandbox processes (sentry, gofer) count against `--pids-limit`. On the system daemon, limits 8 and 16 fail to start the container, 24 fails to start it, 32 starts and the shell dies at the fork of child 0 or 1, and 48 and 64 run `seq`. The spec's limit of 256 was not measured. 32 is close to the floor.
+- How the pids check observes the failure: busybox `sh` dies silently with exit 2 at a failed fork (no error text on stderr, verified). So the check prints `launchN` before each fork and asserts that the shell died after a launch marker, before `forked-100`, with rc != 0. gVisor does not expose the limit (`/sys/fs/cgroup/pids/pids.max` reads `max` even with `--pids-limit 32`), so the limit is observed through the failing fork, not read back from the cgroup.
+- An earlier counter version (`sleep 5 & [ $? -eq 0 ] && ok=$((ok+1))`) was dead logic: `$?` after `&` is always 0. It is removed. An earlier `$(seq 100)` loop also gave a false result when the substitution's fork failed.
 
 ## Not executed (needs root)
 
-`deploy/sandbox/setup-rootless-gvisor.sh` is written but has not been run. It refuses without root (verified). Steps in it that were not executed:
+`deploy/sandbox/setup-rootless-gvisor.sh` is written but has not been run. Verified without root: it refuses `--mode rootless` unless `--i-know-runsc-fails-rootless` is given, and it stops at the root check before any change. Steps in it that were not executed:
 
 - creating user `emitkit-sandbox` (uid 10010) and installing `/usr/local/bin/runsc`;
-- `--mode rootless`: subuid/subgid, `systemctl set-property user@10010.service Delegate=...`, `loginctl enable-linger`, `dockerd-rootless-setuptool.sh install`, the rootless `daemon.json`;
-- `--mode rootful`: `/etc/emitkit-sandbox/daemon.json`, `emitkit-sandbox-docker.service` (`--bridge none`, dedicated data-root and socket), `systemctl enable --now`.
+- `--mode rootless` (refused by default, ruled out): subuid/subgid, `systemctl set-property user@10010.service Delegate=...`, `loginctl enable-linger`, `dockerd-rootless-setuptool.sh install`, the rootless `daemon.json`;
+- `--mode rootful`: `/etc/emitkit-sandbox/daemon.json`, `emitkit-sandbox-docker.service`, `systemctl enable --now`, then a readiness loop on `docker -H unix:///run/emitkit-sandbox/docker.sock info` (30 s).
+
+## Stand-in vs dedicated: what differs
+
+The B results above come from the system daemon. The dedicated unit that the script writes differs in these ways. None of them was measured:
+
+- Daemon and config: system `docker.service` (`dockerd -H fd://`, default data-root `/var/lib/docker`, exec-root `/var/run/docker`, bridge `docker0`, `runsc` at `/usr/bin/runsc` with no runtimeArgs). Dedicated unit: `--host unix:///run/emitkit-sandbox/docker.sock --group emitkit-sandbox`, data-root `/var/lib/emitkit-sandbox/docker`, exec-root `/run/emitkit-sandbox/exec`, `--bridge none`, `runsc` at `/usr/local/bin/runsc` with `--platform=systrap`, config from `/etc/emitkit-sandbox/daemon.json`.
+- Readiness: the dedicated unit is `Type=simple`, not `Type=notify` (Docker's own unit uses notify). `systemctl enable --now` can return before dockerd listens, so the script waits for `docker info` on the socket. The readiness loop was not run.
+- Image cache: the dedicated daemon has an empty data-root. `alpine` is not loaded by the script, so the self-check needs `docker -H unix:///run/emitkit-sandbox/docker.sock pull alpine` (network) or an image load before it runs.
+- Socket access: the dedicated socket is group-restricted (`emitkit-sandbox`). The stand-in socket is the default one.
+- Unit hardening: `KillMode=process`, `Restart=on-failure`, `Delegate=yes`. The system unit has its own settings.
 
 ## Known gaps
 
-- B has not been measured on a dedicated daemon. Next step: `sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootful`, then `DOCKER_HOST=unix:///run/emitkit-sandbox/docker.sock bash deploy/sandbox/self-check.sh`.
+- B has not been measured on a dedicated daemon. Next step (root): `sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootful`, load or pull `alpine` into the dedicated daemon, then `DOCKER_HOST=unix:///run/emitkit-sandbox/docker.sock bash deploy/sandbox/self-check.sh`.
+- The pids check observes the shell dying at a fork under the limit. It does not read the limit back from the cgroup, because gVisor does not expose it. Its wording is "fork failure observed", not "limit confirmed".
 - The self-check covers only the spec's limit checks. The escape tests in spec 5.6 (no network, writes outside `/work`, uid 10001, timeout, fork limit under load) belong to SBX-03.
 - The `--cpus` check reads the cfs quota, not CPU time. It does not prove CPU scheduling is capped.
 - `--pids-limit 256` (the spec value) was not measured.

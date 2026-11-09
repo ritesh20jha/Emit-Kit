@@ -1,21 +1,35 @@
 #!/usr/bin/env bash
 # Sets up a dedicated sandbox Docker daemon with gVisor (runsc), separate from the host daemon (spec 5.6).
-#   sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootless|rootful
-#   rootless (option A): dockerd runs as user emitkit-sandbox; socket unix:///run/user/10010/docker.sock.
-#   rootful  (option B): systemd-managed dockerd; socket unix:///run/emitkit-sandbox/docker.sock.
-# NOT EXECUTED in the spike (no root there). See docs/spikes/2026-gvisor-rootless.md.
+#   sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootful
+#   sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootless --i-know-runsc-fails-rootless
+#   rootful  (option B, the spike decision): systemd-managed dockerd; socket unix:///run/emitkit-sandbox/docker.sock.
+#   rootless (option A, RULED OUT): dockerd runs as user emitkit-sandbox; socket unix:///run/user/10010/docker.sock.
+#     WARNING: the spike showed runsc cannot create its sandbox cgroup under rootless Docker on this host
+#     (docs/spikes/2026-gvisor-rootless.md). Kept only for diagnosis; it is refused without the flag.
+# NOT EXECUTED in the spike (no root there).
 set -euo pipefail
 
+usage() { echo "usage: $0 --mode rootful | --mode rootless --i-know-runsc-fails-rootless" >&2; exit 2; }
 MODE=""
+ACK=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode) MODE="${2:-}"; shift 2 ;;
-    *) MODE="" ; break ;;
+    --i-know-runsc-fails-rootless) ACK=1; shift ;;
+    *) usage ;;
   esac
 done
 case "$MODE" in
-  rootless|rootful) ;;
-  *) echo "usage: $0 --mode rootless|rootful" >&2; exit 2 ;;
+  rootful) ;;
+  rootless)
+    [ -n "$ACK" ] || {
+      echo "REFUSING --mode rootless: option A is ruled out by the SBX-01 spike." >&2
+      echo "  runsc cannot create its sandbox cgroup under rootless Docker on this host." >&2
+      echo "  Use --mode rootful (decision B). To run the rootless probe anyway, add --i-know-runsc-fails-rootless." >&2
+      exit 2
+    }
+    echo "WARNING: --mode rootless is known not to run runsc containers with cgroup limits." >&2 ;;
+  *) usage ;;
 esac
 [ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
 
@@ -58,5 +72,9 @@ WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
   systemctl enable --now emitkit-sandbox-docker.service
-  echo "docker-host: unix:///run/emitkit-sandbox/docker.sock"
+  # The unit is Type=simple, so "enable --now" returns before dockerd listens. Wait for it.
+  SOCK=unix:///run/emitkit-sandbox/docker.sock
+  for _ in $(seq 30); do docker -H "$SOCK" info >/dev/null 2>&1 && break; sleep 1; done
+  docker -H "$SOCK" info >/dev/null || { echo "dedicated daemon not ready at $SOCK" >&2; exit 1; }
+  echo "docker-host: $SOCK"
 fi
