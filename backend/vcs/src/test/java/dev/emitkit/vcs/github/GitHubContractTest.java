@@ -18,8 +18,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
- * Runs the shared contract against the GitHub client with WireMock. Only the file contract tests
- * run here. The branch, tag, commit and pull-request tests belong to VCS-03 and are disabled.
+ * Runs the shared contract with WireMock. Branch, tag, commit and PR tests are VCS-03 and disabled.
  */
 @WireMockTest
 class GitHubContractTest extends VcsClientContractTest {
@@ -31,17 +30,16 @@ class GitHubContractTest extends VcsClientContractTest {
     String sha = GitBlob.sha(OPENAPI_CONTENT);
     stubFor(
         get(urlPathEqualTo("/repos/acme/api"))
-            .willReturn(
-                okJson(
-                    "{\"name\":\"api\",\"full_name\":\"acme/api\",\"owner\":{\"login\":\"acme\"}}")));
+            .willReturn(okJson("{\"full_name\":\"acme/api\",\"owner\":{\"login\":\"acme\"}}")));
     stubFor(
         get(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
             .willReturn(
                 okJson(
-                    "{\"type\":\"file\",\"encoding\":\"base64\",\"size\":14,\"name\":\"openapi.yaml\","
-                        + "\"path\":\"openapi.yaml\",\"sha\":\""
-                        + sha
-                        + "\",\"content\":\"b3BlbmFwaTogMy4xLjA=\\n\"}")));
+                    """
+                    {"type":"file","encoding":"base64","size":14,"name":"openapi.yaml",
+                     "path":"openapi.yaml","sha":"%s","content":"b3BlbmFwaTogMy4xLjA=\\n"}\
+                    """
+                        .formatted(sha))));
     stubFor(
         get(urlPathEqualTo("/repos/acme/api/contents/nope.yaml"))
             .willReturn(aResponse().withStatus(404).withBody("{\"message\":\"Not Found\"}")));
@@ -59,7 +57,7 @@ class GitHubContractTest extends VcsClientContractTest {
         put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
             .inScenario("stale-sha")
             .whenScenarioStateIs("written")
-            .willReturn(aResponse().withStatus(409).withBody("{\"message\":\"does not match\"}")));
+            .willReturn(aResponse().withStatus(409)));
     client =
         new GitHubVcsProvider(new GitHubProperties(wm.getHttpBaseUrl(), null, 256), t -> "t", null)
             .forUser("t");

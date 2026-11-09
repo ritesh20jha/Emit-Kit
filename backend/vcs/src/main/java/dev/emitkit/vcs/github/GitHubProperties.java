@@ -5,11 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * GitHub client settings, bound from {@code emitkit.github.*}.
- *
- * @param apiUrl the REST API root
- * @param cacheDir the directory of the HTTP response cache, or null to run without a cache
- * @param cacheSizeMb the maximum size of the response cache in megabytes
+ * GitHub client settings, bound from {@code emitkit.github.*}. A null {@code cacheDir} disables the
+ * response cache.
  */
 @ConfigurationProperties("emitkit.github")
 public record GitHubProperties(

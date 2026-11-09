@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.kohsuke.github.GHContent;
 import org.kohsuke.github.GHContentBuilder;
@@ -32,11 +33,7 @@ import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GitCommit;
 import org.kohsuke.github.GitHub;
 
-/**
- * Repository, file, organization and quota operations over one GitHub identity. Branch, tag,
- * commit, pull-request and webhook operations are not implemented yet and throw {@link
- * UnsupportedOperationException} naming the ticket that adds them.
- */
+/** Repository, file, organization and quota operations for one identity. */
 final class GitHubVcsClient implements VcsClient {
 
   /** The contents API serves files up to 1 MB. Larger files go through the blob API. */
@@ -55,16 +52,21 @@ final class GitHubVcsClient implements VcsClient {
   public List<VcsOrg> listOrgs() {
     try {
       GHMyself me = github.getMyself();
+      // The name column is NOT NULL, and a user may have no display name.
+      String personalName = Objects.requireNonNullElse(me.getName(), me.getLogin());
       var orgs = new ArrayList<VcsOrg>();
       orgs.add(
-          new VcsOrg(String.valueOf(me.getId()), me.getLogin(), me.getName(), true, VcsRole.OWNER));
+          new VcsOrg(String.valueOf(me.getId()), me.getLogin(), personalName, true, VcsRole.OWNER));
       for (GHMembership membership : me.listOrgMemberships(GHMembership.State.ACTIVE)) {
+        // getName() would fetch each org, so the login doubles as the display name.
         GHOrganization org = membership.getOrganization();
-        // Membership payloads carry no name, and getName() would fetch the org per call. The login
-        // doubles as the display name so that listing costs no extra requests.
-        var role = membership.getRole() == GHMembership.Role.ADMIN ? VcsRole.OWNER : VcsRole.MEMBER;
         orgs.add(
-            new VcsOrg(String.valueOf(org.getId()), org.getLogin(), org.getLogin(), false, role));
+            new VcsOrg(
+                String.valueOf(org.getId()),
+                org.getLogin(),
+                org.getLogin(),
+                false,
+                roleOf(membership)));
       }
       return orgs;
     } catch (IOException | GHException e) {
@@ -75,7 +77,7 @@ final class GitHubVcsClient implements VcsClient {
   @Override
   public List<VcsRepo> listRepos() {
     try {
-      // The API has no server-side sort for this listing, so every page is read before sorting.
+      // kohsuke omits the sort=pushed parameter, so every page is read and sorted here.
       var pushable = new ArrayList<GHRepository>();
       for (GHRepository repo : github.getMyself().listRepositories(REPO_PAGE_SIZE)) {
         if (repo.hasPushAccess()) {
@@ -192,6 +194,15 @@ final class GitHubVcsClient implements VcsClient {
           core.getLimit(), core.getRemaining(), Instant.ofEpochSecond(core.getResetEpochSeconds()));
     } catch (IOException e) {
       throw GitHubErrors.map(e);
+    }
+  }
+
+  /** Admins own the org. Roles GitHub adds later, such as billing_manager, count as members. */
+  private static VcsRole roleOf(GHMembership membership) {
+    try {
+      return membership.getRole() == GHMembership.Role.ADMIN ? VcsRole.OWNER : VcsRole.MEMBER;
+    } catch (IllegalArgumentException unknownRole) {
+      return VcsRole.MEMBER;
     }
   }
 

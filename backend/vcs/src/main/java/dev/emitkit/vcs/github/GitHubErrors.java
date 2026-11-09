@@ -19,22 +19,14 @@ import org.kohsuke.github.HttpException;
 /** Translates failures of the GitHub client into the vcs error types. */
 final class GitHubErrors {
 
-  private static final String REMAINING = "X-RateLimit-Remaining";
-  private static final String RESET = "X-RateLimit-Reset";
-
   /** Used when a rate-limit response carries no usable reset time. */
   private static final Duration FALLBACK_WAIT = Duration.ofSeconds(60);
 
   private GitHubErrors() {}
 
   /**
-   * Maps a failure to a vcs error. A 403 or 429 whose {@code X-RateLimit-Remaining} is 0 (or any
-   * 429) is a rate limit. Other 401 and 403 responses are auth failures. 404 is not found, and 409
-   * and 422 are conflicts. 5xx responses and failures without a status are transient server errors.
-   * Other statuses are programming errors and are not retried.
-   *
-   * @param e the failure thrown by the GitHub client
-   * @return the mapped exception, to be thrown by the caller
+   * Maps a failure: 429, or 403 with Remaining 0 or Retry-After, is a rate limit; other 401 and 403
+   * are auth; 409 and 422 are conflicts; 5xx and no-status are transient.
    */
   static RuntimeException map(Exception e) {
     if (e instanceof GHException && e.getCause() instanceof Exception cause) {
@@ -44,7 +36,8 @@ final class GitHubErrors {
     int status = statusOf(e);
     Map<String, List<String>> headers = headersOf(e);
     String detail = "GitHub " + status + ": " + e.getMessage();
-    if (status == 429 || (status == 403 && "0".equals(header(headers, REMAINING)))) {
+    boolean exhausted = "0".equals(header(headers, "X-RateLimit-Remaining"));
+    if (status == 429 || (status == 403 && (exhausted || header(headers, "Retry-After") != null))) {
       return new VcsRateLimitException(detail, resetAt(headers));
     }
     return switch (status) {
@@ -69,39 +62,39 @@ final class GitHubErrors {
 
   private static Map<String, List<String>> headersOf(Exception e) {
     try {
-      Map<String, List<String>> headers = null;
-      if (e instanceof GHIOException io) {
-        headers = io.getResponseHeaderFields();
-      } else if (e instanceof GHFileNotFoundException notFound) {
-        headers = notFound.getResponseHeaderFields();
-      }
+      var headers =
+          e instanceof GHIOException io
+              ? io.getResponseHeaderFields()
+              : e instanceof GHFileNotFoundException nf ? nf.getResponseHeaderFields() : null;
       return headers == null ? Map.of() : headers;
     } catch (NullPointerException noHeaders) {
-      // The client's getter dereferences its header map, which is null when none was recorded.
+      // kohsuke dereferences its header map, which is null when no response was recorded.
       return Map.of();
     }
   }
 
   /** The first value of a header, matched case-insensitively, or null. */
   private static String header(Map<String, List<String>> headers, String name) {
-    for (var entry : headers.entrySet()) {
-      if (name.equalsIgnoreCase(entry.getKey())
-          && entry.getValue() != null
-          && !entry.getValue().isEmpty()) {
-        return entry.getValue().get(0);
-      }
-    }
-    return null;
+    return headers.entrySet().stream()
+        .filter(e -> name.equalsIgnoreCase(e.getKey()) && e.getValue() != null)
+        .flatMap(e -> e.getValue().stream())
+        .findFirst()
+        .orElse(null);
   }
 
+  /** Retry-After wins when present, then the reset epoch, then a default wait. */
   private static Instant resetAt(Map<String, List<String>> headers) {
-    String reset = header(headers, RESET);
-    if (reset != null) {
-      try {
-        return Instant.ofEpochSecond(Long.parseLong(reset.trim()));
-      } catch (NumberFormatException ignored) {
-        // Fall through to the default wait below.
+    String retryAfter = header(headers, "Retry-After");
+    String reset = header(headers, "X-RateLimit-Reset");
+    try {
+      if (retryAfter != null) {
+        return Instant.now().plusSeconds(Long.parseLong(retryAfter.trim()));
       }
+      if (reset != null) {
+        return Instant.ofEpochSecond(Long.parseLong(reset.trim()));
+      }
+    } catch (NumberFormatException malformed) {
+      // A malformed header gives no reset time, so the default wait applies.
     }
     return Instant.now().plus(FALLBACK_WAIT);
   }

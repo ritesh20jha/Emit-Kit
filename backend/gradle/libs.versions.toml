@@ -15,7 +15,7 @@ jmustache = "1.16"
 java-diff-utils = "4.17"
 spring-ai = "2.0.2"
 kohsuke-github-api = "1.330"
-okhttp = "5.5.1"
+okhttp = "4.12.0"
 wiremock = "3.13.2"
 
 [libraries]
