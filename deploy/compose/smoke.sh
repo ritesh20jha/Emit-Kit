@@ -76,10 +76,12 @@ body=$(curl -sk --retry 5 --retry-connrefused --retry-delay 2 https://localhost/
 case "$body" in *'<div id="root">'*) ;; *) fail "GET / did not return the SPA shell" ;; esac
 
 # One api replica that stops answering must not fail requests: Caddy has to send them to the other replica.
+# A request sent to the paused replica waits for Caddy's 30 s response-header timeout before the retry,
+# so the per-request limit here is 60 s.
 PAUSED=$("${STACK[@]}" ps -q api | sed -n 1p)
 docker pause "$PAUSED" >/dev/null
 for i in $(seq 10); do
-  code=$(curl -sk --max-time 30 -o /dev/null -w '%{http_code}' https://localhost/api/v1/me) || code=000
+  code=$(curl -sk --max-time 60 -o /dev/null -w '%{http_code}' https://localhost/api/v1/me) || code=000
   [ "$code" = 401 ] || fail "request $i with one api replica paused returned $code, want 401"
 done
 docker unpause "$PAUSED" >/dev/null
