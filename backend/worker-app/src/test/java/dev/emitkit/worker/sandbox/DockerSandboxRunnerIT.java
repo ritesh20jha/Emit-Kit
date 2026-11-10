@@ -62,11 +62,12 @@ class DockerSandboxRunnerIT {
   private DockerSandboxRunner runner = newRunner(docker, 4);
 
   @BeforeAll
-  static void buildTestImage() throws IOException {
+  static void buildTestImage() throws IOException, InterruptedException {
     docker = SandboxConfig.newDockerClient(DOCKER_HOST);
+    docker.pullImageCmd("alpine").withTag("3.20").start().awaitCompletion();
     ByteArrayOutputStream context = new ByteArrayOutputStream();
     try (TarArchiveOutputStream tar = new TarArchiveOutputStream(context)) {
-      addFile(tar, "Dockerfile", "FROM alpine:latest\nCOPY testcheck.sh " + CHECK + "\n", 0644);
+      addFile(tar, "Dockerfile", "FROM alpine:3.20\nCOPY testcheck.sh " + CHECK + "\n", 0644);
       addFile(tar, "testcheck.sh", CHECK_SCRIPT, 0755);
     }
     var build = docker.buildImageCmd().withTags(Set.of(IMAGE));
@@ -79,7 +80,11 @@ class DockerSandboxRunnerIT {
   @AfterAll
   static void removeTestImage() throws IOException {
     if (docker != null) {
-      docker.removeImageCmd(IMAGE).withForce(true).exec();
+      try {
+        docker.removeImageCmd(IMAGE).withForce(true).exec();
+      } catch (NotFoundException e) {
+        // The build failed before tagging. Do not mask that failure with this one.
+      }
       docker.close();
     }
   }

@@ -42,9 +42,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # The sandbox ITs run under gVisor (spec 5.6). Pinned release, checksum verified.
+      - name: Install gVisor runsc
+        run: |
+          base=https://storage.googleapis.com/gvisor/releases/release/20261102.0/x86_64
+          cd "$RUNNER_TEMP"
+          curl -fsSL -O "$base/runsc" -O "$base/runsc.sha512"
+          sha512sum -c runsc.sha512
+          sudo install -m 0755 runsc /usr/local/bin/runsc
+          sudo runsc install
+          sudo systemctl restart docker
+          timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+          docker info --format '{{json .Runtimes}}'
+
       - name: Build
         working-directory: backend
-        run: ./gradlew build
+        run: ./gradlew build -Dsandbox.runtime=runsc
 
       # Runs after ./gradlew build. The build's snapshot test already fails on a stale openapi.json, so
       # this step adds the generated client and reports any drift as a readable failure.

@@ -30,14 +30,15 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Runs each check in its own container on the sandbox Docker daemon (spec 5.6). I/O goes through an
- * anonymous volume at {@code /io}, because {@code docker cp} cannot write into a tmpfs or a
- * read-only rootfs.
+ * anonymous volume at {@code /io}, because {@code docker cp} cannot write into a tmpfs or read-only
+ * rootfs.
  *
  * <p><b>Known risk:</b> {@code /io/out} is a writable anonymous volume on the daemon's disk, not a
- * tmpfs. The {@code /work} size, memory and pids limits therefore do not bound what untrusted code
- * can write there. The risk is bounded by the run timeout, and the volume is removed with the
- * container. The mitigation belongs to deployment (OPS-01): put the sandbox daemon's data-root on
- * its own size-bounded filesystem.
+ * tmpfs, so the {@code /work} limits do not bound it. Untrusted output is streamed past the caps
+ * too, so copy-out bytes are bounded only by that disk. The run timeout limits the exposure, and
+ * deployment (OPS-01) puts the daemon's data-root on a size-bounded filesystem. {@code /dev/shm}
+ * and runsc's {@code /tmp} are memory-backed and die with the container, so "cannot write outside
+ * /work" means no persistent writes.
  */
 public class DockerSandboxRunner implements SandboxRunner {
 
@@ -108,10 +109,15 @@ public class DockerSandboxRunner implements SandboxRunner {
       }
       throwIfCancelled(token);
       var copyOut = docker.copyArchiveFromContainerCmd(containerId, IO + "/out");
+      Extracted outputs = null;
       try (InputStream out = copyOut.exec()) {
-        Extracted outputs = extractOutputs(out, new OutputLimits(4 << 20, 600L << 20, 16));
-        return new SandboxResult(outputs.outputTar(), outputs.reportJson(), false);
+        outputs = extractOutputs(out, new OutputLimits(4 << 20, 600L << 20, 16));
+      } catch (IOException | RuntimeException e) {
+        // Closing can fail after extraction; do not leak the temp file.
+        deleteQuietly(outputs == null ? null : outputs.outputTar());
+        throw e;
       }
+      return new SandboxResult(outputs.outputTar(), outputs.reportJson(), false);
     } catch (CancellationException e) {
       throw e;
     } catch (IOException | DockerException | DockerClientException e) {
@@ -182,7 +188,7 @@ public class DockerSandboxRunner implements SandboxRunner {
         .createContainerCmd(image)
         .withUser("10001")
         .withLabels(Map.of("emitkit.sandbox", "true", "emitkit.run", Ids.newUlid()))
-        .withEntrypoint("/bin/sh", "-c", String.format(WRAPPER, properties.checkCommand()))
+        .withEntrypoint("/bin/sh", "-c", WRAPPER.replace("%s", properties.checkCommand()))
         .withVolumes(new Volume(IO))
         .withHostConfig(
             HostConfig.newHostConfig()
@@ -224,9 +230,9 @@ public class DockerSandboxRunner implements SandboxRunner {
   record Extracted(Path outputTar, String reportJson) {}
 
   /**
-   * Reads {@code out/out.tar} into a new temp file and {@code out/report.json} into a string. Other
-   * entries are ignored. An output that is over its limit or duplicated is missing. More entries
-   * than the limit discards both. The caller owns the returned temp file.
+   * Reads {@code out/out.tar} into a temp file and {@code out/report.json} into a string. An
+   * over-limit or duplicated output is missing; more entries than the limit discard both. The
+   * caller owns the file.
    */
   static Extracted extractOutputs(InputStream archive, OutputLimits limits) throws IOException {
     Path outputTar = null;
