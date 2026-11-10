@@ -16,16 +16,20 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.rabbitmq.RabbitMQContainer;
 
+// runc under the test profile: the sandbox startup check must not need a sandbox daemon.
 @SpringBootTest(
     properties = {
       "emitkit.worker.listener.enabled=false",
       "emitkit.worker.retry-ttls=200ms,200ms,200ms",
-      "emitkit.vault.cipher=local"
+      "emitkit.vault.cipher=local",
+      "emitkit.sandbox.runtime=runc"
     })
+@ActiveProfiles("test")
 @Testcontainers
 class RabbitTopologyIT {
 

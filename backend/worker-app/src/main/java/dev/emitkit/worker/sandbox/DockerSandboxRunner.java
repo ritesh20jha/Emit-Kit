@@ -48,6 +48,10 @@ public class DockerSandboxRunner implements SandboxRunner {
   private static final String WRAPPER =
       "cp /io/in.tar /work/in.tar && %s; rc=$?; "
           + "cp /work/out.tar /work/report.json /io/out/ 2>/dev/null; exit $rc";
+
+  /** Label on every sandbox container; the sweeper removes stale ones by it. */
+  static final String LABEL_SANDBOX = "emitkit.sandbox";
+
   private static final Duration POLL = Duration.ofMillis(500);
   private static final Logger log = LoggerFactory.getLogger(DockerSandboxRunner.class);
 
@@ -70,6 +74,10 @@ public class DockerSandboxRunner implements SandboxRunner {
     Objects.requireNonNull(req, "req");
     Objects.requireNonNull(req.inputTar(), "req.inputTar");
     Objects.requireNonNull(token, "token");
+    if (req.timeout() != null && req.timeout().compareTo(SandboxSweeper.MAX_RUN) >= 0) {
+      throw new IllegalArgumentException(
+          "sandbox timeout must be under " + SandboxSweeper.MAX_RUN + ", got " + req.timeout());
+    }
     acquirePermit(token);
     try {
       return execute(req, token);
@@ -187,7 +195,7 @@ public class DockerSandboxRunner implements SandboxRunner {
     return docker
         .createContainerCmd(image)
         .withUser("10001")
-        .withLabels(Map.of("emitkit.sandbox", "true", "emitkit.run", Ids.newUlid()))
+        .withLabels(Map.of(LABEL_SANDBOX, "true", "emitkit.run", Ids.newUlid()))
         .withEntrypoint("/bin/sh", "-c", WRAPPER.replace("%s", properties.checkCommand()))
         .withVolumes(new Volume(IO))
         .withHostConfig(
