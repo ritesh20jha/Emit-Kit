@@ -1,2 +1,6 @@
 .secrets/
 .env
+# Production: real env file and AppRole secret IDs. Smoke test: throwaway secrets.
+.env.prod
+secrets/
+smoke-secrets/

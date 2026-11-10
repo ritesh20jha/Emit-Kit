@@ -1,0 +1,53 @@
+# Edge proxy. EMITKIT_SITE_ADDRESS is the public host name (Caddy gets its certificate from ACME).
+# EMITKIT_TLS_DIRECTIVE is empty in production (automatic ACME). The smoke overlay sets it to "tls internal".
+{
+	admin off
+}
+
+(upstream) {
+	dynamic a api 8080 {
+		refresh 10s
+	}
+	lb_policy round_robin
+	lb_try_duration 5s
+	health_uri /actuator/health/liveness
+	health_port 8081
+	health_interval 10s
+	health_timeout 3s
+	fail_duration 30s
+}
+
+{$EMITKIT_SITE_ADDRESS} {
+	{$EMITKIT_TLS_DIRECTIVE}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Content-Security-Policy "default-src 'self'"
+	}
+
+	@sse path_regexp sse ^/api/v1/runs/[^/]+/logs/stream$
+	@api path /api/* /oauth2/* /login/* /webhooks/*
+
+	# SSE must not be buffered by the proxy. Listed first because @sse is a subset of @api.
+	handle @sse {
+		reverse_proxy {
+			import upstream
+			flush_interval -1
+		}
+	}
+
+	handle @api {
+		reverse_proxy {
+			import upstream
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

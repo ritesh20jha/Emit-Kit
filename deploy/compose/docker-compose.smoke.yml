@@ -1,0 +1,48 @@
+# Test overlay for smoke.sh only. Never use it in production.
+# Vault runs in dev mode, Caddy uses an internal CA, and the sandbox socket is a placeholder file.
+services:
+  vault:
+    # The image entrypoint always adds -config=/vault/config. Dropping the mount leaves that dir empty,
+    # so the Raft file is not loaded and dev mode runs with an in-memory store.
+    command: ["server", "-dev"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root
+    volumes: !reset []
+
+  vault-init:
+    image: hashicorp/vault:2.2.1
+    depends_on:
+      vault:
+        condition: service_healthy
+    networks: [app]
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+    # ./smoke-secrets is created root:root when Docker bind-mounts it. init.sh chmods it (smoke only).
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "rm -f /tmp/ready && /bin/sh /init.sh && touch /tmp/ready && exec sleep infinity"]
+    volumes:
+      - ./vault/init.sh:/init.sh:ro
+      - ./vault/policies:/policies:ro
+      - ./smoke-secrets:/secrets
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  caddy:
+    environment:
+      EMITKIT_SITE_ADDRESS: localhost
+      EMITKIT_TLS_DIRECTIVE: tls internal
+
+  worker:
+    volumes: !override
+      - ./smoke-secrets/sandbox.sock:/run/emitkit-sandbox/docker.sock
+
+secrets:
+  api_vault_secret_id:
+    file: ./smoke-secrets/api-secret-id
+  worker_vault_secret_id:
+    file: ./smoke-secrets/worker-secret-id
