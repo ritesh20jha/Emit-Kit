@@ -241,7 +241,9 @@ services:
   vault:
     <<: *common
     image: hashicorp/vault:2.2.1
-    command: ["server", "-config=/vault/config/vault.hcl"]
+    # The image entrypoint adds -config=/vault/config, which loads the mounted vault.hcl. Passing -config
+    # again would load the file twice and bind port 8200 twice.
+    command: ["server"]
     environment:
       VAULT_ADDR: http://127.0.0.1:8200
     volumes:

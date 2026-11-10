@@ -4,7 +4,7 @@ ui           = false
 disable_mlock = true # Raft storage on a container volume; the Vault container runs without IPC_LOCK.
 
 storage "raft" {
-  path    = "/vault/file/raft"
+  path    = "/vault/file"
   node_id = "vault-1"
 }
 

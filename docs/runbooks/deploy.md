@@ -30,13 +30,15 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
 ## First install
 
-1. Create the env file and replace every `CHANGE_ME`:
+1. Create the env file and fill in every empty value:
 
    ```sh
    cp .env.prod.example .env.prod
-   openssl rand -base64 32   # use one value each for POSTGRES_PASSWORD, RABBITMQ_PASSWORD, RUSTFS_SECRET_KEY
-   getent group emitkit-sandbox | cut -d: -f3   # the value for SANDBOX_GID
+   openssl rand -base64 32   # one value each for POSTGRES_PASSWORD, RABBITMQ_PASSWORD, RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY
+   getent group emitkit-sandbox | cut -d: -f3   # the value for SANDBOX_GID (the example's 10010 is a sample)
    ```
+
+   Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID` and `WORKER_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them. Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
 
    `.env.prod` and `secrets/` are git-ignored. Keep them out of the repository.
 
@@ -149,3 +151,4 @@ Shares are typed at the prompt and must never be written to a file or the shell 
 - The worker's sandbox socket is root-equivalent on the host. See `docs/spikes/2026-gvisor-rootless.md`, "Security under B". Who may join the `emitkit-sandbox` group is still to be decided.
 - Vault runs as a single node, unsealed by hand. Raft snapshots every 6 h and the nightly backups are not automated here. High availability and auto-unseal are v4.
 - The worker has no health endpoint, so it has no healthcheck. `up --wait` only waits for it to start.
+- Caddy's health checks on the api replicas are passive. Caddy's active checks do not run for the Docker DNS upstreams, so a replica is marked down only after a real request fails: a refused connection, or no response headers within 5 s. It is then skipped for 30 s and the request is retried on the other replica. Docker's `healthy` status for the api is a separate, active liveness check on port 8081 and does not feed Caddy. A replica that is paused or hung is therefore detected per request, not by a probe.

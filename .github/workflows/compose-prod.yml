@@ -26,8 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The example has empty secrets on purpose, so validate a generated env file, not the example.
       - name: Validate production compose file
-        run: docker compose -f deploy/compose/docker-compose.prod.yml --env-file deploy/compose/.env.prod.example config -q
+        run: |
+          bash deploy/compose/gen-env.sh > "$RUNNER_TEMP/prod.env"
+          docker compose -f deploy/compose/docker-compose.prod.yml --env-file "$RUNNER_TEMP/prod.env" config -q
 
       # Builds the images, brings the stack up with a test overlay and checks the edge.
       # smoke.sh prints container logs and tears the stack down, also on failure.
