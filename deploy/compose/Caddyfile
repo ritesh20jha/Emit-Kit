@@ -5,22 +5,22 @@
 }
 
 # Upstreams are the api replicas from Docker DNS (dynamic a). Caddy's active health checks do not run for
-# dynamic upstreams, so health is passive: a replica that refuses a connection or does not send headers
-# within 5 s is skipped for 30 s, and the request is retried on the other replica.
+# dynamic upstreams, so health is passive. A replica is skipped for fail_duration after max_fails failures,
+# where a failure is a refused or failed connection or no response headers within 30 s (the transport timeout
+# below). An application 5xx is not a failure, so a sealed Vault (503 on secret endpoints) cannot take replicas
+# out of rotation. The request is retried on the other replica while lb_try_duration lasts. lb_try_duration is
+# longer than the header timeout so that one hung replica still leaves time to retry. A request that was already
+# sent is retried only for GET and HEAD (Caddy's default, stated here); a connection that never opened is always retried.
 (upstream) {
 	dynamic a api 8080 {
 		refresh 10s
 	}
 	lb_policy round_robin
-	lb_try_duration 15s
+	lb_try_duration 35s
 	lb_try_interval 250ms
+	lb_retry_match method GET HEAD
 	fail_duration 30s
 	max_fails 1
-	unhealthy_status 5xx
-	transport http {
-		dial_timeout 2s
-		response_header_timeout 5s
-	}
 }
 
 {$EMITKIT_SITE_ADDRESS} {
@@ -42,12 +42,20 @@
 		reverse_proxy {
 			import upstream
 			flush_interval -1
+			# No response-header timeout: the stream may send nothing until the first event.
+			transport http {
+				dial_timeout 2s
+			}
 		}
 	}
 
 	handle @api {
 		reverse_proxy {
 			import upstream
+			transport http {
+				dial_timeout 2s
+				response_header_timeout 30s
+			}
 		}
 	}
 
