@@ -35,12 +35,20 @@ class SandboxStartupCheck implements ApplicationRunner {
     check();
   }
 
-  /** Throws {@link IllegalStateException} when the configured runtime must not run here. */
+  /**
+   * Throws {@link IllegalStateException} unless the configured runtime is runsc, or runc under the
+   * dev or test profile (spec 5.6). An unknown or blank value fails too: an empty runtime would
+   * silently run under the daemon default.
+   */
   void check() {
     String runtime = properties.runtime();
-    if ("runc".equals(runtime) && environment.acceptsProfiles(Profiles.of("prod", "staging"))) {
+    if (!"runsc".equals(runtime) && !"runc".equals(runtime)) {
       throw new IllegalStateException(
-          "emitkit.sandbox.runtime=runc: runc is only allowed in dev/test, not prod or staging");
+          "emitkit.sandbox.runtime must be runsc or runc, got '" + runtime + "'");
+    }
+    if ("runc".equals(runtime) && !environment.acceptsProfiles(Profiles.of("dev", "test"))) {
+      throw new IllegalStateException(
+          "emitkit.sandbox.runtime=runc: runc is only allowed in dev/test");
     }
     if ("runsc".equals(runtime) && !daemonRuntimes().contains("runsc")) {
       throw new IllegalStateException(
