@@ -42,14 +42,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # The sandbox ITs run under gVisor (spec 5.6). Pinned release, checksum verified.
+      # The sandbox ITs run under gVisor (spec 5.6). Installed from gVisor's signed apt repo, pinned.
       - name: Install gVisor runsc
         run: |
-          base=https://storage.googleapis.com/gvisor/releases/release/20261102.0/x86_64
-          cd "$RUNNER_TEMP"
-          curl -fsSL -O "$base/runsc" -O "$base/runsc.sha512"
-          sha512sum -c runsc.sha512
-          sudo install -m 0755 runsc /usr/local/bin/runsc
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y runsc=20261102.0
           sudo runsc install
           sudo systemctl restart docker
           timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
