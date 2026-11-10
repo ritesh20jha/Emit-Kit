@@ -142,6 +142,28 @@ class SandboxStartupCheckTest {
         .hasMessageContaining("does not list a runsc runtime");
   }
 
+  @Test
+  void timeoutAtSweeperBound_failsStartup() {
+    var check =
+        new SandboxStartupCheck(
+            () -> Set.of("runsc"), properties("runsc", Duration.ofMinutes(9)), environment("prod"));
+
+    assertThatThrownBy(check::check)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("emitkit.sandbox.timeout must be under");
+  }
+
+  @Test
+  void timeoutJustBelowSweeperBound_starts() {
+    var check =
+        new SandboxStartupCheck(
+            () -> Set.of("runsc"),
+            properties("runsc", Duration.ofMinutes(9).minusSeconds(1)),
+            environment("prod"));
+
+    assertThatCode(check::check).doesNotThrowAnyException();
+  }
+
   private static SandboxStartupCheck check(
       String runtime, Set<String> daemonRuntimes, String... profiles) {
     return new SandboxStartupCheck(
@@ -149,11 +171,15 @@ class SandboxStartupCheckTest {
   }
 
   private static SandboxProperties properties(String runtime) {
+    return properties(runtime, Duration.ofSeconds(180));
+  }
+
+  private static SandboxProperties properties(String runtime, Duration timeout) {
     return new SandboxProperties(
         "unix:///nonexistent-emitkit/docker.sock",
         runtime,
         4,
-        Duration.ofSeconds(180),
+        timeout,
         "emitkit/toolchain:1",
         "/usr/local/bin/check.sh");
   }

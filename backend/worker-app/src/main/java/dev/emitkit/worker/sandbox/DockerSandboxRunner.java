@@ -74,6 +74,10 @@ public class DockerSandboxRunner implements SandboxRunner {
     Objects.requireNonNull(req, "req");
     Objects.requireNonNull(req.inputTar(), "req.inputTar");
     Objects.requireNonNull(token, "token");
+    if (req.timeout() != null && req.timeout().compareTo(SandboxSweeper.MAX_RUN) >= 0) {
+      throw new IllegalArgumentException(
+          "sandbox timeout must be under " + SandboxSweeper.MAX_RUN + ", got " + req.timeout());
+    }
     acquirePermit(token);
     try {
       return execute(req, token);

@@ -20,6 +20,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 class SandboxSweeper {
 
   static final Duration MAX_AGE = Duration.ofMinutes(10);
+
+  /** The longest run the sweeper leaves alone: a run under this cannot outlive {@link #MAX_AGE}. */
+  static final Duration MAX_RUN = MAX_AGE.minus(Duration.ofMinutes(1));
+
   private static final Logger log = LoggerFactory.getLogger(SandboxSweeper.class);
 
   private final DockerClient docker;

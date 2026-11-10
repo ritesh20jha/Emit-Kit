@@ -46,6 +46,13 @@ class SandboxStartupCheck implements ApplicationRunner {
       throw new IllegalStateException(
           "emitkit.sandbox.runtime must be runsc or runc, got '" + runtime + "'");
     }
+    if (properties.timeout().compareTo(SandboxSweeper.MAX_RUN) >= 0) {
+      throw new IllegalStateException(
+          "emitkit.sandbox.timeout must be under "
+              + SandboxSweeper.MAX_RUN
+              + " so the sweeper cannot remove a live run, got "
+              + properties.timeout());
+    }
     // prod and staging win over any dev or test entry, so "dev,prod" still rejects runc.
     if ("runc".equals(runtime)
         && (environment.acceptsProfiles(Profiles.of("prod", "staging"))
