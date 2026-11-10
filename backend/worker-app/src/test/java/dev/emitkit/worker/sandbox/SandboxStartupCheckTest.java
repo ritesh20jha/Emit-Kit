@@ -48,6 +48,24 @@ class SandboxStartupCheckTest {
         .hasMessageContaining("runc is only allowed in dev/test");
   }
 
+  @Test
+  void runc_devAndProd_failsStartup() {
+    var check = check("runc", Set.of("runc"), "dev", "prod");
+
+    assertThatThrownBy(check::check)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("runc is only allowed in dev/test");
+  }
+
+  @Test
+  void runc_devAndStaging_failsStartup() {
+    var check = check("runc", Set.of("runc"), "dev", "staging");
+
+    assertThatThrownBy(check::check)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("runc is only allowed in dev/test");
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"kata", "RUNSC", "runsc "})
   void unknownRuntime_failsStartup(String runtime) {
@@ -55,7 +73,8 @@ class SandboxStartupCheckTest {
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("emitkit.sandbox.runtime must be runsc or runc");
+        .hasMessageContaining("emitkit.sandbox.runtime must be runsc or runc")
+        .hasMessageContaining("got '" + runtime + "'");
   }
 
   @ParameterizedTest

@@ -46,7 +46,10 @@ class SandboxStartupCheck implements ApplicationRunner {
       throw new IllegalStateException(
           "emitkit.sandbox.runtime must be runsc or runc, got '" + runtime + "'");
     }
-    if ("runc".equals(runtime) && !environment.acceptsProfiles(Profiles.of("dev", "test"))) {
+    // prod and staging win over any dev or test entry, so "dev,prod" still rejects runc.
+    if ("runc".equals(runtime)
+        && (environment.acceptsProfiles(Profiles.of("prod", "staging"))
+            || !environment.acceptsProfiles(Profiles.of("dev", "test")))) {
       throw new IllegalStateException(
           "emitkit.sandbox.runtime=runc: runc is only allowed in dev/test");
     }
