@@ -1,0 +1,287 @@
+# Production stack. Only caddy publishes ports (80 and 443). Everything else sits on the internal `app` network;
+# api and worker also join `egress` (not internal) for outbound calls to GitHub.
+# Usage (from deploy/compose): docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --wait --build
+# First install and upgrades: docs/runbooks/deploy.md.
+name: emitkit-prod
+
+x-common: &common
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  caddy:
+    <<: *common
+    build:
+      context: ../../frontend
+      dockerfile: ../deploy/docker/web.Dockerfile
+    image: emitkit/web:${EMITKIT_IMAGE_TAG:-local}
+    user: "10001:10001"
+    cap_drop: [ALL]
+    # Lets the non-root process bind 80 and 443 inside its own network namespace.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      EMITKIT_SITE_ADDRESS: ${EMITKIT_SITE_ADDRESS:?set the public host name in .env.prod}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge, app]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    <<: *common
+    build:
+      context: ../../backend
+      dockerfile: ../deploy/docker/api.Dockerfile
+    image: emitkit/api:${EMITKIT_IMAGE_TAG:-local}
+    cap_drop: [ALL]
+    deploy:
+      replicas: 2
+      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in api.Dockerfile). See the runbook, "First install", step 1.
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-1g}
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # Caddy terminates TLS, so the app must trust the X-Forwarded-* headers it sets.
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      # Liveness only. The /actuator/health aggregate includes the Vault indicator, so a sealed Vault would fail it.
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-emitkit}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-emitkit}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-emitkit}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?set in .env.prod}
+      EMITKIT_VAULT_URI: http://vault:8200
+      EMITKIT_VAULT_ROLE_ID: ${API_VAULT_ROLE_ID:?set in .env.prod}
+      EMITKIT_VAULT_SECRET_ID_FILE: /run/secrets/api_vault_secret_id
+      EMITKIT_STORAGE_ENDPOINT: http://rustfs:9000
+      EMITKIT_STORAGE_BUCKET: ${S3_BUCKET:-emitkit-artifacts}
+      EMITKIT_STORAGE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?set in .env.prod}
+      EMITKIT_STORAGE_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set in .env.prod}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?set in .env.prod}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set in .env.prod}
+    secrets: [api_vault_secret_id]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/liveness"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    # egress: outbound access to GitHub. Only api and worker join it.
+    networks: [app, egress]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_healthy
+
+  worker:
+    <<: *common
+    build:
+      context: ../../backend
+      dockerfile: ../deploy/docker/worker.Dockerfile
+    image: emitkit/worker:${EMITKIT_IMAGE_TAG:-local}
+    cap_drop: [ALL]
+    deploy:
+      replicas: 2
+      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in worker.Dockerfile). See the runbook, "First install", step 1.
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-1536m}
+    # Group of the host's sandbox socket, so the non-root worker may connect to it.
+    group_add:
+      - ${SANDBOX_GID:?set in .env.prod}
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      EMITKIT_SANDBOX_DOCKER_HOST: unix:///run/emitkit-sandbox/docker.sock
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-emitkit}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-emitkit}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-emitkit}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?set in .env.prod}
+      EMITKIT_VAULT_URI: http://vault:8200
+      EMITKIT_VAULT_ROLE_ID: ${WORKER_VAULT_ROLE_ID:?set in .env.prod}
+      EMITKIT_VAULT_SECRET_ID_FILE: /run/secrets/worker_vault_secret_id
+      EMITKIT_STORAGE_ENDPOINT: http://rustfs:9000
+      EMITKIT_STORAGE_BUCKET: ${S3_BUCKET:-emitkit-artifacts}
+      EMITKIT_STORAGE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?set in .env.prod}
+      EMITKIT_STORAGE_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set in .env.prod}
+    secrets: [worker_vault_secret_id]
+    # Only the SBX-01 sandbox daemon socket. Never /var/run/docker.sock of the host.
+    # create_host_path stops Docker from creating a directory here if the daemon is not running.
+    volumes:
+      - type: bind
+        source: /run/emitkit-sandbox/docker.sock
+        target: /run/emitkit-sandbox/docker.sock
+        bind:
+          create_host_path: false
+    networks: [app, egress]
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_healthy
+
+  postgres:
+    <<: *common
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-emitkit}
+      POSTGRES_USER: ${POSTGRES_USER:-emitkit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+    # Postgres 18+ images keep PGDATA under a version-specific subdirectory of /var/lib/postgresql.
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [app]
+
+  rabbitmq:
+    <<: *common
+    image: rabbitmq:4.4.0-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-emitkit}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set in .env.prod}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    networks: [app]
+
+  redis:
+    <<: *common
+    image: redis:8.10.3-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [app]
+
+  rustfs:
+    <<: *common
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?set in .env.prod}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set in .env.prod}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks: [app]
+
+  rustfs-init:
+    <<: *common
+    image: amazon/aws-cli:2.39.3
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:?set in .env.prod}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:?set in .env.prod}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      S3_ENDPOINT: http://rustfs:9000
+      S3_BUCKET: ${S3_BUCKET:-emitkit-artifacts}
+    # Stays running after success so `up --wait` (which fails on exited containers) can pass.
+    # The healthcheck flips to healthy once the bucket step has succeeded.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        rm -f /tmp/ready &&
+        (aws --endpoint-url "$$S3_ENDPOINT" s3api head-bucket --bucket "$$S3_BUCKET" >/dev/null 2>&1 ||
+        aws --endpoint-url "$$S3_ENDPOINT" s3api create-bucket --bucket "$$S3_BUCKET") &&
+        touch /tmp/ready && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+    networks: [app]
+
+  # Sealed after every start. Healthy means reachable (`vault status` exits 2 when sealed), so
+  # `up --wait` passes on a fresh install before the operator unseals it. Apps do not depend on it.
+  vault:
+    <<: *common
+    image: hashicorp/vault:2.2.1
+    # The image entrypoint adds -config=/vault/config, which loads the mounted vault.hcl. Passing -config
+    # again would load the file twice and bind port 8200 twice.
+    command: ["server"]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+    volumes:
+      - ./vault/vault.hcl:/vault/config/vault.hcl:ro
+      - vault-data:/vault/file
+    healthcheck:
+      test: ["CMD-SHELL", "vault status >/dev/null 2>&1; [ $$? -ne 1 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [app]
+
+secrets:
+  api_vault_secret_id:
+    file: ${API_VAULT_SECRET_ID_FILE:-./secrets/api-secret-id}
+  worker_vault_secret_id:
+    file: ${WORKER_VAULT_SECRET_ID_FILE:-./secrets/worker-secret-id}
+
+networks:
+  edge: {}
+  app:
+    internal: true
+  egress: {}
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  redis-data:
+  rustfs-data:
+  vault-data:
+  caddy-data:
+  caddy-config:

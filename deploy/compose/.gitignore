@@ -1,2 +1,9 @@
 .secrets/
 .env
+# Production: real env file (and editor or sed backups of it), AppRole secret IDs, database and Raft
+# backups. Smoke test: throwaway secrets. The example stays tracked.
+.env.prod*
+!.env.prod.example
+secrets/
+smoke-secrets/
+backups/
