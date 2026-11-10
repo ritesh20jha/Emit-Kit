@@ -25,15 +25,16 @@ class SandboxSweeperIT {
 
   private static final String DOCKER_HOST =
       System.getProperty("sandbox.docker-host", "unix:///var/run/docker.sock");
-  private static final String IMAGE = "alpine:latest";
+  private static final String IMAGE = "alpine:3.20";
   private static final String TEST_LABEL = "emitkit.test";
   private static final String TEST_ID = Ids.newUlid();
 
   private static DockerClient docker;
 
   @BeforeAll
-  static void connect() {
+  static void connect() throws InterruptedException {
     docker = SandboxConfig.newDockerClient(DOCKER_HOST);
+    docker.pullImageCmd("alpine").withTag("3.20").start().awaitCompletion();
   }
 
   @AfterAll
