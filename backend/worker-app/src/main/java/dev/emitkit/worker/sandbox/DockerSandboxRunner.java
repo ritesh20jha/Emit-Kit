@@ -3,20 +3,24 @@ package dev.emitkit.worker.sandbox;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.InspectContainerResponse;
+import com.github.dockerjava.api.exception.DockerClientException;
+import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
 import dev.emitkit.common.id.Ids;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -38,8 +42,16 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Concurrency is limited by a fair semaphore of {@code emitkit.sandbox.max-concurrent} permits.
  * The container is always removed, with its volume, before {@link #run} returns or throws. The
- * Docker client's transport reports daemon failures as plain {@link RuntimeException}s, so every
- * runtime failure of a Docker call is mapped to {@link SandboxInfraException}.
+ * Docker client's transport reports daemon failures as plain {@link RuntimeException}s, so Docker
+ * and I/O failures are mapped to {@link SandboxInfraException} while programming errors are not.
+ * Outputs read back from the container are bounded by {@link OutputLimits}; an output over its
+ * limit is treated as missing.
+ *
+ * <p><b>Known risk:</b> {@code /io/out} is a writable anonymous volume on the daemon's disk, not a
+ * tmpfs. The {@code /work} size, memory and pids limits therefore do not bound what untrusted code
+ * can write there. The risk is bounded by the run timeout, and the volume is removed with the
+ * container. The mitigation belongs to deployment (OPS-01): put the sandbox daemon's data-root on
+ * its own size-bounded filesystem.
  */
 public class DockerSandboxRunner implements SandboxRunner {
 
@@ -48,6 +60,8 @@ public class DockerSandboxRunner implements SandboxRunner {
 
   private static final String IO_DIR = "/io";
   private static final String OUT_DIR = "out";
+  private static final String OUT_TAR_ENTRY = OUT_DIR + "/out.tar";
+  private static final String REPORT_ENTRY = OUT_DIR + "/report.json";
   private static final String USER = "10001";
   private static final Duration POLL = Duration.ofMillis(500);
   private static final Logger log = LoggerFactory.getLogger(DockerSandboxRunner.class);
@@ -73,6 +87,9 @@ public class DockerSandboxRunner implements SandboxRunner {
 
   @Override
   public SandboxResult run(SandboxRequest req, CancellationToken token) {
+    Objects.requireNonNull(req, "req");
+    Objects.requireNonNull(req.inputTar(), "req.inputTar");
+    Objects.requireNonNull(token, "token");
     acquirePermit(token);
     try {
       return execute(req, token);
@@ -113,15 +130,35 @@ public class DockerSandboxRunner implements SandboxRunner {
       return collectOutputs(containerId);
     } catch (CancellationException e) {
       throw e;
-    } catch (IOException | RuntimeException e) {
-      throw new SandboxInfraException(
-          "sandbox run failed on the Docker daemon: " + e.getMessage(), e);
-    } finally {
-      if (containerId != null) {
-        remove(containerId);
+    } catch (IOException | DockerException | DockerClientException e) {
+      throw infraFailure(e);
+    } catch (RuntimeException e) {
+      // The Docker transport wraps socket failures in a plain RuntimeException. Other runtime
+      // exceptions are programming errors and must not be retried as transient.
+      if (e.getCause() instanceof IOException) {
+        throw infraFailure(e);
       }
-      deleteQuietly(inputArchive);
+      throw e;
+    } finally {
+      // Cleanup runs with the interrupt flag cleared, so the Docker calls are not aborted, and the
+      // flag is restored afterwards.
+      boolean interrupted = Thread.interrupted();
+      try {
+        if (containerId != null) {
+          remove(containerId);
+        }
+        deleteQuietly(inputArchive);
+      } finally {
+        if (interrupted) {
+          Thread.currentThread().interrupt();
+        }
+      }
     }
+  }
+
+  private static SandboxInfraException infraFailure(Exception cause) {
+    return new SandboxInfraException(
+        "sandbox run failed on the Docker daemon: " + cause.getMessage(), cause);
   }
 
   /**
@@ -144,8 +181,9 @@ public class DockerSandboxRunner implements SandboxRunner {
       }
       return false;
     } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+      // Kill first, while the flag is clear; then report the interrupt to the caller.
       kill(containerId);
+      Thread.currentThread().interrupt();
       throw new CancellationException("interrupted while the sandbox container ran");
     }
   }
@@ -236,30 +274,128 @@ public class DockerSandboxRunner implements SandboxRunner {
     }
   }
 
-  /** Reads {@code out/out.tar} into a new temp file and {@code out/report.json} into a string. */
   private SandboxResult collectOutputs(String containerId) throws IOException {
-    Path outputTar = null;
     try (InputStream archive =
-            docker.copyArchiveFromContainerCmd(containerId, IO_DIR + "/" + OUT_DIR).exec();
-        TarArchiveInputStream tar = new TarArchiveInputStream(archive)) {
-      String report = null;
+        docker.copyArchiveFromContainerCmd(containerId, IO_DIR + "/" + OUT_DIR).exec()) {
+      Extracted outputs = extractOutputs(archive, OutputLimits.DEFAULT);
+      return new SandboxResult(outputs.outputTar(), outputs.reportJson(), false);
+    }
+  }
+
+  /** Size and count bounds on the untrusted output archive. */
+  record OutputLimits(int maxReportBytes, long maxOutputTarBytes, int maxEntries) {
+
+    static final OutputLimits DEFAULT = new OutputLimits(4 * 1024 * 1024, 600L * 1024 * 1024, 16);
+  }
+
+  /** The outputs read from the archive. Null means absent or rejected by a limit. */
+  record Extracted(Path outputTar, String reportJson) {}
+
+  /**
+   * Reads {@code out/out.tar} into a new temp file and {@code out/report.json} into a string.
+   *
+   * <p>Only the exact top-level regular files are read. A nested or non-file entry is ignored. An
+   * output over its limit, or a duplicate of one, is treated as missing and logged as a warning.
+   * More entries than {@link OutputLimits#maxEntries()} discards both outputs. The caller owns the
+   * returned temp file. A failure deletes it.
+   */
+  static Extracted extractOutputs(InputStream archive, OutputLimits limits) throws IOException {
+    Path outputTar = null;
+    String report = null;
+    Set<String> seen = new HashSet<>();
+    Set<String> rejected = new HashSet<>();
+    boolean tooManyEntries = false;
+    boolean completed = false;
+    try (TarArchiveInputStream tar = new TarArchiveInputStream(archive)) {
+      int entries = 0;
       TarArchiveEntry entry;
       while ((entry = tar.getNextEntry()) != null) {
-        if (entry.isDirectory()) {
+        if (++entries > limits.maxEntries()) {
+          tooManyEntries = true;
+          break;
+        }
+        String name = entry.getName();
+        boolean wanted = OUT_TAR_ENTRY.equals(name) || REPORT_ENTRY.equals(name);
+        if (!wanted || !isRegularFile(entry)) {
           continue;
         }
-        String name = Path.of(entry.getName()).getFileName().toString();
-        if (name.equals("out.tar")) {
+        if (!seen.add(name)) {
+          log.warn("sandbox output has a duplicate entry {}; treating it as missing", name);
+          rejected.add(name);
+          continue;
+        }
+        if (OUT_TAR_ENTRY.equals(name)) {
           outputTar = Files.createTempFile("sandbox-out-", ".tar");
-          Files.copy(tar, outputTar, StandardCopyOption.REPLACE_EXISTING);
-        } else if (name.equals("report.json")) {
-          report = new String(tar.readAllBytes(), StandardCharsets.UTF_8);
+          if (!copyBounded(tar, outputTar, limits.maxOutputTarBytes())) {
+            log.warn(
+                "sandbox out.tar exceeds {} bytes; treating it as missing",
+                limits.maxOutputTarBytes());
+            rejected.add(name);
+          }
+        } else {
+          byte[] bytes = tar.readNBytes(limits.maxReportBytes() + 1);
+          if (bytes.length > limits.maxReportBytes()) {
+            log.warn(
+                "sandbox report.json exceeds {} bytes; treating it as missing",
+                limits.maxReportBytes());
+            rejected.add(name);
+          } else {
+            report = new String(bytes, StandardCharsets.UTF_8);
+          }
         }
       }
-      return new SandboxResult(outputTar, report, false);
-    } catch (IOException | RuntimeException e) {
-      deleteQuietly(outputTar);
-      throw e;
+      if (tooManyEntries) {
+        log.warn(
+            "sandbox output has more than {} entries; discarding all outputs", limits.maxEntries());
+        rejected.add(OUT_TAR_ENTRY);
+        rejected.add(REPORT_ENTRY);
+      }
+      if (rejected.contains(OUT_TAR_ENTRY)) {
+        deleteQuietly(outputTar);
+        outputTar = null;
+      }
+      if (rejected.contains(REPORT_ENTRY)) {
+        report = null;
+      }
+      completed = true;
+      return new Extracted(outputTar, report);
+    } finally {
+      if (!completed) {
+        deleteQuietly(outputTar);
+      }
+    }
+  }
+
+  /**
+   * True only for a regular file. {@link TarArchiveEntry#isFile()} also reports true for a symlink
+   * whose name does not end in a slash, so the link and device types are excluded explicitly.
+   */
+  private static boolean isRegularFile(TarArchiveEntry entry) {
+    return entry.isFile()
+        && !entry.isDirectory()
+        && !entry.isSymbolicLink()
+        && !entry.isLink()
+        && !entry.isCharacterDevice()
+        && !entry.isBlockDevice()
+        && !entry.isFIFO();
+  }
+
+  /**
+   * Copies the current tar entry to {@code target}. Returns false, leaving a partial file, if over
+   * {@code max}.
+   */
+  private static boolean copyBounded(InputStream in, Path target, long max) throws IOException {
+    try (OutputStream out = Files.newOutputStream(target)) {
+      byte[] buffer = new byte[64 * 1024];
+      long total = 0;
+      for (int n = in.read(buffer); n != -1; n = in.read(buffer)) {
+        total += n;
+        if (total > max) {
+          return false;
+        }
+        out.write(buffer, 0, n);
+      }
+      return true;
     }
   }
 

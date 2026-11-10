@@ -7,12 +7,10 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 /** Wires the sandbox: the Docker client for the sandbox daemon and the runner built on it. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(SandboxProperties.class)
-@EnableScheduling
 class SandboxConfig {
 
   @Bean
