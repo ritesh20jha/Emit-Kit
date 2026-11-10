@@ -144,7 +144,8 @@ class DockerSandboxRunnerIT {
     assertThat(report).isNotNull();
     Matcher count = Pattern.compile("done count=(\\d+)").matcher(report);
     assertThat(count.find()).as("report: %s", report).isTrue();
-    assertThat(Long.parseLong(count.group(1))).isLessThanOrEqualTo(270);
+    long started = Long.parseLong(count.group(1));
+    assertThat(started).isGreaterThan(50).isLessThanOrEqualTo(270);
   }
 
   @Test
@@ -210,11 +211,15 @@ class DockerSandboxRunnerIT {
     // start before the first has ended.
     String command = "echo start $(date +%s); sleep 3; echo end $(date +%s)";
     try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-      String first =
-          submit(pool, command, new CancellationToken()).get(120, TimeUnit.SECONDS).reportJson();
-      String second =
-          submit(pool, command, new CancellationToken()).get(120, TimeUnit.SECONDS).reportJson();
+      Future<SandboxResult> a = submit(pool, command, new CancellationToken());
+      Future<SandboxResult> b = submit(pool, command, new CancellationToken());
+      String reportA = a.get(120, TimeUnit.SECONDS).reportJson();
+      String reportB = b.get(120, TimeUnit.SECONDS).reportJson();
 
+      // Order the runs by the start time the containers wrote, not by submission order.
+      boolean aFirst = stamp(reportA, "start") <= stamp(reportB, "start");
+      String first = aFirst ? reportA : reportB;
+      String second = aFirst ? reportB : reportA;
       assertThat(stamp(second, "start")).isGreaterThanOrEqualTo(stamp(first, "end"));
     }
   }
