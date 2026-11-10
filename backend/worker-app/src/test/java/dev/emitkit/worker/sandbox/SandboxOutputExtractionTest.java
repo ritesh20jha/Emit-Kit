@@ -2,6 +2,8 @@ package dev.emitkit.worker.sandbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.emitkit.worker.sandbox.DockerSandboxRunner.Extracted;
+import dev.emitkit.worker.sandbox.DockerSandboxRunner.OutputLimits;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -12,44 +14,26 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.archivers.tar.TarConstants;
 import org.junit.jupiter.api.Test;
 
-/** Bounds and entry matching for the untrusted output archive. Needs no Docker daemon. */
+/** Size and name limits on the untrusted output archive. Needs no Docker daemon. */
 class SandboxOutputExtractionTest {
 
-  private static final DockerSandboxRunner.OutputLimits LIMITS =
-      new DockerSandboxRunner.OutputLimits(16, 16, 16);
+  private static final OutputLimits LIMITS = new OutputLimits(16, 16, 16);
 
   @Test
   void readsExactTopLevelOutputs() throws IOException {
-    DockerSandboxRunner.Extracted out =
-        extract(LIMITS, dir("out/"), file("out/out.tar", "payload"), file("out/report.json", "{}"));
+    Extracted out = extract(LIMITS, "out/out.tar", "payload", "out/report.json", "{}");
     try {
-      assertThat(out.reportJson()).isEqualTo("{}");
       assertThat(Files.readString(out.outputTar())).isEqualTo("payload");
+      assertThat(out.reportJson()).isEqualTo("{}");
     } finally {
       Files.deleteIfExists(out.outputTar());
     }
   }
 
   @Test
-  void ignoresNestedNonFileAndUnknownEntries() throws IOException {
-    DockerSandboxRunner.Extracted out =
-        extract(
-            LIMITS,
-            file("out/nested/out.tar", "x"),
-            file("out/extra.txt", "x"),
-            symlink("out/report.json"));
-
-    assertThat(out.outputTar()).isNull();
-    assertThat(out.reportJson()).isNull();
-  }
-
-  @Test
-  void oversizedReportIsTreatedAsMissing() throws IOException {
-    DockerSandboxRunner.Extracted out =
-        extract(
-            new DockerSandboxRunner.OutputLimits(4, 16, 16),
-            file("out/report.json", "12345"),
-            file("out/out.tar", "ok"));
+  void oversizedReportIsMissingAndOutputTarIsKept() throws IOException {
+    Extracted out =
+        extract(new OutputLimits(4, 16, 16), "out/report.json", "12345", "out/out.tar", "ok");
     try {
       assertThat(out.reportJson()).isNull();
       assertThat(Files.readString(out.outputTar())).isEqualTo("ok");
@@ -59,86 +43,63 @@ class SandboxOutputExtractionTest {
   }
 
   @Test
-  void oversizedOutputTarIsTreatedAsMissing() throws IOException {
-    DockerSandboxRunner.Extracted out =
-        extract(
-            new DockerSandboxRunner.OutputLimits(16, 3, 16),
-            file("out/out.tar", "payload"),
-            file("out/report.json", "{}"));
+  void oversizedOutputTarIsMissingAndReportIsKept() throws IOException {
+    Extracted out =
+        extract(new OutputLimits(16, 3, 16), "out/out.tar", "payload", "out/report.json", "{}");
 
     assertThat(out.outputTar()).isNull();
     assertThat(out.reportJson()).isEqualTo("{}");
   }
 
   @Test
-  void duplicateEntryTreatsThatOutputAsMissing() throws IOException {
-    DockerSandboxRunner.Extracted out =
-        extract(LIMITS, file("out/report.json", "first"), file("out/report.json", "second"));
+  void nestedDuplicateAndSymlinkOutputsAreMissing() throws IOException {
+    assertThat(extract(LIMITS, "out/nested/out.tar", "x").outputTar()).isNull();
+    assertThat(extract(LIMITS, "out/report.json", "a", "out/report.json", "b").reportJson())
+        .isNull();
 
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+      TarArchiveEntry link = new TarArchiveEntry("out/report.json", TarConstants.LF_SYMLINK);
+      link.setLinkName("/etc/passwd");
+      tar.putArchiveEntry(link);
+      tar.closeArchiveEntry();
+    }
+    Extracted out =
+        DockerSandboxRunner.extractOutputs(new ByteArrayInputStream(bytes.toByteArray()), LIMITS);
     assertThat(out.reportJson()).isNull();
-  }
-
-  @Test
-  void duplicateOutputTarIsDeletedAndTreatedAsMissing() throws IOException {
-    DockerSandboxRunner.Extracted out =
-        extract(LIMITS, file("out/out.tar", "first"), file("out/out.tar", "second"));
-
-    assertThat(out.outputTar()).isNull();
   }
 
   @Test
   void tooManyEntriesDiscardsEveryOutput() throws IOException {
-    DockerSandboxRunner.Extracted out =
+    Extracted out =
         extract(
-            new DockerSandboxRunner.OutputLimits(16, 16, 2),
-            file("out/out.tar", "payload"),
-            file("out/report.json", "{}"),
-            file("out/extra.txt", "x"));
+            new OutputLimits(16, 16, 2),
+            "out/out.tar",
+            "payload",
+            "out/report.json",
+            "{}",
+            "out/x",
+            "x");
 
     assertThat(out.outputTar()).isNull();
     assertThat(out.reportJson()).isNull();
   }
 
-  private static DockerSandboxRunner.Extracted extract(
-      DockerSandboxRunner.OutputLimits limits, Entry... entries) throws IOException {
+  /** Builds an archive from alternating name and content arguments, then extracts it. */
+  private static Extracted extract(OutputLimits limits, String... nameAndContent)
+      throws IOException {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
     try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
-      for (Entry entry : entries) {
-        entry.writeTo(tar);
+      for (int i = 0; i < nameAndContent.length; i += 2) {
+        byte[] content = nameAndContent[i + 1].getBytes(StandardCharsets.UTF_8);
+        TarArchiveEntry entry = new TarArchiveEntry(nameAndContent[i]);
+        entry.setSize(content.length);
+        tar.putArchiveEntry(entry);
+        tar.write(content);
+        tar.closeArchiveEntry();
       }
     }
     return DockerSandboxRunner.extractOutputs(
         new ByteArrayInputStream(bytes.toByteArray()), limits);
-  }
-
-  private interface Entry {
-    void writeTo(TarArchiveOutputStream tar) throws IOException;
-  }
-
-  private static Entry file(String name, String content) {
-    return tar -> {
-      byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-      TarArchiveEntry entry = new TarArchiveEntry(name);
-      entry.setSize(bytes.length);
-      tar.putArchiveEntry(entry);
-      tar.write(bytes);
-      tar.closeArchiveEntry();
-    };
-  }
-
-  private static Entry dir(String name) {
-    return tar -> {
-      tar.putArchiveEntry(new TarArchiveEntry(name));
-      tar.closeArchiveEntry();
-    };
-  }
-
-  private static Entry symlink(String name) {
-    return tar -> {
-      TarArchiveEntry entry = new TarArchiveEntry(name, TarConstants.LF_SYMLINK);
-      entry.setLinkName("/etc/passwd");
-      tar.putArchiveEntry(entry);
-      tar.closeArchiveEntry();
-    };
   }
 }

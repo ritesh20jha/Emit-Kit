@@ -27,9 +27,9 @@ dependencies {
 // The convention plugin disables bootJar until a main class exists; worker-app has one now.
 tasks.named("bootJar") { enabled = true }
 
-// Forward -Dsandbox.* from the Gradle invocation into every test JVM (read by DockerSandboxRunnerIT).
+// Forward -Dsandbox.runtime and -Dsandbox.docker-host into the test JVM (see DockerSandboxRunnerIT).
 tasks.withType<Test>().configureEach {
-    listOf("sandbox.runtime", "sandbox.docker-host").forEach { key ->
-        providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
+    listOf("sandbox.runtime", "sandbox.docker-host").forEach { k ->
+        providers.systemProperty(k).orNull?.let { systemProperty(k, it) }
     }
 }

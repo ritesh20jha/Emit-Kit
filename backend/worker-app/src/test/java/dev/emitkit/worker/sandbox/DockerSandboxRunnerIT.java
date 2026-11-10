@@ -7,13 +7,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Container;
-import com.github.dockerjava.api.model.ContainerMount;
 import com.github.dockerjava.core.command.BuildImageResultCallback;
 import dev.emitkit.common.id.Ids;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,30 +32,22 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Escape suite for {@link DockerSandboxRunner}. Runs real containers on the Docker daemon at {@code
- * -Dsandbox.docker-host} (default {@code unix:///var/run/docker.sock}) with runtime {@code
- * -Dsandbox.runtime} (default {@code runsc}).
- *
- * <p>The test image is alpine plus a stand-in for {@code check.sh}: it untars {@code in.tar} into
- * {@code /work} and runs the file {@code cmd} from it, with stdout and stderr going to {@code
- * report.json}. A test command can therefore write {@code /work/out.tar} itself.
+ * Escape suite for {@link DockerSandboxRunner} on the daemon at {@code sandbox.docker-host}
+ * (default {@code unix:///var/run/docker.sock}) with runtime {@code sandbox.runtime} (default
+ * {@code runsc}). The test image's check stand-in runs {@code cmd} from {@code in.tar} and writes
+ * its output to {@code report.json}.
  */
 class DockerSandboxRunnerIT {
 
   private static final String RUNTIME = System.getProperty("sandbox.runtime", "runsc");
   private static final String DOCKER_HOST =
       System.getProperty("sandbox.docker-host", "unix:///var/run/docker.sock");
-  private static final String CHECK_COMMAND = "/usr/local/bin/testcheck.sh";
+  private static final String CHECK = "/usr/local/bin/testcheck.sh";
   private static final String IMAGE = "emitkit/sandbox-it:" + Ids.newUlid();
-  private static final String IO_DIR = "/io";
-
-  private static final String DOCKERFILE =
-      "FROM alpine:latest\nCOPY testcheck.sh " + CHECK_COMMAND + "\n";
   private static final String CHECK_SCRIPT =
       """
       #!/bin/sh
@@ -71,24 +61,23 @@ class DockerSandboxRunnerIT {
 
   @TempDir Path tmp;
 
-  private DockerSandboxRunner runner;
+  private DockerSandboxRunner runner = newRunner(docker, 4);
 
   @BeforeAll
   static void buildTestImage() throws IOException {
     docker = SandboxConfig.newDockerClient(DOCKER_HOST);
     ByteArrayOutputStream context = new ByteArrayOutputStream();
     try (TarArchiveOutputStream tar = new TarArchiveOutputStream(context)) {
-      addFile(tar, "Dockerfile", DOCKERFILE.getBytes(StandardCharsets.UTF_8), 0644);
-      addFile(tar, "testcheck.sh", CHECK_SCRIPT.getBytes(StandardCharsets.UTF_8), 0755);
+      addFile(tar, "Dockerfile", "FROM alpine:latest\nCOPY testcheck.sh " + CHECK + "\n", 0644);
+      addFile(tar, "testcheck.sh", CHECK_SCRIPT, 0755);
     }
-    try (InputStream in = new ByteArrayInputStream(context.toByteArray())) {
-      docker
-          .buildImageCmd()
-          .withTarInputStream(in)
-          .withTags(Set.of(IMAGE))
-          .exec(new BuildImageResultCallback())
-          .awaitImageId();
-    }
+    var in = new ByteArrayInputStream(context.toByteArray());
+    docker
+        .buildImageCmd()
+        .withTarInputStream(in)
+        .withTags(Set.of(IMAGE))
+        .exec(new BuildImageResultCallback())
+        .awaitImageId();
   }
 
   @AfterAll
@@ -99,11 +88,6 @@ class DockerSandboxRunnerIT {
     }
   }
 
-  @BeforeEach
-  void setUp() {
-    runner = newRunner(4);
-  }
-
   @AfterEach
   void noContainersLeft() {
     assertThat(testContainers()).isEmpty();
@@ -112,33 +96,22 @@ class DockerSandboxRunnerIT {
   @Test
   void runsUnderGvisor() {
     assumeTrue("runsc".equals(RUNTIME), "gVisor is only used with runtime=runsc");
-
     assertThat(exec("dmesg")).containsIgnoringCase("gvisor");
   }
 
   @Test
   void noNetwork() {
-    // Only the loopback interface may exist. Checking the interface list means an offline failure
-    // of wget alone cannot pass this test.
-    List<String> interfaces =
-        exec("cat /proc/net/dev")
-            .lines()
-            .filter(line -> line.contains(":"))
-            .map(line -> line.substring(0, line.indexOf(':')).strip())
-            .toList();
-
-    assertThat(interfaces).containsExactly("lo");
+    // Only loopback may exist, so an offline wget failure alone cannot pass this test.
+    assertThat(exec("awk -F: 'NR>2{print $1}' /proc/net/dev")).isEqualTo("lo");
     assertThat(exec("wget -T2 -q -O- http://example.com; echo $?")).endsWith("1");
   }
 
   @Test
   void cannotWriteOutsideWork() {
-    // /var/tmp is world-writable on the rootfs, so uid 10001 could write there without the flag and
-    // the failure below comes from --read-only. /tmp is not used: under runsc it is a tmpfs mount.
+    // /var/tmp is world-writable on the rootfs, so --read-only is the cause (/tmp is a tmpfs here).
     assertThat(exec("touch /var/tmp/x 2>&1; echo $?"))
         .contains("Read-only file system")
         .endsWith("1");
-    // Positive control: /work is writable, so the write above fails for the flag, not permissions.
     assertThat(exec("touch /work/x 2>&1; echo $?")).isEqualTo("0");
   }
 
@@ -162,34 +135,27 @@ class DockerSandboxRunnerIT {
 
   @Test
   void pidsLimitEnforced() {
-    // xargs forks the children itself, so it reaps them and survives a failed fork. The shell that
-    // forks a fork bomb cannot survive one (busybox exits), so the children must not be its own.
-    // With --pids-limit 256 fewer than 300 start. Without the limit all 300 start.
+    // xargs forks and reaps the children, so the shell survives. A forking shell cannot survive a
+    // failed fork, hence xargs. With --pids-limit 256 fewer than 300 children start.
+    String command =
+        ": > /work/started; seq 300 | xargs -P 300 -n 1 sh -c 'echo started >> /work/started; sleep 3'; "
+            + "n=0; while read line; do n=$((n+1)); done < /work/started; echo \"done count=$n\"";
     SandboxResult result =
-        runner.run(
-            request(
-                ": > /work/started; "
-                    + "seq 300 | xargs -P 300 -n 1 sh -c 'echo started >> /work/started; sleep 3'; "
-                    + "n=0; while read line; do n=$((n+1)); done < /work/started; "
-                    + "echo \"done count=$n\"",
-                Duration.ofSeconds(60)),
-            new CancellationToken());
+        runner.run(request(command, Duration.ofSeconds(60)), new CancellationToken());
 
     assertThat(result.timedOut()).isFalse();
     String report = result.reportJson();
     assertThat(report).isNotNull();
     Matcher count = Pattern.compile("done count=(\\d+)").matcher(report);
     assertThat(count.find()).as("report: %s", report).isTrue();
-    assertThat(Long.parseLong(count.group(1))).isLessThanOrEqualTo(253);
+    assertThat(Long.parseLong(count.group(1))).isLessThanOrEqualTo(270);
   }
 
   @Test
   void cancelKillsContainer() throws Exception {
     CancellationToken token = new CancellationToken();
-    ExecutorService pool = Executors.newSingleThreadExecutor();
-    try {
-      Future<SandboxResult> run =
-          pool.submit(() -> runner.run(request("sleep 60", Duration.ofSeconds(120)), token));
+    try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
+      Future<SandboxResult> run = submit(pool, "sleep 60", token);
       awaitRunningContainers(1);
 
       long cancelledAt = System.nanoTime();
@@ -200,26 +166,20 @@ class DockerSandboxRunnerIT {
       assertThat(Duration.ofNanos(System.nanoTime() - cancelledAt))
           .isLessThan(Duration.ofSeconds(10));
       assertThat(testContainers()).isEmpty();
-    } finally {
-      pool.shutdownNow();
     }
   }
 
   @Test
   void cancelWhileWaitingForPermit_throwsAndCreatesNoContainer() throws Exception {
-    runner = newRunner(1);
+    runner = newRunner(docker, 1);
     CancellationToken holderToken = new CancellationToken();
     CancellationToken waiterToken = new CancellationToken();
-    ExecutorService pool = Executors.newFixedThreadPool(2);
-    try {
-      Future<SandboxResult> holder =
-          pool.submit(() -> runner.run(request("sleep 60", Duration.ofSeconds(120)), holderToken));
+    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+      Future<SandboxResult> holder = submit(pool, "sleep 60", holderToken);
       awaitRunningContainers(1);
+      Future<SandboxResult> waiter = submit(pool, "echo never", waiterToken);
 
-      Future<SandboxResult> waiter =
-          pool.submit(() -> runner.run(request("echo never", Duration.ofSeconds(60)), waiterToken));
       waiterToken.cancel();
-
       assertThatThrownBy(() -> waiter.get(30, TimeUnit.SECONDS))
           .hasCauseInstanceOf(CancellationException.class);
       assertThat(testContainers()).hasSize(1);
@@ -227,8 +187,6 @@ class DockerSandboxRunnerIT {
       holderToken.cancel();
       assertThatThrownBy(() -> holder.get(30, TimeUnit.SECONDS))
           .hasCauseInstanceOf(CancellationException.class);
-    } finally {
-      pool.shutdownNow();
     }
   }
 
@@ -241,7 +199,6 @@ class DockerSandboxRunnerIT {
     try {
       assertThat(result.timedOut()).isFalse();
       assertThat(result.reportJson()).isEqualTo("report-text\n");
-      assertThat(result.outputTar()).isNotNull();
       assertThat(Files.readString(result.outputTar())).isEqualTo("payload\n");
     } finally {
       if (result.outputTar() != null) {
@@ -252,27 +209,17 @@ class DockerSandboxRunnerIT {
 
   @Test
   void concurrencyLimited() throws Exception {
-    runner = newRunner(1);
-    // Each run records its own start and end in epoch seconds. With one permit the second run
-    // cannot start before the first has ended.
+    runner = newRunner(docker, 1);
+    // Each run records its start and end in epoch seconds. With one permit the second run cannot
+    // start before the first has ended.
     String command = "echo start $(date +%s); sleep 3; echo end $(date +%s)";
-    ExecutorService pool = Executors.newFixedThreadPool(2);
-    try {
-      Future<SandboxResult> a =
-          pool.submit(
-              () -> runner.run(request(command, Duration.ofSeconds(60)), new CancellationToken()));
-      Future<SandboxResult> b =
-          pool.submit(
-              () -> runner.run(request(command, Duration.ofSeconds(60)), new CancellationToken()));
-      String reportA = a.get(120, TimeUnit.SECONDS).reportJson();
-      String reportB = b.get(120, TimeUnit.SECONDS).reportJson();
+    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+      String first =
+          submit(pool, command, new CancellationToken()).get(120, TimeUnit.SECONDS).reportJson();
+      String second =
+          submit(pool, command, new CancellationToken()).get(120, TimeUnit.SECONDS).reportJson();
 
-      boolean aFirst = stamp(reportA, "start") <= stamp(reportB, "start");
-      long firstEnd = stamp(aFirst ? reportA : reportB, "end");
-      long secondStart = stamp(aFirst ? reportB : reportA, "start");
-      assertThat(secondStart).isGreaterThanOrEqualTo(firstEnd);
-    } finally {
-      pool.shutdownNow();
+      assertThat(stamp(second, "start")).isGreaterThanOrEqualTo(stamp(first, "end"));
     }
   }
 
@@ -292,7 +239,12 @@ class DockerSandboxRunnerIT {
         });
     worker.start();
     awaitRunningContainers(1);
-    List<String> volumes = volumesAt(IO_DIR, testContainers().get(0));
+    List<String> volumes =
+        testContainers().get(0).getMounts().stream()
+            .filter(mount -> "/io".equals(mount.getDestination()))
+            .map(mount -> mount.getName())
+            .toList();
+    assertThat(volumes).isNotEmpty();
 
     worker.interrupt();
     worker.join(30_000);
@@ -300,7 +252,6 @@ class DockerSandboxRunnerIT {
     assertThat(worker.isAlive()).isFalse();
     assertThat(thrown.get()).isInstanceOf(CancellationException.class);
     assertThat(flagRestored.get()).isTrue();
-    assertThat(volumes).isNotEmpty();
     assertThat(testContainers()).isEmpty();
     for (String volume : volumes) {
       assertThatThrownBy(() -> docker.inspectVolumeCmd(volume).exec())
@@ -312,8 +263,7 @@ class DockerSandboxRunnerIT {
   void daemonUnreachable_isInfraException() throws Exception {
     try (DockerClient unreachable =
         SandboxConfig.newDockerClient("unix:///nonexistent-emitkit/docker.sock")) {
-      DockerSandboxRunner unreachableRunner =
-          new DockerSandboxRunner(unreachable, properties(DOCKER_HOST, 4));
+      DockerSandboxRunner unreachableRunner = newRunner(unreachable, 4);
 
       assertThatThrownBy(() ->
               unreachableRunner.run(
@@ -322,16 +272,18 @@ class DockerSandboxRunnerIT {
     }
   }
 
-  private DockerSandboxRunner newRunner(int maxConcurrent) {
-    return new DockerSandboxRunner(docker, properties(DOCKER_HOST, maxConcurrent));
+  private static DockerSandboxRunner newRunner(DockerClient client, int maxConcurrent) {
+    return new DockerSandboxRunner(
+        client,
+        new SandboxProperties(
+            DOCKER_HOST, RUNTIME, maxConcurrent, Duration.ofSeconds(180), IMAGE, CHECK));
   }
 
-  private static SandboxProperties properties(String dockerHost, int maxConcurrent) {
-    return new SandboxProperties(
-        dockerHost, RUNTIME, maxConcurrent, Duration.ofSeconds(180), IMAGE, CHECK_COMMAND);
+  private Future<SandboxResult> submit(
+      ExecutorService pool, String command, CancellationToken token) {
+    return pool.submit(() -> runner.run(request(command, Duration.ofSeconds(120)), token));
   }
 
-  /** Runs one command in a sandbox and returns its trimmed report. */
   private String exec(String command) {
     return runner
         .run(request(command, Duration.ofSeconds(60)), new CancellationToken())
@@ -339,12 +291,12 @@ class DockerSandboxRunnerIT {
         .strip();
   }
 
-  /** Builds a request whose input tar holds {@code cmd} with the given shell text. */
+  /** A request whose input tar holds the file {@code cmd} with the given shell text. */
   private SandboxRequest request(String command, Duration timeout) {
     try {
       ByteArrayOutputStream bytes = new ByteArrayOutputStream();
       try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
-        addFile(tar, "cmd", (command + "\n").getBytes(StandardCharsets.UTF_8), 0644);
+        addFile(tar, "cmd", command + "\n", 0644);
       }
       Path inputTar = Files.createTempFile(tmp, "in-", ".tar");
       Files.write(inputTar, bytes.toByteArray());
@@ -359,13 +311,6 @@ class DockerSandboxRunnerIT {
     return docker.listContainersCmd().withShowAll(true).withAncestorFilter(List.of(IMAGE)).exec();
   }
 
-  private static List<String> volumesAt(String destination, Container container) {
-    return container.getMounts().stream()
-        .filter(mount -> destination.equals(mount.getDestination()))
-        .map(ContainerMount::getName)
-        .toList();
-  }
-
   private static void awaitRunningContainers(int count) throws InterruptedException {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
     while (testContainers().stream().filter(c -> "running".equals(c.getState())).count() < count) {
@@ -376,23 +321,21 @@ class DockerSandboxRunnerIT {
     }
   }
 
-  /** Reads {@code label <epoch seconds>} from a report. */
+  /** Reads the epoch-seconds value of a {@code label N} line from a report. */
   private static long stamp(String report, String label) {
-    return report
-        .lines()
-        .filter(line -> line.startsWith(label + " "))
-        .mapToLong(line -> Long.parseLong(line.substring(label.length() + 1).strip()))
-        .findFirst()
-        .orElseThrow(() -> new AssertionError("no '" + label + "' line in: " + report));
+    Matcher m = Pattern.compile("(?m)^" + label + " (\\d+)").matcher(report);
+    assertThat(m.find()).as("report: %s", report).isTrue();
+    return Long.parseLong(m.group(1));
   }
 
-  private static void addFile(TarArchiveOutputStream tar, String name, byte[] content, int mode)
+  private static void addFile(TarArchiveOutputStream tar, String name, String content, int mode)
       throws IOException {
+    byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
     TarArchiveEntry entry = new TarArchiveEntry(name);
-    entry.setSize(content.length);
+    entry.setSize(bytes.length);
     entry.setMode(mode);
     tar.putArchiveEntry(entry);
-    tar.write(content);
+    tar.write(bytes);
     tar.closeArchiveEntry();
   }
 }

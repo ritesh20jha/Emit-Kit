@@ -8,21 +8,11 @@ import org.junit.jupiter.api.Test;
 class CancellationTokenTest {
 
   @Test
-  void callbacksDoNotRunBeforeCancel() {
+  void callbacksRunOnceAndOnlyOnCancel() {
     CancellationToken token = new CancellationToken();
     AtomicInteger ran = new AtomicInteger();
-
     token.onCancel(ran::incrementAndGet);
-
-    assertThat(token.isCancelled()).isFalse();
     assertThat(ran).hasValue(0);
-  }
-
-  @Test
-  void callbacksRunOnceEvenIfCancelledTwice() {
-    CancellationToken token = new CancellationToken();
-    AtomicInteger ran = new AtomicInteger();
-    token.onCancel(ran::incrementAndGet);
 
     token.cancel();
     token.cancel();

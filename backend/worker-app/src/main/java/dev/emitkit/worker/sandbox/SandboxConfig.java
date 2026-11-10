@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Wires the sandbox: the Docker client for the sandbox daemon and the runner built on it. */
+/** Wires the sandbox Docker client and the runner built on it. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(SandboxProperties.class)
 class SandboxConfig {
@@ -23,15 +23,15 @@ class SandboxConfig {
     return new DockerSandboxRunner(dockerClient, properties);
   }
 
-  /** Builds a docker-java client for {@code dockerHost} over the Apache HTTP 5 transport. */
+  /** A docker-java client for {@code dockerHost} over the Apache HTTP 5 transport. */
   static DockerClient newDockerClient(String dockerHost) {
-    DefaultDockerClientConfig config =
+    var config =
         DefaultDockerClientConfig.createDefaultConfigBuilder().withDockerHost(dockerHost).build();
-    ApacheDockerHttpClient httpClient =
+    var http =
         new ApacheDockerHttpClient.Builder()
             .dockerHost(config.getDockerHost())
             .sslConfig(config.getSSLConfig())
             .build();
-    return DockerClientImpl.getInstance(config, httpClient);
+    return DockerClientImpl.getInstance(config, http);
   }
 }

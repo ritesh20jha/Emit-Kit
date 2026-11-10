@@ -5,16 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Binds {@code emitkit.sandbox.*}.
- *
- * @param dockerHost socket of the dedicated sandbox daemon (the SBX-01 decision: option B)
- * @param runtime OCI runtime for sandbox containers: {@code runsc} (gVisor) or {@code runc}
- * @param maxConcurrent sandbox containers one worker runs at once
- * @param timeout default run limit when a request does not set one
- * @param image placeholder default image when a request does not name one; set the real toolchain
- *     tag (spec 5.6 {@code emitkit/toolchain:{ver}}) in deployment config
- * @param checkCommand shell command the container runs for the check. It reads {@code /work/in.tar}
- *     and writes {@code /work/out.tar} and {@code /work/report.json}.
+ * Binds {@code emitkit.sandbox.*}. {@code dockerHost} is the dedicated sandbox daemon socket;
+ * {@code runtime} is {@code runsc} or {@code runc}; {@code image} is a placeholder default that
+ * deployment overrides; {@code checkCommand} is the shell command that performs the check.
  */
 @ConfigurationProperties("emitkit.sandbox")
 public record SandboxProperties(
