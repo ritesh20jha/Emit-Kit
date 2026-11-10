@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.archivers.tar.TarConstants;
@@ -22,24 +23,18 @@ class SandboxOutputExtractionTest {
   @Test
   void readsExactTopLevelOutputs() throws IOException {
     Extracted out = extract(LIMITS, "out/out.tar", "payload", "out/report.json", "{}");
-    try {
-      assertThat(Files.readString(out.outputTar())).isEqualTo("payload");
-      assertThat(out.reportJson()).isEqualTo("{}");
-    } finally {
-      Files.deleteIfExists(out.outputTar());
-    }
+
+    assertThat(readAndDelete(out.outputTar())).isEqualTo("payload");
+    assertThat(out.reportJson()).isEqualTo("{}");
   }
 
   @Test
   void oversizedReportIsMissingAndOutputTarIsKept() throws IOException {
     Extracted out =
         extract(new OutputLimits(4, 16, 16), "out/report.json", "12345", "out/out.tar", "ok");
-    try {
-      assertThat(out.reportJson()).isNull();
-      assertThat(Files.readString(out.outputTar())).isEqualTo("ok");
-    } finally {
-      Files.deleteIfExists(out.outputTar());
-    }
+
+    assertThat(out.reportJson()).isNull();
+    assertThat(readAndDelete(out.outputTar())).isEqualTo("ok");
   }
 
   @Test
@@ -83,6 +78,14 @@ class SandboxOutputExtractionTest {
 
     assertThat(out.outputTar()).isNull();
     assertThat(out.reportJson()).isNull();
+  }
+
+  private static String readAndDelete(Path file) throws IOException {
+    try {
+      return Files.readString(file);
+    } finally {
+      Files.deleteIfExists(file);
+    }
   }
 
   /** Builds an archive from alternating name and content arguments, then extracts it. */

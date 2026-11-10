@@ -36,10 +36,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Escape suite for {@link DockerSandboxRunner} on the daemon at {@code sandbox.docker-host}
- * (default {@code unix:///var/run/docker.sock}) with runtime {@code sandbox.runtime} (default
- * {@code runsc}). The test image's check stand-in runs {@code cmd} from {@code in.tar} and writes
- * its output to {@code report.json}.
+ * Escape suite for {@link DockerSandboxRunner}, run on the daemon named by {@code
+ * sandbox.docker-host}.
  */
 class DockerSandboxRunnerIT {
 
@@ -71,11 +69,9 @@ class DockerSandboxRunnerIT {
       addFile(tar, "Dockerfile", "FROM alpine:latest\nCOPY testcheck.sh " + CHECK + "\n", 0644);
       addFile(tar, "testcheck.sh", CHECK_SCRIPT, 0755);
     }
-    var in = new ByteArrayInputStream(context.toByteArray());
-    docker
-        .buildImageCmd()
-        .withTarInputStream(in)
-        .withTags(Set.of(IMAGE))
+    var build = docker.buildImageCmd().withTags(Set.of(IMAGE));
+    build
+        .withTarInputStream(new ByteArrayInputStream(context.toByteArray()))
         .exec(new BuildImageResultCallback())
         .awaitImageId();
   }
@@ -263,11 +259,10 @@ class DockerSandboxRunnerIT {
   void daemonUnreachable_isInfraException() throws Exception {
     try (DockerClient unreachable =
         SandboxConfig.newDockerClient("unix:///nonexistent-emitkit/docker.sock")) {
-      DockerSandboxRunner unreachableRunner = newRunner(unreachable, 4);
+      var unreachableRunner = newRunner(unreachable, 4);
+      SandboxRequest req = request("echo hi", Duration.ofSeconds(10));
 
-      assertThatThrownBy(() ->
-              unreachableRunner.run(
-                  request("echo hi", Duration.ofSeconds(10)), new CancellationToken()))
+      assertThatThrownBy(() -> unreachableRunner.run(req, new CancellationToken()))
           .isInstanceOf(SandboxInfraException.class);
     }
   }
@@ -294,12 +289,11 @@ class DockerSandboxRunnerIT {
   /** A request whose input tar holds the file {@code cmd} with the given shell text. */
   private SandboxRequest request(String command, Duration timeout) {
     try {
-      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-      try (TarArchiveOutputStream tar = new TarArchiveOutputStream(bytes)) {
+      Path inputTar = Files.createTempFile(tmp, "in-", ".tar");
+      try (TarArchiveOutputStream tar =
+          new TarArchiveOutputStream(Files.newOutputStream(inputTar))) {
         addFile(tar, "cmd", command + "\n", 0644);
       }
-      Path inputTar = Files.createTempFile(tmp, "in-", ".tar");
-      Files.write(inputTar, bytes.toByteArray());
       return new SandboxRequest(IMAGE, inputTar, timeout);
     } catch (IOException e) {
       throw new IllegalStateException(e);

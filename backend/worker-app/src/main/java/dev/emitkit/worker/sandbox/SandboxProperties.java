@@ -5,9 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Binds {@code emitkit.sandbox.*}. {@code dockerHost} is the dedicated sandbox daemon socket;
- * {@code runtime} is {@code runsc} or {@code runc}; {@code image} is a placeholder default that
- * deployment overrides; {@code checkCommand} is the shell command that performs the check.
+ * Binds {@code emitkit.sandbox.*}; the sandbox daemon socket, runtime, limits and check command.
  */
 @ConfigurationProperties("emitkit.sandbox")
 public record SandboxProperties(

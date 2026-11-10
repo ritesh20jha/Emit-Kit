@@ -7,9 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A one-way cancellation flag shared by a job and the sandbox run it started. Thread-safe. Each
- * {@link #onCancel} callback runs once, on the thread that cancels, or immediately if already
- * cancelled. A throwing callback is logged and does not stop the others.
+ * A one-way cancellation flag shared by a job and its sandbox run. Thread-safe. Each {@link
+ * #onCancel} callback runs once, on cancel or immediately if already cancelled.
  */
 public final class CancellationToken {
 

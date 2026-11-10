@@ -29,11 +29,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Runs each check in its own container on the sandbox Docker daemon (spec 5.6).
- *
- * <p>Input and output travel through an anonymous volume at {@code /io}, because {@code docker cp}
- * cannot write into a tmpfs or a read-only rootfs. The wrapper copies {@code in.tar} into {@code
- * /work}, runs the check, and copies {@code out.tar} and {@code report.json} back.
+ * Runs each check in its own container on the sandbox Docker daemon (spec 5.6). I/O goes through an
+ * anonymous volume at {@code /io}, because {@code docker cp} cannot write into a tmpfs or a
+ * read-only rootfs.
  *
  * <p><b>Known risk:</b> {@code /io/out} is a writable anonymous volume on the daemon's disk, not a
  * tmpfs. The {@code /work} size, memory and pids limits therefore do not bound what untrusted code
@@ -111,7 +109,7 @@ public class DockerSandboxRunner implements SandboxRunner {
       throwIfCancelled(token);
       var copyOut = docker.copyArchiveFromContainerCmd(containerId, IO + "/out");
       try (InputStream out = copyOut.exec()) {
-        Extracted outputs = extractOutputs(out, OutputLimits.DEFAULT);
+        Extracted outputs = extractOutputs(out, new OutputLimits(4 << 20, 600L << 20, 16));
         return new SandboxResult(outputs.outputTar(), outputs.reportJson(), false);
       }
     } catch (CancellationException e) {
@@ -220,10 +218,7 @@ public class DockerSandboxRunner implements SandboxRunner {
   }
 
   /** Size and count bounds on the untrusted output archive. */
-  record OutputLimits(int maxReportBytes, long maxOutputTarBytes, int maxEntries) {
-
-    static final OutputLimits DEFAULT = new OutputLimits(4 << 20, 600L << 20, 16);
-  }
+  record OutputLimits(int maxReportBytes, long maxOutputTarBytes, int maxEntries) {}
 
   /** Outputs read from the archive. A null field means absent or rejected by a limit. */
   record Extracted(Path outputTar, String reportJson) {}
