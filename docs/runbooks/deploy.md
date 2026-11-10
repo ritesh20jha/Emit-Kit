@@ -34,13 +34,16 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
    ```sh
    cp .env.prod.example .env.prod
+   chmod 600 .env.prod   # the copy keeps the example's mode, which is world-readable
    openssl rand -base64 32   # one value each for POSTGRES_PASSWORD, RABBITMQ_PASSWORD, RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY
    getent group emitkit-sandbox | cut -d: -f3   # the value for SANDBOX_GID (the example's 10010 is a sample)
    ```
 
    Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID` and `WORKER_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them. Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
 
-   `.env.prod` and `secrets/` are git-ignored. Keep them out of the repository.
+   `.env.prod`, `secrets/` and `backups/` are git-ignored. Keep them out of the repository.
+
+   Memory: `API_MEMORY_LIMIT` (default `1g`) and `WORKER_MEMORY_LIMIT` (default `1536m`) cap each api and worker replica. The JVM sizes its heap to 75% of the cap. Two replicas of each take 5 GiB by default, so the host needs that plus headroom for Postgres, RabbitMQ, Redis, RustFS, Vault and Caddy. Without the caps, the JVMs could together claim far more than the host has, and the kernel could kill Vault, which then comes back sealed. Raise the caps only after watching `docker stats` under real load.
 
 2. Start Vault. It comes up sealed, and `--wait` still passes because a sealed Vault is reachable:
 
@@ -56,10 +59,15 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
 4. Unseal it with 3 of the 5 shares (see [Unseal](#unseal)).
 
-5. Bootstrap Transit, AppRole and the policies, using the root token. The commands run inside the `vault` container, and `-e VAULT_TOKEN` passes the token from your shell:
+5. Bootstrap Transit, AppRole and the policies, using the root token. Put the token in your shell without writing it to the history. This is bash (`read -s` is not POSIX):
+
+   ```bash
+   read -rs -p "Root token: " VAULT_TOKEN && echo && export VAULT_TOKEN
+   ```
+
+   The commands run inside the `vault` container, and `-e VAULT_TOKEN` passes the token from your shell:
 
    ```sh
-   export VAULT_TOKEN=<root token>
    V="$COMPOSE exec -T -e VAULT_TOKEN vault vault"
    $V secrets enable transit
    $V auth enable approle
@@ -77,15 +85,18 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
    $V read -field=role_id auth/approle/role/emitkit-worker/role-id
    ```
 
-7. Write the secret IDs to host files. The containers read them as Docker secrets, so the files must be readable by uid 10001:
+7. Write the secret IDs to host files. The containers read them as Docker secrets, so the files must be readable by uid 10001. `umask 077` makes the files private from the moment they are created. The `chmod` runs under sudo because the files are owned by 10001 after the `chown`:
 
    ```sh
+   umask 077
    mkdir -p secrets
    $V write -f -field=secret_id auth/approle/role/emitkit-api/secret-id > secrets/api-secret-id
    $V write -f -field=secret_id auth/approle/role/emitkit-worker/secret-id > secrets/worker-secret-id
    sudo chown 10001:10001 secrets/api-secret-id secrets/worker-secret-id
-   chmod 0400 secrets/api-secret-id secrets/worker-secret-id
+   sudo chmod 0400 secrets/api-secret-id secrets/worker-secret-id
    ```
+
+   Rotating a secret ID later needs the same `sudo` steps.
 
 8. Revoke the root token. Use a fresh root token from `vault operator generate-root` for any later admin task:
 
@@ -110,32 +121,45 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
 Vault starts sealed after every restart of the container or the host, and after any recreate of the `vault` service. Unseal it with any 3 of the 5 shares:
 
+Run `unseal` three times with no argument. Vault then asks for one share at a time with hidden input. Leave out `-T` so that the prompt has a terminal:
+
 ```sh
-for i in 1 2 3; do
-  read -rs -p "Unseal share $i: " share; echo
-  $COMPOSE exec -T vault vault operator unseal "$share" >/dev/null
-done
+$COMPOSE exec vault vault operator unseal   # share 1 of 3
+$COMPOSE exec vault vault operator unseal   # share 2 of 3
+$COMPOSE exec vault vault operator unseal   # share 3 of 3
 $COMPOSE exec -T vault vault status   # Sealed: false
 ```
 
-Shares are typed at the prompt and must never be written to a file or the shell history. If secret-using endpoints still return `SECRETS_UNAVAILABLE` after unsealing, restart the apps: `$COMPOSE restart api worker`.
+Shares are typed at the prompt. They must never go on the command line, where `ps`, `docker inspect` and `docker events` can see them, and never into a file or the shell history. If secret-using endpoints still return `SECRETS_UNAVAILABLE` after unsealing, restart the apps: `$COMPOSE restart api worker`.
+
+## After a reboot or a sandbox daemon restart
+
+- Vault starts sealed after a host reboot. Unseal it as above.
+- The worker bind-mounts the sandbox socket file. The mount keeps the old socket. If the `emitkit-sandbox` daemon restarts, or the host reboots, the socket is recreated and the worker keeps a dead socket, and each sandbox step fails. Run `$COMPOSE restart worker` after any sandbox daemon restart.
+- After a reboot, check `$COMPOSE ps`. If the worker is not running, the daemon may not have created the socket when Docker started the container. Once the socket exists, run `$COMPOSE up -d worker`.
 
 ## Upgrade
 
-1. Back up first:
+1. Back up first. `umask 077` keeps the dumps readable by your user only, since they hold every user row and the Transit keyring:
 
    ```sh
+   umask 077
    mkdir -p backups
    $COMPOSE exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backups/emitkit-$(date +%F).sql
    ```
 
-   Also take a Raft snapshot with an admin token: `$V operator raft snapshot save /vault/file/pre-upgrade.snap`, then copy it out with `$COMPOSE cp vault:/vault/file/pre-upgrade.snap backups/`.
+   Also take a Raft snapshot with an admin token: `$V operator raft snapshot save /vault/file/pre-upgrade.snap`, then copy it out and restrict it:
+
+   ```sh
+   $COMPOSE cp vault:/vault/file/pre-upgrade.snap backups/
+   chmod 600 backups/pre-upgrade.snap
+   ```
 
 2. Check out the new release tag and rebuild:
 
    ```sh
    git fetch --tags && git checkout <tag>
-   cd deploy/compose && $COMPOSE up -d --wait --build
+   $COMPOSE up -d --wait --build
    ```
 
    Compose recreates only the services whose config or image changed. An unchanged `vault` keeps running, so it stays unsealed. If `vault` was recreated, unseal it again.

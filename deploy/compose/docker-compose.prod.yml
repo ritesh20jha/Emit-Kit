@@ -50,6 +50,10 @@ services:
     cap_drop: [ALL]
     deploy:
       replicas: 2
+      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in api.Dockerfile). See the runbook, "Before you start".
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-1g}
     environment:
       SPRING_PROFILES_ACTIVE: prod
       # Caddy terminates TLS, so the app must trust the X-Forwarded-* headers it sets.
@@ -100,6 +104,10 @@ services:
     cap_drop: [ALL]
     deploy:
       replicas: 2
+      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in worker.Dockerfile). See the runbook, "Before you start".
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-1536m}
     # Group of the host's sandbox socket, so the non-root worker may connect to it.
     group_add:
       - ${SANDBOX_GID:?set in .env.prod}

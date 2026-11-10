@@ -64,6 +64,12 @@ WORKER_VAULT_ROLE_ID=$(cat "$SECRETS/worker-role-id")
 export API_VAULT_ROLE_ID WORKER_VAULT_ROLE_ID
 "${STACK[@]}" up -d --wait --build
 
+# The JVM services must run with their container memory limits (the defaults in .env.prod.example, 1g and 1536m).
+api_mem=$(docker inspect -f '{{.HostConfig.Memory}}' "$("${STACK[@]}" ps -q api | sed -n 1p)")
+worker_mem=$(docker inspect -f '{{.HostConfig.Memory}}' "$("${STACK[@]}" ps -q worker | sed -n 1p)")
+[ "$api_mem" = 1073741824 ] || fail "api memory limit is $api_mem bytes, want 1g"
+[ "$worker_mem" = 1610612736 ] || fail "worker memory limit is $worker_mem bytes, want 1536m"
+
 # Only Caddy's 80 and 443 may be published on the host.
 published=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Ports}}' |
   grep -oE '[0-9]+->' | tr -d '>-' | sort -nu | paste -sd' ' - || true)
@@ -74,6 +80,10 @@ code=$(curl -sk --retry 20 --retry-connrefused --retry-delay 2 -o /dev/null -w '
 
 body=$(curl -sk --retry 5 --retry-connrefused --retry-delay 2 https://localhost/)
 case "$body" in *'<div id="root">'*) ;; *) fail "GET / did not return the SPA shell" ;; esac
+
+csp=$(curl -sk --retry 5 --retry-connrefused --retry-delay 2 -D - -o /dev/null https://localhost/ |
+  tr -d '\r' | grep -i '^content-security-policy:' || true)
+case "$csp" in *"default-src 'self'"*) ;; *) fail "GET / has no default-src 'self' CSP: '$csp'" ;; esac
 
 # One api replica that stops answering must not fail requests: Caddy has to send them to the other replica.
 # A request sent to the paused replica waits for Caddy's 30 s response-header timeout before the retry,
