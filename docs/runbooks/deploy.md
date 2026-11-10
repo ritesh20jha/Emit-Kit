@@ -85,23 +85,26 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
    $V read -field=role_id auth/approle/role/emitkit-worker/role-id
    ```
 
-7. Write the secret IDs to host files. The containers read them as Docker secrets, so the files must be readable by uid 10001. `umask 077` makes the files private from the moment they are created. The `chmod` runs under sudo because the files are owned by 10001 after the `chown`:
+7. Write the secret IDs to host files. The containers read them as Docker secrets, so the files must end up readable by uid 10001. The files are created private, then handed to uid 10001 with mode 0400. The `umask 077` is in a subshell, so it does not carry into later steps. The `chmod` runs under sudo because the files are owned by 10001 after the `chown`:
 
    ```sh
-   umask 077
-   mkdir -p secrets
-   $V write -f -field=secret_id auth/approle/role/emitkit-api/secret-id > secrets/api-secret-id
-   $V write -f -field=secret_id auth/approle/role/emitkit-worker/secret-id > secrets/worker-secret-id
-   sudo chown 10001:10001 secrets/api-secret-id secrets/worker-secret-id
-   sudo chmod 0400 secrets/api-secret-id secrets/worker-secret-id
+   (
+     umask 077
+     mkdir -p secrets
+     $V write -f -field=secret_id auth/approle/role/emitkit-api/secret-id > secrets/api-secret-id
+     $V write -f -field=secret_id auth/approle/role/emitkit-worker/secret-id > secrets/worker-secret-id
+     sudo chown 10001:10001 secrets/api-secret-id secrets/worker-secret-id
+     sudo chmod 0400 secrets/api-secret-id secrets/worker-secret-id
+   )
    ```
 
    Rotating a secret ID later needs the same `sudo` steps.
 
-8. Revoke the root token. Use a fresh root token from `vault operator generate-root` for any later admin task:
+8. Revoke the root token. Use a fresh root token from `vault operator generate-root` for any later admin task (see [Upgrade](#upgrade), step 1, for the procedure):
 
    ```sh
    $V token revoke -self
+   unset VAULT_TOKEN
    ```
 
 9. Start the stack. The apps do not need Vault at start-up. Requests that need a decrypt return 503 until Vault is unsealed:
@@ -140,19 +143,34 @@ Shares are typed at the prompt. They must never go on the command line, where `p
 
 ## Upgrade
 
-1. Back up first. `umask 077` keeps the dumps readable by your user only, since they hold every user row and the Transit keyring:
+1. Back up first. The dumps hold every user row and the Transit keyring, so they are readable by your user only. The `umask 077` is in a subshell, so it does not carry into the checkout in step 2:
 
    ```sh
-   umask 077
-   mkdir -p backups
-   $COMPOSE exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backups/emitkit-$(date +%F).sql
+   (
+     umask 077
+     mkdir -p backups
+     $COMPOSE exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backups/emitkit-$(date +%F).sql
+   )
    ```
 
-   Also take a Raft snapshot with an admin token: `$V operator raft snapshot save /vault/file/pre-upgrade.snap`, then copy it out and restrict it:
+   Also take a Raft snapshot. It needs an admin token, and First install step 8 revoked the root token. Get a temporary root token with `vault operator generate-root`. This runbook does not script that flow, and its exact flags were not checked against the pinned `hashicorp/vault:2.2.1` image. Follow Vault's `operator generate-root` documentation for that version, and enter the unseal shares and any one-time password at hidden prompts, not on the command line. Then store the token in your shell and take the snapshot:
 
    ```sh
-   $COMPOSE cp vault:/vault/file/pre-upgrade.snap backups/
-   chmod 600 backups/pre-upgrade.snap
+   read -rs -p "Admin token: " VAULT_TOKEN && echo && export VAULT_TOKEN
+   V="$COMPOSE exec -T -e VAULT_TOKEN vault vault"
+   $V operator raft snapshot save /vault/file/pre-upgrade.snap
+   $V token revoke -self
+   unset VAULT_TOKEN
+   ```
+
+   Then copy the snapshot out and restrict it. This is in a subshell for the same reason as the dumps:
+
+   ```sh
+   (
+     umask 077
+     $COMPOSE cp vault:/vault/file/pre-upgrade.snap backups/
+     chmod 600 backups/pre-upgrade.snap
+   )
    ```
 
 2. Check out the new release tag and rebuild:
@@ -160,9 +178,12 @@ Shares are typed at the prompt. They must never go on the command line, where `p
    ```sh
    git fetch --tags && git checkout <tag>
    $COMPOSE up -d --wait --build
+   $COMPOSE up -d --force-recreate caddy
    ```
 
    Compose recreates only the services whose config or image changed. An unchanged `vault` keeps running, so it stays unsealed. If `vault` was recreated, unseal it again.
+
+   The Caddyfile is a single-file bind mount. `git checkout` replaces the file with a new one, so a running Caddy keeps the old copy and Compose does not see the change. The forced recreate of `caddy` loads the new Caddyfile. It runs after the build, so it also picks up a new `web` image.
 
 3. Run the checks from step 10 of [First install](#first-install).
 

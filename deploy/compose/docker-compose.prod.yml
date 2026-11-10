@@ -50,7 +50,7 @@ services:
     cap_drop: [ALL]
     deploy:
       replicas: 2
-      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in api.Dockerfile). See the runbook, "Before you start".
+      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in api.Dockerfile). See the runbook, "First install", step 1.
       resources:
         limits:
           memory: ${API_MEMORY_LIMIT:-1g}
@@ -104,7 +104,7 @@ services:
     cap_drop: [ALL]
     deploy:
       replicas: 2
-      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in worker.Dockerfile). See the runbook, "Before you start".
+      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in worker.Dockerfile). See the runbook, "First install", step 1.
       resources:
         limits:
           memory: ${WORKER_MEMORY_LIMIT:-1536m}
