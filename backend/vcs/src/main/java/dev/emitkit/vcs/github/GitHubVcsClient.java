@@ -12,6 +12,7 @@ import dev.emitkit.vcs.VcsOrg;
 import dev.emitkit.vcs.VcsOrg.VcsRole;
 import dev.emitkit.vcs.VcsRepo;
 import dev.emitkit.vcs.Webhook;
+import dev.emitkit.vcs.error.VcsConflictException;
 import dev.emitkit.vcs.error.VcsNotFoundException;
 import java.io.IOException;
 import java.time.Instant;

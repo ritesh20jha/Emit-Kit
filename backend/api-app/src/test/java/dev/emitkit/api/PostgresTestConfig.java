@@ -10,7 +10,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * can boot; Spring Boot wires its connection details.
  */
 @TestConfiguration(proxyBeanMethods = false)
-class PostgresTestConfig {
+public class PostgresTestConfig {
 
   @Bean
   @ServiceConnection

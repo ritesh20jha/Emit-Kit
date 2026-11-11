@@ -20,7 +20,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = "emitkit.vault.cipher=local")
+    properties = {
+      "emitkit.vault.cipher=local",
+      GitHubTestCredentials.CLIENT_ID,
+      GitHubTestCredentials.CLIENT_SECRET
+    })
 @Import({RedisTestConfig.class, PostgresTestConfig.class})
 class AnonymousSessionTest {
 
