@@ -1,6 +1,324 @@
 {
   "components": {
     "schemas": {
+      "BreakingGate": {
+        "enum": [
+          "ALLOW",
+          "REQUIRE_APPROVAL",
+          "BLOCK"
+        ],
+        "type": "string"
+      },
+      "Change": {
+        "properties": {
+          "breaking": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChangeKind"
+          },
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "breaking",
+          "kind",
+          "location"
+        ],
+        "type": "object"
+      },
+      "ChangeKind": {
+        "enum": [
+          "PARAM_ADDED",
+          "PARAM_REMOVED",
+          "PARAM_BECAME_REQUIRED",
+          "PARAM_BECAME_OPTIONAL",
+          "BODY_BECAME_REQUIRED",
+          "REQUEST_REQUIRED_PROPERTY_ADDED",
+          "REQUEST_PROPERTY_ADDED",
+          "RESPONSE_PROPERTY_REMOVED",
+          "RESPONSE_PROPERTY_ADDED",
+          "ENUM_VALUE_REMOVED",
+          "ENUM_VALUE_ADDED",
+          "TYPE_CHANGED",
+          "DESCRIPTION_CHANGED"
+        ],
+        "type": "string"
+      },
+      "ConfigRequest": {
+        "properties": {
+          "aiApiKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aiProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "breakingGate": {
+            "$ref": "#/components/schemas/BreakingGate"
+          },
+          "lintFailOn": {
+            "$ref": "#/components/schemas/LintFailOn"
+          },
+          "mavenArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mavenGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "npmScope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputDir": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/OutputKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "pypiName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sdkLanguages": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "versionStrategy": {
+            "$ref": "#/components/schemas/VersionStrategy"
+          }
+        },
+        "required": [
+          "breakingGate",
+          "lintFailOn",
+          "outputDir",
+          "outputs",
+          "versionStrategy"
+        ],
+        "type": "object"
+      },
+      "ConfigResponse": {
+        "properties": {
+          "aiKeySet": {
+            "type": "boolean"
+          },
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aiProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "breakingGate": {
+            "$ref": "#/components/schemas/BreakingGate"
+          },
+          "lintFailOn": {
+            "$ref": "#/components/schemas/LintFailOn"
+          },
+          "mavenArtifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mavenGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "npmScope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outputDir": {
+            "type": "string"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/OutputKind"
+            },
+            "type": "array"
+          },
+          "pypiName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sdkLanguages": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionStrategy": {
+            "$ref": "#/components/schemas/VersionStrategy"
+          }
+        },
+        "required": [
+          "aiKeySet",
+          "aiModel",
+          "aiProvider",
+          "breakingGate",
+          "lintFailOn",
+          "mavenArtifactId",
+          "mavenGroupId",
+          "npmScope",
+          "outputDir",
+          "outputs",
+          "pypiName",
+          "sdkLanguages",
+          "version",
+          "versionStrategy"
+        ],
+        "type": "object"
+      },
+      "CreateProjectRequest": {
+        "properties": {
+          "defaultBranch": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "outputMode": {
+            "$ref": "#/components/schemas/OutputMode"
+          },
+          "outputRepo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "minLength": 1,
+            "pattern": "[\\w.-]+/[\\w.-]+",
+            "type": "string"
+          },
+          "specPath": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "visibility": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "defaultBranch",
+          "mode",
+          "outputMode",
+          "repo",
+          "specPath"
+        ],
+        "type": "object"
+      },
+      "LintFailOn": {
+        "enum": [
+          "NEVER",
+          "ERROR",
+          "WARNING"
+        ],
+        "type": "string"
+      },
+      "LintIssue": {
+        "properties": {
+          "jsonPath": {
+            "type": "string"
+          },
+          "line": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          }
+        },
+        "required": [
+          "jsonPath",
+          "line",
+          "message",
+          "ruleId",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "LintRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 2097152,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
       "MeResponse": {
         "properties": {
           "avatarUrl": {
@@ -65,6 +383,50 @@
           "role",
           "roleSource",
           "userId"
+        ],
+        "type": "object"
+      },
+      "Mode": {
+        "enum": [
+          "EXISTING",
+          "NEW"
+        ],
+        "type": "string"
+      },
+      "OpChange": {
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "type": "array"
+          },
+          "op": {
+            "$ref": "#/components/schemas/OpRef"
+          }
+        },
+        "required": [
+          "changes",
+          "op"
+        ],
+        "type": "object"
+      },
+      "OpRef": {
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "operationId",
+          "path"
         ],
         "type": "object"
       },
@@ -166,6 +528,146 @@
         ],
         "type": "object"
       },
+      "OutputKind": {
+        "enum": [
+          "SDK",
+          "CLI",
+          "MCP",
+          "DOCS"
+        ],
+        "type": "string"
+      },
+      "OutputMode": {
+        "enum": [
+          "APPEND",
+          "SEPARATE"
+        ],
+        "type": "string"
+      },
+      "PageProjectSummary": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "ProblemSummary": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "ProjectDetail": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "defaultBranch": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "outputMode": {
+            "$ref": "#/components/schemas/OutputMode"
+          },
+          "outputRepoFullName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repoFullName": {
+            "type": "string"
+          },
+          "specPath": {
+            "type": "string"
+          },
+          "webhook": {
+            "$ref": "#/components/schemas/WebhookStatus"
+          }
+        },
+        "required": [
+          "createdAt",
+          "defaultBranch",
+          "id",
+          "orgId",
+          "outputMode",
+          "outputRepoFullName",
+          "repoFullName",
+          "specPath",
+          "webhook"
+        ],
+        "type": "object"
+      },
+      "ProjectSummary": {
+        "properties": {
+          "currentVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastRunAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastRunStatus": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RunStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repoFullName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentVersion",
+          "id",
+          "lastRunAt",
+          "lastRunStatus",
+          "repoFullName"
+        ],
+        "type": "object"
+      },
       "QuotaResponse": {
         "properties": {
           "limit": {
@@ -188,6 +690,37 @@
         ],
         "type": "object"
       },
+      "RepoOption": {
+        "properties": {
+          "defaultBranch": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "pushedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "defaultBranch",
+          "fullName",
+          "isPrivate",
+          "owner",
+          "pushedAt"
+        ],
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "ADMIN",
@@ -203,6 +736,194 @@
         ],
         "type": "string"
       },
+      "RunStatus": {
+        "enum": [
+          "QUEUED",
+          "RUNNING",
+          "AWAITING_APPROVAL",
+          "SUCCESS",
+          "FAILED",
+          "CANCELLED"
+        ],
+        "type": "string"
+      },
+      "SaveSpecRequest": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "generate": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "generate",
+          "sha"
+        ],
+        "type": "object"
+      },
+      "SaveSpecResponse": {
+        "properties": {
+          "commitSha": {
+            "type": "string"
+          },
+          "newSha": {
+            "type": "string"
+          },
+          "runError": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ProblemSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "commitSha",
+          "newSha",
+          "runError",
+          "runId"
+        ],
+        "type": "object"
+      },
+      "Severity": {
+        "enum": [
+          "ERROR",
+          "WARNING",
+          "INFO"
+        ],
+        "type": "string"
+      },
+      "SnapshotSummary": {
+        "properties": {
+          "contentHash": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "infoVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contentHash",
+          "createdAt",
+          "id",
+          "infoVersion"
+        ],
+        "type": "object"
+      },
+      "SpecCheckResponse": {
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "errors",
+          "found",
+          "title",
+          "valid",
+          "version"
+        ],
+        "type": "object"
+      },
+      "SpecDiff": {
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/OpRef"
+            },
+            "type": "array"
+          },
+          "modified": {
+            "items": {
+              "$ref": "#/components/schemas/OpChange"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "items": {
+              "$ref": "#/components/schemas/OpRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "added",
+          "modified",
+          "removed"
+        ],
+        "type": "object"
+      },
+      "SpecResponse": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "format",
+          "sha"
+        ],
+        "type": "object"
+      },
       "UpdateRoleRequest": {
         "properties": {
           "role": {
@@ -211,6 +932,39 @@
         },
         "required": [
           "role"
+        ],
+        "type": "object"
+      },
+      "VersionStrategy": {
+        "enum": [
+          "EMITKIT_MANAGED",
+          "SPEC_VERSION"
+        ],
+        "type": "string"
+      },
+      "Visibility": {
+        "enum": [
+          "PUBLIC",
+          "PRIVATE"
+        ],
+        "type": "string"
+      },
+      "WebhookStatus": {
+        "properties": {
+          "registered": {
+            "type": "boolean"
+          },
+          "webhookId": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "registered",
+          "webhookId"
         ],
         "type": "object"
       }
@@ -222,6 +976,40 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/lint": {
+      "post": {
+        "operationId": "lint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LintRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LintIssue"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Lint a spec and return its issues",
+        "tags": [
+          "Lint"
+        ]
+      }
+    },
     "/me": {
       "get": {
         "operationId": "me",
@@ -415,6 +1203,530 @@
           "Members"
         ]
       }
+    },
+    "/orgs/{orgId}/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only projects whose last run has this status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RunStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageProjectSummary"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the projects of an organization, one page at a time",
+        "tags": [
+          "Projects"
+        ]
+      },
+      "post": {
+        "operationId": "createProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetail"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Create a project for an existing or a new repository",
+        "tags": [
+          "Projects"
+        ]
+      }
+    },
+    "/orgs/{orgId}/vcs-repos": {
+      "get": {
+        "operationId": "listRepos",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RepoOption"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the repositories the user can see, optionally filtered by name",
+        "tags": [
+          "VCS repositories"
+        ]
+      }
+    },
+    "/orgs/{orgId}/vcs-repos/{owner}/{repo}/spec-check": {
+      "get": {
+        "operationId": "checkSpec",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "branch",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpecCheckResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Check that a spec file in a repository parses and is valid",
+        "tags": [
+          "VCS repositories"
+        ]
+      }
+    },
+    "/projects/{id}": {
+      "delete": {
+        "operationId": "deleteProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "Delete a project",
+        "tags": [
+          "Projects"
+        ]
+      },
+      "get": {
+        "operationId": "getProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read one project",
+        "tags": [
+          "Projects"
+        ]
+      }
+    },
+    "/projects/{id}/config": {
+      "get": {
+        "operationId": "getConfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read the generation settings of a project",
+        "tags": [
+          "Project config"
+        ]
+      },
+      "put": {
+        "operationId": "saveConfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Replace the generation settings of a project",
+        "tags": [
+          "Project config"
+        ]
+      }
+    },
+    "/projects/{id}/spec": {
+      "get": {
+        "operationId": "getSpec",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpecResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read the current spec of a project",
+        "tags": [
+          "Project spec"
+        ]
+      },
+      "put": {
+        "operationId": "saveSpec",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSpecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveSpecResponse"
+                }
+              }
+            },
+            "description": "Saved; runId is set when a generation run was started"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveSpecResponse"
+                }
+              }
+            },
+            "description": "Saved, but the generation run could not be started; see runError"
+          }
+        },
+        "summary": "Save the spec, optionally starting a generation run",
+        "tags": [
+          "Project spec"
+        ]
+      }
+    },
+    "/projects/{id}/spec/diff": {
+      "get": {
+        "operationId": "diffSpec",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpecDiff"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Diff two saved versions of the spec",
+        "tags": [
+          "Project spec"
+        ]
+      }
+    },
+    "/projects/{id}/spec/snapshots": {
+      "get": {
+        "operationId": "listSnapshots",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the saved versions of the spec, newest first",
+        "tags": [
+          "Project spec"
+        ]
+      }
+    },
+    "/projects/{id}/webhook": {
+      "post": {
+        "operationId": "registerWebhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Register the push webhook on the project's repository",
+        "tags": [
+          "Projects"
+        ]
+      }
     }
   },
   "servers": [
@@ -428,12 +1740,32 @@
       "name": "Me"
     },
     {
+      "description": "The API spec of a project, its snapshots and diffs.",
+      "name": "Project spec"
+    },
+    {
+      "description": "Generation settings of a project.",
+      "name": "Project config"
+    },
+    {
       "description": "Members of an organization and their roles.",
       "name": "Members"
     },
     {
+      "description": "Projects, their repositories and push webhooks.",
+      "name": "Projects"
+    },
+    {
+      "description": "Repositories the user can pick for a project.",
+      "name": "VCS repositories"
+    },
+    {
       "description": "Organizations the signed-in user belongs to.",
       "name": "Orgs"
+    },
+    {
+      "description": "Lint a spec without saving it.",
+      "name": "Lint"
     }
   ]
 }

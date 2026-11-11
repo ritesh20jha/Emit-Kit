@@ -81,7 +81,7 @@ class OpenApiSnapshotTest {
       for (Map.Entry<String, JsonNode> property :
           schema.getValue().path("properties").properties()) {
         boolean isRequired = listed(required, property.getKey());
-        boolean isNullable = listed(property.getValue().path("type"), "null");
+        boolean isNullable = admitsNull(property.getValue());
         if (!isRequired && !isNullable) {
           violations.add(schema.getKey() + "." + property.getKey());
         }
@@ -92,6 +92,29 @@ class OpenApiSnapshotTest {
     assertThat(violations)
         .as("properties that are neither required nor nullable (schema.property)")
         .isEmpty();
+  }
+
+  /**
+   * A nullable reference is written as a oneOf with a null branch. A null type next to a $ref is
+   * dropped by the generated client, so it would type the field as the reference alone.
+   */
+  @Test
+  void nullableReferencesAreOneOfWithNull() throws Exception {
+    JsonNode doc = apiDocs();
+
+    for (String pointer :
+        List.of(
+            "/components/schemas/ProjectSummary/properties/lastRunStatus",
+            "/components/schemas/CreateProjectRequest/properties/visibility",
+            "/components/schemas/SaveSpecResponse/properties/runError")) {
+      assertThat(doc.at(pointer + "/oneOf").size()).as(pointer + " oneOf branches").isEqualTo(2);
+      assertThat(doc.at(pointer + "/oneOf/0/$ref").asString())
+          .as(pointer + " reference branch")
+          .startsWith("#/components/schemas/");
+      assertThat(doc.at(pointer + "/oneOf/1/type").asString())
+          .as(pointer + " null branch")
+          .isEqualTo("null");
+    }
   }
 
   @Test
@@ -120,7 +143,29 @@ class OpenApiSnapshotTest {
             "/orgs",
             "/orgs/{orgId}",
             "/orgs/{orgId}/members",
-            "/orgs/{orgId}/members/{userId}");
+            "/orgs/{orgId}/members/{userId}",
+            "/orgs/{orgId}/projects",
+            "/orgs/{orgId}/vcs-repos",
+            "/orgs/{orgId}/vcs-repos/{owner}/{repo}/spec-check",
+            "/projects/{id}",
+            "/projects/{id}/webhook",
+            "/projects/{id}/config",
+            "/projects/{id}/spec",
+            "/projects/{id}/spec/snapshots",
+            "/projects/{id}/spec/diff",
+            "/lint");
+  }
+
+  /** Status codes the contract promises beyond the 200 default. */
+  @Test
+  void documentedStatusesMatchTheContract() throws Exception {
+    JsonNode doc = apiDocs();
+
+    assertThat(doc.at("/paths/~1orgs~1{orgId}~1projects/post/responses").propertyNames())
+        .contains("201");
+    assertThat(doc.at("/paths/~1projects~1{id}/delete/responses").propertyNames()).contains("204");
+    assertThat(doc.at("/paths/~1projects~1{id}~1spec/put/responses").propertyNames())
+        .contains("200", "202");
   }
 
   @Test
@@ -159,6 +204,24 @@ class OpenApiSnapshotTest {
         .andReturn()
         .getResponse()
         .getContentAsString();
+  }
+
+  /** True when the property admits null: a null type, or a oneOf that has a null branch. */
+  private static boolean admitsNull(JsonNode property) {
+    if (typeIncludes(property.path("type"), "null")) {
+      return true;
+    }
+    for (JsonNode branch : property.path("oneOf")) {
+      if (typeIncludes(branch.path("type"), "null")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** True when a JSON type is the value, or an array of types that contains it. */
+  private static boolean typeIncludes(JsonNode type, String value) {
+    return type.isArray() ? listed(type, value) : type.asString().equals(value);
   }
 
   /** True when the JSON array contains the value. */

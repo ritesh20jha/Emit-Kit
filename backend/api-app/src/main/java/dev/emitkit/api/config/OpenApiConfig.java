@@ -4,8 +4,11 @@ import io.swagger.v3.core.jackson.ModelResolver;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Paths;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.media.ComposedSchema;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.servers.Server;
 import java.util.List;
+import java.util.Set;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,5 +51,39 @@ public class OpenApiConfig {
       openApi.setPaths(relative);
       openApi.setServers(List.of(new Server().url(API_BASE)));
     };
+  }
+
+  /**
+   * Rewrites a nullable reference, {@code {"$ref": X, "type": [t, "null"]}}, as {@code {"oneOf":
+   * [{"$ref": X}, {"type": "null"}]}}. Generated clients drop a null type that sits beside a $ref,
+   * so only this form types the property as {@code X | null}.
+   */
+  @Bean
+  public OpenApiCustomizer nullableReferenceCustomizer() {
+    return openApi -> {
+      if (openApi.getComponents() == null || openApi.getComponents().getSchemas() == null) {
+        return;
+      }
+      openApi
+          .getComponents()
+          .getSchemas()
+          .values()
+          .forEach(schema -> {
+            if (schema.getProperties() != null) {
+              schema.getProperties().replaceAll((name, property) -> nullable((Schema<?>) property));
+            }
+          });
+    };
+  }
+
+  private static Schema<?> nullable(Schema<?> property) {
+    if (property.get$ref() == null
+        || property.getTypes() == null
+        || !property.getTypes().contains("null")) {
+      return property;
+    }
+    List<Schema> branches =
+        List.of(new Schema<>().$ref(property.get$ref()), new Schema<>().types(Set.of("null")));
+    return new ComposedSchema().oneOf(branches);
   }
 }
