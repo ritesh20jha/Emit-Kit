@@ -9,6 +9,8 @@ dependencies {
     implementation(libs.okhttp)
     // Boot is provided by the application; needed only to compile GitHubProperties.
     compileOnly(libs.spring.boot.core)
+    // RedisRateLimitStore; the apps supply the Redis connection factory.
+    compileOnly(libs.spring.data.redis)
 
     testFixturesImplementation(project(":common"))
     testFixturesImplementation(platform(libs.junit.bom))
@@ -17,4 +19,8 @@ dependencies {
 
     testImplementation(testFixtures(project(":vcs")))
     testImplementation(libs.wiremock.standalone)
+    testImplementation(libs.spring.data.redis)
+    testImplementation(libs.lettuce.core)
+    testImplementation(libs.testcontainers.core)
+    testImplementation(libs.testcontainers.junit.jupiter)
 }

@@ -7,10 +7,15 @@ import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.VcsProviderId;
 import dev.emitkit.vcs.WebhookVerifier;
+import dev.emitkit.vcs.ratelimit.RateLimitPolicy;
+import dev.emitkit.vcs.ratelimit.RateLimitStore;
+import dev.emitkit.vcs.ratelimit.RateLimitedVcsClient;
+import dev.emitkit.vcs.ratelimit.Sleeper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -40,12 +45,36 @@ public final class GitHubVcsProvider implements VcsProvider {
   private final GitHubProperties props;
   private final TokenSource tokens;
   private final OkHttpClient http;
+  private final RateLimitStore rateLimits;
+  private final Clock clock;
+  private final Sleeper sleeper;
 
-  /** Creates the provider. The listener may be null. */
+  /**
+   * Creates the provider without rate-limit tracking. The listener may be null. The rate-limited
+   * overloads of {@link #forUser(String, String, RateLimitPolicy)} and {@link #forProject(String,
+   * RateLimitPolicy)} throw {@link IllegalStateException} with this constructor.
+   */
   public GitHubVcsProvider(GitHubProperties props, TokenSource tokens, RateLimitListener listener) {
+    this(props, tokens, listener, null, Clock.systemUTC(), Sleeper.SYSTEM);
+  }
+
+  /**
+   * Creates the provider with rate-limit tracking. The listener and the store may be null; a null
+   * store disables the rate-limited overloads.
+   */
+  public GitHubVcsProvider(
+      GitHubProperties props,
+      TokenSource tokens,
+      RateLimitListener listener,
+      RateLimitStore rateLimits,
+      Clock clock,
+      Sleeper sleeper) {
     this.props = Objects.requireNonNull(props, "props");
     this.tokens = Objects.requireNonNull(tokens, "tokens");
     this.http = httpClient(props, listener);
+    this.rateLimits = rateLimits;
+    this.clock = Objects.requireNonNull(clock, "clock");
+    this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
   }
 
   @Override
@@ -53,10 +82,47 @@ public final class GitHubVcsProvider implements VcsProvider {
     return VcsProviderId.GITHUB;
   }
 
-  // kohsuke 1.330 has no public replacement for RateLimitChecker.NONE.
   @Override
-  @SuppressWarnings("deprecation")
   public VcsClient forUser(String accessToken) {
+    return client(accessToken, http);
+  }
+
+  @Override
+  public VcsClient forProject(String creatorUserId) {
+    return forUser(tokens.accessTokenFor(creatorUserId));
+  }
+
+  /**
+   * The client is guarded against {@code userId}'s stored quota, and every response it receives
+   * also records that user's quota from its rate-limit headers.
+   */
+  @Override
+  public VcsClient forUser(String accessToken, String userId, RateLimitPolicy policy) {
+    RateLimitStore store = requireRateLimitStore();
+    // newBuilder shares the pool, dispatcher and cache. Appended, this interceptor runs innermost:
+    // it sees each real response before the provider-wide one rewrites Vary, which leaves the
+    // rate-limit headers alone. Both interceptors record from the same response, once each.
+    OkHttpClient recording =
+        http.newBuilder()
+            .addNetworkInterceptor(chain -> {
+              Response response = chain.proceed(chain.request());
+              notifyRateLimit(
+                  response, (remaining, reset) -> store.record(userId, remaining, reset));
+              return response;
+            })
+            .build();
+    return new RateLimitedVcsClient(
+        client(accessToken, recording), userId, store, policy, clock, sleeper);
+  }
+
+  @Override
+  public VcsClient forProject(String creatorUserId, RateLimitPolicy policy) {
+    return forUser(tokens.accessTokenFor(creatorUserId), creatorUserId, policy);
+  }
+
+  // kohsuke 1.330 has no public replacement for RateLimitChecker.NONE.
+  @SuppressWarnings("deprecation")
+  private VcsClient client(String accessToken, OkHttpClient http) {
     GitHub github;
     try {
       github =
@@ -75,9 +141,12 @@ public final class GitHubVcsProvider implements VcsProvider {
     return new GitHubVcsClient(github);
   }
 
-  @Override
-  public VcsClient forProject(String creatorUserId) {
-    return forUser(tokens.accessTokenFor(creatorUserId));
+  private RateLimitStore requireRateLimitStore() {
+    if (rateLimits == null) {
+      throw new IllegalStateException(
+          "no RateLimitStore configured: build the provider with the constructor that takes one");
+    }
+    return rateLimits;
   }
 
   @Override
