@@ -166,7 +166,14 @@ public final class RateLimitedVcsClient implements VcsClient {
     }
     Duration untilReset = Duration.between(now, quota.resetAt());
     if (policy == RateLimitPolicy.BACKGROUND && untilReset.compareTo(MAX_BACKGROUND_WAIT) <= 0) {
-      sleeper.sleep(untilReset);
+      try {
+        sleeper.sleep(untilReset);
+      } catch (InterruptedException e) {
+        // Shutdown, not a permanent failure: restore the flag and let the caller requeue the work.
+        Thread.currentThread().interrupt();
+        throw new VcsRateLimitException(
+            "interrupted while waiting for the VCS API quota to reset", quota.resetAt());
+      }
       return;
     }
     throw new VcsRateLimitException(

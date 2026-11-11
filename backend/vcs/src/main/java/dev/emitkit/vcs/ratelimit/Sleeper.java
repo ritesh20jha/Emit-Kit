@@ -7,16 +7,13 @@ import java.time.Duration;
 public interface Sleeper {
 
   /** Waits on the current thread with {@link Thread#sleep(Duration)}. */
-  Sleeper SYSTEM =
-      duration -> {
-        try {
-          Thread.sleep(duration);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new IllegalStateException("interrupted while waiting", e);
-        }
-      };
+  Sleeper SYSTEM = Thread::sleep;
 
-  /** Waits for {@code duration}. */
-  void sleep(Duration duration);
+  /**
+   * Waits for {@code duration}.
+   *
+   * @throws InterruptedException if the waiting thread is interrupted; the caller decides how to
+   *     react
+   */
+  void sleep(Duration duration) throws InterruptedException;
 }

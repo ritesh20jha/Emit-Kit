@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisOperations;
@@ -38,7 +39,7 @@ public final class RedisRateLimitStore implements RateLimitStore {
 
   /** Stores readings through {@code redis}, whose connection factory the caller configures. */
   public RedisRateLimitStore(StringRedisTemplate redis) {
-    this.redis = redis;
+    this.redis = Objects.requireNonNull(redis, "redis");
   }
 
   /**

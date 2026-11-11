@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.emitkit.common.error.TransientException;
-import dev.emitkit.vcs.RateLimit;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.error.VcsRateLimitException;
 import dev.emitkit.vcs.fake.InMemoryVcsClient;
@@ -15,10 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +46,18 @@ class RateLimitedVcsClientTest {
   @Test
   void interactive_lowQuota_failsFast() {
     Instant resetAt = clock.instant().plusSeconds(600);
+    store.record("u1", 99, resetAt);
+
+    assertThatThrownBy(() -> client(INTERACTIVE).listRepos())
+        .isInstanceOfSatisfying(
+            VcsRateLimitException.class, e -> assertThat(e.resetAt()).isEqualTo(resetAt));
+    assertThat(fake.calls()).isEmpty();
+    assertThat(sleeper.sleeps()).isEmpty();
+  }
+
+  @Test
+  void interactive_lowQuota_resetSoon_stillFailsFast() {
+    Instant resetAt = clock.instant().plusSeconds(2);
     store.record("u1", 99, resetAt);
 
     assertThatThrownBy(() -> client(INTERACTIVE).listRepos())
@@ -122,6 +130,25 @@ class RateLimitedVcsClientTest {
     assertThat(sleeper.sleeps()).isEmpty();
   }
 
+  @Test
+  void background_interruptedWait_failsTransiently_andKeepsTheInterrupt() {
+    store.record("u1", 99, clock.instant().plusSeconds(2));
+    Sleeper interrupted =
+        duration -> {
+          throw new InterruptedException();
+        };
+    VcsClient client = new RateLimitedVcsClient(fake, "u1", store, BACKGROUND, clock, interrupted);
+
+    try {
+      assertThatThrownBy(client::listRepos).isInstanceOf(VcsRateLimitException.class);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      assertThat(fake.calls()).isEmpty();
+    } finally {
+      // Clear the flag so it cannot leak into other tests on this thread.
+      Thread.interrupted();
+    }
+  }
+
   @ParameterizedTest
   @EnumSource(RateLimitPolicy.class)
   void rateLimit_isNotGuarded(RateLimitPolicy policy) {
@@ -157,22 +184,6 @@ class RateLimitedVcsClientTest {
       assertThatThrownBy(call).isInstanceOf(VcsRateLimitException.class);
     }
     assertThat(fake.calls()).isEmpty();
-  }
-
-  /** Holds the last reading per user, with limit 0 as the store contract allows. */
-  private static final class InMemoryRateLimitStore implements RateLimitStore {
-
-    private final Map<String, RateLimit> quotas = new HashMap<>();
-
-    @Override
-    public void record(String userId, int remaining, Instant resetAt) {
-      quotas.put(userId, new RateLimit(0, remaining, resetAt));
-    }
-
-    @Override
-    public Optional<RateLimit> get(String userId) {
-      return Optional.ofNullable(quotas.get(userId));
-    }
   }
 
   /** Records every sleep instead of waiting. */

@@ -82,10 +82,47 @@ public final class GitHubVcsProvider implements VcsProvider {
     return VcsProviderId.GITHUB;
   }
 
-  // kohsuke 1.330 has no public replacement for RateLimitChecker.NONE.
   @Override
-  @SuppressWarnings("deprecation")
   public VcsClient forUser(String accessToken) {
+    return client(accessToken, http);
+  }
+
+  @Override
+  public VcsClient forProject(String creatorUserId) {
+    return forUser(tokens.accessTokenFor(creatorUserId));
+  }
+
+  /**
+   * The client is guarded against {@code userId}'s stored quota, and every response it receives
+   * also records that user's quota from its rate-limit headers.
+   */
+  @Override
+  public VcsClient forUser(String accessToken, String userId, RateLimitPolicy policy) {
+    RateLimitStore store = requireRateLimitStore();
+    // newBuilder shares the pool, dispatcher and cache. Appended, this interceptor runs innermost:
+    // it sees each real response before the provider-wide one rewrites Vary, which leaves the
+    // rate-limit headers alone. Both interceptors record from the same response, once each.
+    OkHttpClient recording =
+        http.newBuilder()
+            .addNetworkInterceptor(chain -> {
+              Response response = chain.proceed(chain.request());
+              notifyRateLimit(
+                  response, (remaining, reset) -> store.record(userId, remaining, reset));
+              return response;
+            })
+            .build();
+    return new RateLimitedVcsClient(
+        client(accessToken, recording), userId, store, policy, clock, sleeper);
+  }
+
+  @Override
+  public VcsClient forProject(String creatorUserId, RateLimitPolicy policy) {
+    return forUser(tokens.accessTokenFor(creatorUserId), creatorUserId, policy);
+  }
+
+  // kohsuke 1.330 has no public replacement for RateLimitChecker.NONE.
+  @SuppressWarnings("deprecation")
+  private VcsClient client(String accessToken, OkHttpClient http) {
     GitHub github;
     try {
       github =
@@ -102,24 +139,6 @@ public final class GitHubVcsProvider implements VcsProvider {
       throw GitHubErrors.map(e);
     }
     return new GitHubVcsClient(github);
-  }
-
-  @Override
-  public VcsClient forProject(String creatorUserId) {
-    return forUser(tokens.accessTokenFor(creatorUserId));
-  }
-
-  @Override
-  public VcsClient forUser(String accessToken, String userId, RateLimitPolicy policy) {
-    RateLimitStore store = requireRateLimitStore();
-    return new RateLimitedVcsClient(forUser(accessToken), userId, store, policy, clock, sleeper);
-  }
-
-  @Override
-  public VcsClient forProject(String creatorUserId, RateLimitPolicy policy) {
-    RateLimitStore store = requireRateLimitStore();
-    return new RateLimitedVcsClient(
-        forProject(creatorUserId), creatorUserId, store, policy, clock, sleeper);
   }
 
   private RateLimitStore requireRateLimitStore() {

@@ -2,6 +2,7 @@ package dev.emitkit.vcs.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import dev.emitkit.vcs.RateLimit;
@@ -33,7 +34,7 @@ class RedisRateLimitStoreIT {
 
   @Container
   static GenericContainer<?> redisContainer =
-      new GenericContainer<>(DockerImageName.parse("redis:7")).withExposedPorts(6379);
+      new GenericContainer<>(DockerImageName.parse("redis:8.10.3-alpine")).withExposedPorts(6379);
 
   private static LettuceConnectionFactory connectionFactory;
   private static StringRedisTemplate redis;
@@ -59,6 +60,12 @@ class RedisRateLimitStoreIT {
       connection.serverCommands().flushDb();
     }
     store = new RedisRateLimitStore(redis);
+  }
+
+  @Test
+  void constructor_rejectsNullTemplate() {
+    assertThatThrownBy(() -> new RedisRateLimitStore(null))
+        .isInstanceOf(NullPointerException.class);
   }
 
   @Test
