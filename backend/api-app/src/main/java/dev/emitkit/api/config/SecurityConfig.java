@@ -21,6 +21,7 @@ import org.springframework.security.config.annotation.web.configurers.CsrfConfig
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
@@ -87,6 +88,7 @@ public class SecurityConfig {
     return http.cors(c -> c.configurationSource(cors))
         .csrf(csrfCustomizer())
         .addFilterAfter(csrfCookieFilter(), CsrfFilter.class)
+        .addFilterBefore(rememberNext(), OAuth2AuthorizationRequestRedirectFilter.class)
         // No saved request: an anonymous 401 must not create a session for a retry.
         .requestCache(cache -> cache.requestCache(new NullRequestCache()))
         .authorizeHttpRequests(auth ->
@@ -138,6 +140,19 @@ public class SecurityConfig {
       Object token = ((HttpServletRequest) request).getAttribute(CsrfToken.class.getName());
       if (token instanceof CsrfToken csrfToken) {
         csrfToken.getToken();
+      }
+      chain.doFilter(request, response);
+    };
+  }
+
+  /** Keeps {@code next} from /oauth2/authorization/{id}?next=... for LoginSuccessHandler. */
+  private static Filter rememberNext() {
+    return (request, response, chain) -> {
+      HttpServletRequest http = (HttpServletRequest) request;
+      if (http.getRequestURI().startsWith("/oauth2/authorization/")) {
+        // Storing null also clears a value left by an earlier attempt that had no next.
+        http.getSession()
+            .setAttribute(LoginSuccessHandler.NEXT_ATTRIBUTE, http.getParameter("next"));
       }
       chain.doFilter(request, response);
     };

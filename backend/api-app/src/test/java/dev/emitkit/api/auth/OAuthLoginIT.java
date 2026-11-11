@@ -23,9 +23,11 @@ import dev.emitkit.domain.RoleSource;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.TokenSource;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
@@ -202,6 +204,15 @@ class OAuthLoginIT {
   }
 
   @Test
+  void loginRedirectsToNextOnlyWhenSafe() throws Exception {
+    HttpResponse<String> safe = login(42, "octo", "gho_safe", "/projects/x");
+    HttpResponse<String> unsafe = login(42, "octo", "gho_unsafe", "//evil.com");
+
+    assertThat(safe.headers().firstValue("Location")).hasValue("http://localhost:5173/projects/x");
+    assertThat(unsafe.headers().firstValue("Location")).hasValue("http://localhost:5173/");
+  }
+
+  @Test
   void githubTokenIsNotStoredInSession() throws Exception {
     loginAs(42, "octo", "gho_token1");
 
@@ -227,10 +238,20 @@ class OAuthLoginIT {
 
   /** Starts the authorization request and completes the callback with GitHub's stubbed answers. */
   private HttpResponse<String> login(long githubId, String login, String token) throws Exception {
+    return login(githubId, login, token, null);
+  }
+
+  /** As {@link #login(long, String, String)}, starting from {@code next} when it is given. */
+  private HttpResponse<String> login(long githubId, String login, String token, String next)
+      throws Exception {
     String code = "code-" + token;
     stubGitHub(githubId, login, token, code);
 
-    HttpResponse<String> start = httpGet("/oauth2/authorization/github", null);
+    String startPath = "/oauth2/authorization/github";
+    if (next != null) {
+      startPath += "?next=" + URLEncoder.encode(next, StandardCharsets.UTF_8);
+    }
+    HttpResponse<String> start = httpGet(startPath, null);
     assertThat(start.statusCode()).isEqualTo(302);
     String state =
         UriComponentsBuilder.fromUriString(start.headers().firstValue("Location").orElseThrow())
