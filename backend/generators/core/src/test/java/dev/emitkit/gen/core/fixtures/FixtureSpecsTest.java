@@ -1,6 +1,7 @@
 package dev.emitkit.gen.core.fixtures;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import dev.emitkit.spec.model.AllOfSchema;
 import dev.emitkit.spec.model.ApiModel;
@@ -68,8 +69,15 @@ class FixtureSpecsTest {
   @Test
   void authSchemesHavePerOperationOverrides() {
     var ops = FixtureSpecs.load("auth-schemes").operations();
-    assertThat(ops).extracting(Operation::security).anyMatch(List::isEmpty);
-    assertThat(ops).extracting(Operation::security).anyMatch(names -> !names.isEmpty());
+    assertThat(ops)
+        .extracting(Operation::operationId, Operation::security)
+        .containsExactlyInAnyOrder(
+            tuple("getWithHeaderKey", List.of("headerKey")),
+            tuple("getWithQueryKey", List.of("queryKey")),
+            tuple("getWithBasic", List.of("basicAuth")),
+            tuple("getWithOAuth", List.of("oauth")),
+            tuple("getPublic", List.of()),
+            tuple("getInherited", List.of("bearerAuth")));
   }
 
   @Test
@@ -102,12 +110,14 @@ class FixtureSpecsTest {
   }
 
   @Test
-  void paginationHasCursorAndLimitParams() {
-    var params = FixtureSpecs.load("pagination").operations();
-    assertThat(params)
+  void paginationHasCursorAndLimitQueryParams() {
+    var ops = FixtureSpecs.load("pagination").operations();
+    assertThat(ops)
         .flatExtracting(Operation::parameters)
-        .extracting(Parameter::name)
-        .contains("cursor", "limit");
+        .extracting(Parameter::name, Parameter::in)
+        .contains(tuple("cursor", ParamLocation.QUERY), tuple("limit", ParamLocation.QUERY));
+    // The model does not expose response headers, so the Link header is checked in the source.
+    assertThat(FixtureSpecs.raw("pagination")).contains("Link:");
   }
 
   @Test
