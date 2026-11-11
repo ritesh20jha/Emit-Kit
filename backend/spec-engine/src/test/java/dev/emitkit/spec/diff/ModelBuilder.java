@@ -101,6 +101,10 @@ final class ModelBuilder {
     return new Parameter(name, ParamLocation.QUERY, required, string(), description);
   }
 
+  static Parameter pathParam(String name) {
+    return new Parameter(name, ParamLocation.PATH, true, string(), null);
+  }
+
   static RequestBody jsonBody(boolean required) {
     return new RequestBody(required, "application/json", string());
   }

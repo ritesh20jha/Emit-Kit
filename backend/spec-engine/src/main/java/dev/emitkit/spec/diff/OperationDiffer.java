@@ -6,6 +6,7 @@ import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.RequestBody;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -94,14 +95,18 @@ final class OperationDiffer {
       Operation a,
       SchemaDiffer schemas,
       List<Change> changes) {
-    for (var entry : a.responses().entrySet()) {
-      var status = entry.getKey();
+    // After-order statuses first, then before-only statuses in before order.
+    var statuses = new LinkedHashSet<>(a.responses().keySet());
+    statuses.addAll(b.responses().keySet());
+    for (var status : statuses) {
       var br = b.responses().get(status);
-      if (br == null || (br.schema() == null && entry.getValue().schema() == null)) {
+      var ar = a.responses().get(status);
+      var beforeSchema = br == null ? null : br.schema();
+      var afterSchema = ar == null ? null : ar.schema();
+      if (beforeSchema == null && afterSchema == null) {
         continue;
       }
-      changes.addAll(
-          schemas.diffResponse(before, br.schema(), after, entry.getValue().schema(), status));
+      changes.addAll(schemas.diffResponse(before, beforeSchema, after, afterSchema, status));
     }
   }
 

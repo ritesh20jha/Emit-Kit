@@ -10,8 +10,10 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Compares two API models. Operations match purely by operationId: a changed method or path under
- * the same id is not a change. When a model repeats an operationId, the first occurrence wins.
+ * Compares two API models. Operations match by operationId. If the method or the path differs
+ * (template variable names ignored, so {@code /pets/{id}} and {@code /pets/{petId}} are the same),
+ * the operation is reported as removed (old ref) and added (new ref), not modified. When a model
+ * repeats an operationId, the first occurrence wins.
  */
 public final class SpecDiffer {
 
@@ -38,22 +40,26 @@ public final class SpecDiffer {
     }
     var beforeOps = indexById(before);
 
+    // A moved operation (method or path changed) appears in both lists, each in its own model's
+    // order.
     var added = new ArrayList<OpRef>();
     for (var op : afterOps.values()) {
-      if (!beforeOps.containsKey(op.operationId())) {
+      var prev = beforeOps.get(op.operationId());
+      if (prev == null || isMoved(prev, op)) {
         added.add(ref(op));
       }
     }
     var removed = new ArrayList<OpRef>();
     for (var op : beforeOps.values()) {
-      if (!afterOps.containsKey(op.operationId())) {
+      var next = afterOps.get(op.operationId());
+      if (next == null || isMoved(op, next)) {
         removed.add(ref(op));
       }
     }
     var modified = new ArrayList<OpChange>();
     for (var op : afterOps.values()) {
       var prev = beforeOps.get(op.operationId());
-      if (prev == null) {
+      if (prev == null || isMoved(prev, op)) {
         continue;
       }
       var changes = OperationDiffer.diff(before, prev, after, op, schemaDiffer);
@@ -70,6 +76,18 @@ public final class SpecDiffer {
       index.putIfAbsent(op.operationId(), op);
     }
     return index;
+  }
+
+  /**
+   * True when the method differs, or the path differs after template variable names are dropped.
+   */
+  private static boolean isMoved(Operation before, Operation after) {
+    return !Objects.equals(before.method(), after.method())
+        || !normalizePath(before.path()).equals(normalizePath(after.path()));
+  }
+
+  private static String normalizePath(String path) {
+    return path.replaceAll("\\{[^}]*\\}", "{}");
   }
 
   private static OpRef ref(Operation op) {

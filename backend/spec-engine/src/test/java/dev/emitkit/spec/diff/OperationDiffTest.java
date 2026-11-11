@@ -9,6 +9,7 @@ import static dev.emitkit.spec.diff.ChangeKind.PARAM_REMOVED;
 import static dev.emitkit.spec.diff.ModelBuilder.jsonBody;
 import static dev.emitkit.spec.diff.ModelBuilder.model;
 import static dev.emitkit.spec.diff.ModelBuilder.op;
+import static dev.emitkit.spec.diff.ModelBuilder.pathParam;
 import static dev.emitkit.spec.diff.ModelBuilder.query;
 import static dev.emitkit.spec.diff.ModelBuilder.string;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +20,8 @@ import dev.emitkit.spec.model.Schema;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 class OperationDiffTest {
 
@@ -54,9 +57,49 @@ class OperationDiffTest {
   }
 
   @Test
-  void sameOperationIdWithNewPath_isNotAChange() {
+  void sameOperationIdWithNewPath_isRemovedAndAdded() {
     var d = diff(model(op("listPets", "GET", "/pets")), model(op("listPets", "GET", "/v2/pets")));
-    assertThat(d.isEmpty()).isTrue();
+    assertThat(d.removed()).containsExactly(new OpRef("listPets", "GET", "/pets"));
+    assertThat(d.added()).containsExactly(new OpRef("listPets", "GET", "/v2/pets"));
+    assertThat(d.modified()).isEmpty();
+    assertThat(d.hasBreaking()).isTrue();
+  }
+
+  @Test
+  void sameOperationIdWithNewMethod_isRemovedAndAdded() {
+    var d = diff(model(op("listPets", "GET", "/pets")), model(op("listPets", "POST", "/pets")));
+    assertThat(d.removed()).containsExactly(new OpRef("listPets", "GET", "/pets"));
+    assertThat(d.added()).containsExactly(new OpRef("listPets", "POST", "/pets"));
+    assertThat(d.modified()).isEmpty();
+    assertThat(d.hasBreaking()).isTrue();
+  }
+
+  @Test
+  void movedOperations_followEachModelsOrder() {
+    var before = model(listPets, getPet);
+    var after = model(op("getPet", "POST", "/pets/{id}"), op("listPets", "POST", "/pets"));
+    var d = diff(before, after);
+    assertThat(d.removed())
+        .containsExactly(
+            new OpRef("listPets", "GET", "/pets"), new OpRef("getPet", "GET", "/pets/{id}"));
+    assertThat(d.added())
+        .containsExactly(
+            new OpRef("getPet", "POST", "/pets/{id}"), new OpRef("listPets", "POST", "/pets"));
+    assertThat(d.modified()).isEmpty();
+  }
+
+  @Test
+  void pathParamRenameOnly_isModifiedNotMoved() {
+    var before = model(op("getPet", "GET", "/pets/{id}").withParam(pathParam("id")));
+    var after = model(op("getPet", "GET", "/pets/{petId}").withParam(pathParam("petId")));
+    var d = diff(before, after);
+    assertThat(d.removed()).isEmpty();
+    assertThat(d.added()).isEmpty();
+    assertThat(d.modified()).hasSize(1);
+    assertThat(d.modified().get(0).changes())
+        .containsExactly(
+            new Change(PARAM_ADDED, "path.petId", true),
+            new Change(PARAM_REMOVED, "path.id", true));
   }
 
   @Test
@@ -133,9 +176,12 @@ class OperationDiffTest {
     assertThat(diff(m, m).isEmpty()).isTrue();
   }
 
+  /** One delegated schema comparison, with which sides were absent. */
+  private record Call(String location, boolean beforeNull, boolean afterNull) {}
+
   @Test
-  void schemaDiffer_isCalledForSharedParamBodyAndResponse() {
-    var locations = new ArrayList<String>();
+  void schemaDiffer_isCalledForParamBodyAndResponses_withNullForMissingSide() {
+    var calls = new ArrayList<Call>();
     SchemaDiffer recording =
         new SchemaDiffer() {
           @Override
@@ -145,7 +191,7 @@ class OperationDiffTest {
               ApiModel after,
               Schema afterSchema,
               String location) {
-            locations.add(location);
+            calls.add(new Call(location, beforeSchema == null, afterSchema == null));
             return List.of();
           }
 
@@ -156,16 +202,42 @@ class OperationDiffTest {
               ApiModel after,
               Schema afterSchema,
               String location) {
-            locations.add(location);
+            calls.add(new Call(location, beforeSchema == null, afterSchema == null));
             return List.of();
           }
         };
-    Op op =
+    var before =
         listPets
             .withParam(query("limit", false))
             .withBody(jsonBody(false))
-            .withResponse("200", string());
-    new SpecDiffer(recording).diff(model(op), model(op));
-    assertThat(locations).containsExactly("query.limit", "body", "200");
+            .withResponse("200", string())
+            .withResponse("404", string())
+            .withResponse("204", null);
+    var after =
+        listPets
+            .withParam(query("limit", false))
+            .withBody(jsonBody(false))
+            .withResponse("200", string())
+            .withResponse("500", string())
+            .withResponse("204", null);
+    new SpecDiffer(recording).diff(model(before), model(after));
+    // After-only statuses come in after order, then before-only statuses; a status with no
+    // schema on either side is not delegated at all.
+    assertThat(calls)
+        .containsExactly(
+            new Call("query.limit", false, false),
+            new Call("body", false, false),
+            new Call("200", false, false),
+            new Call("500", true, false),
+            new Call("404", false, true));
+  }
+
+  @Test
+  void specDiffJson_hasExactTopLevelAndChangeFields() {
+    var d = diff(model(listPets), model(listPets.withParam(query("limit", true))));
+    JsonNode json = JsonMapper.builder().build().valueToTree(d);
+    assertThat(json.propertyNames()).containsExactlyInAnyOrder("added", "removed", "modified");
+    JsonNode change = json.get("modified").get(0).get("changes").get(0);
+    assertThat(change.propertyNames()).containsExactlyInAnyOrder("kind", "location", "breaking");
   }
 }
