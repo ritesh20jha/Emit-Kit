@@ -1,6 +1,66 @@
 {
   "components": {
     "schemas": {
+      "ApprovalRequest": {
+        "properties": {
+          "comment": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "type": "object"
+      },
+      "ApprovalView": {
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decidedBy": {
+            "description": "GitHub login of the reviewer",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "comment",
+          "decidedAt",
+          "decidedBy",
+          "decision"
+        ],
+        "type": "object"
+      },
       "BreakingGate": {
         "enum": [
           "ALLOW",
@@ -43,6 +103,14 @@
           "ENUM_VALUE_ADDED",
           "TYPE_CHANGED",
           "DESCRIPTION_CHANGED"
+        ],
+        "type": "string"
+      },
+      "ChangeType": {
+        "enum": [
+          "MAJOR",
+          "MINOR",
+          "PATCH"
         ],
         "type": "string"
       },
@@ -267,6 +335,73 @@
         ],
         "type": "object"
       },
+      "Decision": {
+        "enum": [
+          "APPROVED",
+          "REJECTED"
+        ],
+        "type": "string"
+      },
+      "FileStatus": {
+        "enum": [
+          "ADDED",
+          "MODIFIED",
+          "UNCHANGED",
+          "SKIPPED"
+        ],
+        "type": "string"
+      },
+      "FileView": {
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus"
+          },
+          "unifiedDiff": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "content",
+          "path",
+          "status",
+          "unifiedDiff"
+        ],
+        "type": "object"
+      },
+      "LintCounts": {
+        "properties": {
+          "errors": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "infos": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "warnings": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "errors",
+          "infos",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "LintFailOn": {
         "enum": [
           "NEVER",
@@ -316,6 +451,67 @@
         },
         "required": [
           "content"
+        ],
+        "type": "object"
+      },
+      "LogLine": {
+        "properties": {
+          "level": {
+            "description": "INFO, WARN or ERROR",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "step": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StepName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "message",
+          "seq",
+          "step",
+          "ts"
+        ],
+        "type": "object"
+      },
+      "ManifestEntry": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "size",
+          "status"
         ],
         "type": "object"
       },
@@ -565,6 +761,27 @@
         ],
         "type": "object"
       },
+      "PageRunSummary": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "ProblemSummary": {
         "properties": {
           "code": {
@@ -736,6 +953,162 @@
         ],
         "type": "string"
       },
+      "RunDetail": {
+        "properties": {
+          "approval": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifactAvailable": {
+            "type": "boolean"
+          },
+          "branchName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "changeType": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChangeType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentStep": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StepName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diffSummary": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SpecDiff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failureMessage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lint": {
+            "$ref": "#/components/schemas/LintCounts"
+          },
+          "parentRunId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "sdkVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepState"
+            },
+            "type": "array"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/RunTrigger"
+          }
+        },
+        "required": [
+          "approval",
+          "artifactAvailable",
+          "branchName",
+          "changeType",
+          "commitSha",
+          "createdAt",
+          "currentStep",
+          "diffSummary",
+          "dryRun",
+          "failureCode",
+          "failureMessage",
+          "finishedAt",
+          "id",
+          "lint",
+          "parentRunId",
+          "prUrl",
+          "projectId",
+          "sdkVersion",
+          "startedAt",
+          "status",
+          "steps",
+          "trigger"
+        ],
+        "type": "object"
+      },
       "RunStatus": {
         "enum": [
           "QUEUED",
@@ -744,6 +1117,72 @@
           "SUCCESS",
           "FAILED",
           "CANCELLED"
+        ],
+        "type": "string"
+      },
+      "RunSummary": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "durationMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "prNumber": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "prUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sdkVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/RunTrigger"
+          }
+        },
+        "required": [
+          "createdAt",
+          "dryRun",
+          "durationMs",
+          "id",
+          "prNumber",
+          "prUrl",
+          "sdkVersion",
+          "status",
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "RunTrigger": {
+        "enum": [
+          "MANUAL",
+          "WEBHOOK",
+          "RERUN"
         ],
         "type": "string"
       },
@@ -924,6 +1363,66 @@
         ],
         "type": "object"
       },
+      "StepName": {
+        "enum": [
+          "FETCH_SPEC",
+          "PARSE_SPEC",
+          "LINT_SPEC",
+          "DIFF_SPEC",
+          "CALC_VERSION",
+          "BREAKING_GATE",
+          "RUN_GENERATORS",
+          "SYNTAX_CHECK",
+          "PACKAGE_ARTIFACT",
+          "COMMIT_OUTPUT",
+          "FINALIZE"
+        ],
+        "type": "string"
+      },
+      "StepState": {
+        "properties": {
+          "durationMs": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "$ref": "#/components/schemas/StepName"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StepStatus"
+          }
+        },
+        "required": [
+          "durationMs",
+          "name",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StepStatus": {
+        "enum": [
+          "PENDING",
+          "RUNNING",
+          "DONE",
+          "SKIPPED",
+          "FAILED"
+        ],
+        "type": "string"
+      },
+      "TriggerRunRequest": {
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dryRun"
+        ],
+        "type": "object"
+      },
       "UpdateRoleRequest": {
         "properties": {
           "role": {
@@ -932,6 +1431,34 @@
         },
         "required": [
           "role"
+        ],
+        "type": "object"
+      },
+      "VersionResponse": {
+        "properties": {
+          "changeType": {
+            "$ref": "#/components/schemas/ChangeType"
+          },
+          "changelog": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changeType",
+          "changelog",
+          "createdAt",
+          "runId",
+          "version"
         ],
         "type": "object"
       },
@@ -1536,6 +2063,111 @@
         ]
       }
     },
+    "/projects/{id}/runs": {
+      "get": {
+        "operationId": "listRuns",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only runs with this status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RunStatus"
+            }
+          },
+          {
+            "description": "Only runs started by this trigger",
+            "in": "query",
+            "name": "trigger",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RunTrigger"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageRunSummary"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the runs of a project, newest first, one page at a time",
+        "tags": [
+          "Runs"
+        ]
+      },
+      "post": {
+        "operationId": "startRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Start a generation run for a project",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/projects/{id}/spec": {
       "get": {
         "operationId": "getSpec",
@@ -1697,6 +2329,40 @@
         ]
       }
     },
+    "/projects/{id}/versions": {
+      "get": {
+        "operationId": "listVersions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VersionResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the published versions of a project, newest first",
+        "tags": [
+          "Versions"
+        ]
+      }
+    },
     "/projects/{id}/webhook": {
       "post": {
         "operationId": "registerWebhook",
@@ -1727,6 +2393,374 @@
           "Projects"
         ]
       }
+    },
+    "/runs/{runId}": {
+      "get": {
+        "operationId": "getRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read one run",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/runs/{runId}/approval": {
+      "post": {
+        "operationId": "decideApproval",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Approve or reject a run that is awaiting approval",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/runs/{runId}/artifact": {
+      "get": {
+        "operationId": "getArtifact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The zipped output of the run"
+          }
+        },
+        "summary": "Download the zipped output of a run",
+        "tags": [
+          "Run files"
+        ]
+      }
+    },
+    "/runs/{runId}/cancel": {
+      "post": {
+        "operationId": "cancelRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Cancel a run that has not finished",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/runs/{runId}/files": {
+      "get": {
+        "operationId": "listFiles",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ManifestEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the file manifest of a run",
+        "tags": [
+          "Run files"
+        ]
+      }
+    },
+    "/runs/{runId}/files/{path}": {
+      "get": {
+        "operationId": "getFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Manifest path. Send '/' separators unencoded; percent-encode each segment.",
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "diff",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Read one generated file, or its diff against the target branch",
+        "tags": [
+          "Run files"
+        ]
+      }
+    },
+    "/runs/{runId}/lint": {
+      "get": {
+        "operationId": "listRunLint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LintIssue"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the lint issues found in the spec of a run",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/runs/{runId}/logs": {
+      "get": {
+        "operationId": "listLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "afterSeq",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LogLine"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List the log lines of a run, after the given sequence number",
+        "tags": [
+          "Run logs"
+        ]
+      }
+    },
+    "/runs/{runId}/logs/stream": {
+      "get": {
+        "description": "Two events. `log` carries one LogLine as JSON for each new line. `done` carries the text `[DONE]` once the run has finished and the stream closes. SSE id is the log seq; on reconnect the stream resumes after Last-Event-ID.",
+        "operationId": "streamLogs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The seq of the last log line the client received",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The log as server-sent events"
+          }
+        },
+        "summary": "Stream the log of a run as server-sent events",
+        "tags": [
+          "Run logs"
+        ]
+      }
+    },
+    "/runs/{runId}/rerun": {
+      "post": {
+        "operationId": "rerunRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetail"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Start a new run with the same spec as this one",
+        "tags": [
+          "Runs"
+        ]
+      }
     }
   },
   "servers": [
@@ -1752,16 +2786,32 @@
       "name": "Members"
     },
     {
+      "description": "The log of a run, read whole or streamed.",
+      "name": "Run logs"
+    },
+    {
       "description": "Projects, their repositories and push webhooks.",
       "name": "Projects"
+    },
+    {
+      "description": "The files a run generated, and its artifact.",
+      "name": "Run files"
     },
     {
       "description": "Repositories the user can pick for a project.",
       "name": "VCS repositories"
     },
     {
+      "description": "Generation runs: start, read, cancel, rerun and approve them.",
+      "name": "Runs"
+    },
+    {
       "description": "Organizations the signed-in user belongs to.",
       "name": "Orgs"
+    },
+    {
+      "description": "The SDK versions a project has published.",
+      "name": "Versions"
     },
     {
       "description": "Lint a spec without saving it.",

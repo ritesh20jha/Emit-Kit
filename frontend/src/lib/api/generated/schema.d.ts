@@ -228,6 +228,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the runs of a project, newest first, one page at a time */
+        get: operations["listRuns"];
+        put?: never;
+        /** Start a generation run for a project */
+        post: operations["startRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}/spec": {
         parameters: {
             query?: never;
@@ -280,6 +298,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the published versions of a project, newest first */
+        get: operations["listVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}/webhook": {
         parameters: {
             query?: never;
@@ -297,10 +332,195 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one run */
+        get: operations["getRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or reject a run that is awaiting approval */
+        post: operations["decideApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the zipped output of a run */
+        get: operations["getArtifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a run that has not finished */
+        post: operations["cancelRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the file manifest of a run */
+        get: operations["listFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/files/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one generated file, or its diff against the target branch */
+        get: operations["getFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/lint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the lint issues found in the spec of a run */
+        get: operations["listRunLint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the log lines of a run, after the given sequence number */
+        get: operations["listLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/logs/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream the log of a run as server-sent events
+         * @description Two events. `log` carries one LogLine as JSON for each new line. `done` carries the text `[DONE]` once the run has finished and the stream closes. SSE id is the log seq; on reconnect the stream resumes after Last-Event-ID.
+         */
+        get: operations["streamLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/rerun": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a new run with the same spec as this one */
+        post: operations["rerunRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ApprovalRequest: {
+            comment?: string | null;
+            decision: components["schemas"]["Decision"];
+        };
+        ApprovalView: {
+            comment: string | null;
+            /** Format: date-time */
+            decidedAt: string | null;
+            /** @description GitHub login of the reviewer */
+            decidedBy: string | null;
+            decision: components["schemas"]["Decision"] | null;
+        };
         /** @enum {string} */
         BreakingGate: "ALLOW" | "REQUIRE_APPROVAL" | "BLOCK";
         Change: {
@@ -310,6 +530,8 @@ export interface components {
         };
         /** @enum {string} */
         ChangeKind: "PARAM_ADDED" | "PARAM_REMOVED" | "PARAM_BECAME_REQUIRED" | "PARAM_BECAME_OPTIONAL" | "BODY_BECAME_REQUIRED" | "REQUEST_REQUIRED_PROPERTY_ADDED" | "REQUEST_PROPERTY_ADDED" | "RESPONSE_PROPERTY_REMOVED" | "RESPONSE_PROPERTY_ADDED" | "ENUM_VALUE_REMOVED" | "ENUM_VALUE_ADDED" | "TYPE_CHANGED" | "DESCRIPTION_CHANGED";
+        /** @enum {string} */
+        ChangeType: "MAJOR" | "MINOR" | "PATCH";
         ConfigRequest: {
             aiApiKey?: string | null;
             aiModel?: string | null;
@@ -352,6 +574,24 @@ export interface components {
             visibility?: components["schemas"]["Visibility"] | null;
         };
         /** @enum {string} */
+        Decision: "APPROVED" | "REJECTED";
+        /** @enum {string} */
+        FileStatus: "ADDED" | "MODIFIED" | "UNCHANGED" | "SKIPPED";
+        FileView: {
+            content: string | null;
+            path: string;
+            status: components["schemas"]["FileStatus"];
+            unifiedDiff: string | null;
+        };
+        LintCounts: {
+            /** Format: int32 */
+            errors: number;
+            /** Format: int32 */
+            infos: number;
+            /** Format: int32 */
+            warnings: number;
+        };
+        /** @enum {string} */
         LintFailOn: "NEVER" | "ERROR" | "WARNING";
         LintIssue: {
             jsonPath: string;
@@ -363,6 +603,23 @@ export interface components {
         };
         LintRequest: {
             content: string;
+        };
+        LogLine: {
+            /** @description INFO, WARN or ERROR */
+            level: string;
+            message: string;
+            /** Format: int32 */
+            seq: number;
+            step: components["schemas"]["StepName"] | null;
+            /** Format: date-time */
+            ts: string;
+        };
+        ManifestEntry: {
+            path: string;
+            sha256: string;
+            /** Format: int64 */
+            size: number;
+            status: components["schemas"]["FileStatus"];
         };
         MeResponse: {
             avatarUrl: string;
@@ -424,6 +681,10 @@ export interface components {
             items: components["schemas"]["ProjectSummary"][];
             nextCursor: string | null;
         };
+        PageRunSummary: {
+            items: components["schemas"]["RunSummary"][];
+            nextCursor: string | null;
+        };
         ProblemSummary: {
             code: string;
             detail: string;
@@ -468,8 +729,51 @@ export interface components {
         Role: "ADMIN" | "EDITOR" | "VIEWER";
         /** @enum {string} */
         RoleSource: "SYNC" | "MANUAL";
+        RunDetail: {
+            approval: components["schemas"]["ApprovalView"] | null;
+            artifactAvailable: boolean;
+            branchName: string | null;
+            changeType: components["schemas"]["ChangeType"] | null;
+            commitSha: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            currentStep: components["schemas"]["StepName"] | null;
+            diffSummary: components["schemas"]["SpecDiff"] | null;
+            dryRun: boolean;
+            failureCode: string | null;
+            failureMessage: string | null;
+            /** Format: date-time */
+            finishedAt: string | null;
+            id: string;
+            lint: components["schemas"]["LintCounts"];
+            parentRunId: string | null;
+            prUrl: string | null;
+            projectId: string;
+            sdkVersion: string | null;
+            /** Format: date-time */
+            startedAt: string | null;
+            status: components["schemas"]["RunStatus"];
+            steps: components["schemas"]["StepState"][];
+            trigger: components["schemas"]["RunTrigger"];
+        };
         /** @enum {string} */
         RunStatus: "QUEUED" | "RUNNING" | "AWAITING_APPROVAL" | "SUCCESS" | "FAILED" | "CANCELLED";
+        RunSummary: {
+            /** Format: date-time */
+            createdAt: string;
+            dryRun: boolean;
+            /** Format: int64 */
+            durationMs: number | null;
+            id: string;
+            /** Format: int32 */
+            prNumber: number | null;
+            prUrl: string | null;
+            sdkVersion: string | null;
+            status: components["schemas"]["RunStatus"];
+            trigger: components["schemas"]["RunTrigger"];
+        };
+        /** @enum {string} */
+        RunTrigger: "MANUAL" | "WEBHOOK" | "RERUN";
         SaveSpecRequest: {
             content: string;
             generate: boolean;
@@ -508,8 +812,29 @@ export interface components {
             format: string;
             sha: string;
         };
+        /** @enum {string} */
+        StepName: "FETCH_SPEC" | "PARSE_SPEC" | "LINT_SPEC" | "DIFF_SPEC" | "CALC_VERSION" | "BREAKING_GATE" | "RUN_GENERATORS" | "SYNTAX_CHECK" | "PACKAGE_ARTIFACT" | "COMMIT_OUTPUT" | "FINALIZE";
+        StepState: {
+            /** Format: int64 */
+            durationMs: number | null;
+            name: components["schemas"]["StepName"];
+            status: components["schemas"]["StepStatus"];
+        };
+        /** @enum {string} */
+        StepStatus: "PENDING" | "RUNNING" | "DONE" | "SKIPPED" | "FAILED";
+        TriggerRunRequest: {
+            dryRun: boolean;
+        };
         UpdateRoleRequest: {
             role: components["schemas"]["Role"];
+        };
+        VersionResponse: {
+            changeType: components["schemas"]["ChangeType"];
+            changelog: string;
+            /** Format: date-time */
+            createdAt: string;
+            runId: string;
+            version: string;
         };
         /** @enum {string} */
         VersionStrategy: "EMITKIT_MANAGED" | "SPEC_VERSION";
@@ -897,6 +1222,61 @@ export interface operations {
             };
         };
     };
+    listRuns: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                /** @description Only runs with this status */
+                status?: components["schemas"]["RunStatus"];
+                /** @description Only runs started by this trigger */
+                trigger?: components["schemas"]["RunTrigger"];
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageRunSummary"];
+                };
+            };
+        };
+    };
+    startRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TriggerRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+        };
+    };
     getSpec: {
         parameters: {
             query?: never;
@@ -1001,6 +1381,28 @@ export interface operations {
             };
         };
     };
+    listVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionResponse"][];
+                };
+            };
+        };
+    };
     registerWebhook: {
         parameters: {
             query?: never;
@@ -1019,6 +1421,239 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebhookStatus"];
+                };
+            };
+        };
+    };
+    getRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+        };
+    };
+    decideApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+        };
+    };
+    getArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The zipped output of the run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+        };
+    };
+    cancelRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
+                };
+            };
+        };
+    };
+    listFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManifestEntry"][];
+                };
+            };
+        };
+    };
+    getFile: {
+        parameters: {
+            query?: {
+                diff?: boolean;
+            };
+            header?: never;
+            path: {
+                runId: string;
+                /** @description Manifest path. Send '/' separators unencoded; percent-encode each segment. */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileView"];
+                };
+            };
+        };
+    };
+    listRunLint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LintIssue"][];
+                };
+            };
+        };
+    };
+    listLogs: {
+        parameters: {
+            query?: {
+                afterSeq?: number;
+            };
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogLine"][];
+                };
+            };
+        };
+    };
+    streamLogs: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The seq of the last log line the client received */
+                "Last-Event-ID"?: number;
+            };
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The log as server-sent events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    rerunRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDetail"];
                 };
             };
         };
