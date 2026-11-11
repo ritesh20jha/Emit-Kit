@@ -41,6 +41,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.connection.DataType;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -111,6 +113,7 @@ class OAuthLoginIT {
   @Autowired private OrgMemberRepository orgMembers;
   @Autowired private StringRedisTemplate redis;
   @Autowired private LoginEvents loginEvents;
+  @Autowired private OAuth2AuthorizedClientService authorizedClients;
 
   private final HttpClient http = HttpClient.newHttpClient();
 
@@ -187,20 +190,22 @@ class OAuthLoginIT {
   @Test
   void logout_invalidatesSession() throws Exception {
     String session = loginAs(42, "octo", "gho_token1");
-    HttpResponse<String> before = httpGet("/api/v1/me", cookies(session));
-    assertThat(before.statusCode()).isEqualTo(200);
-    String xsrf = cookieValue(before, "XSRF-TOKEN");
+    assertThat(httpGet("/api/v1/me", cookies(session)).statusCode()).isEqualTo(200);
 
-    HttpResponse<String> logout =
-        http.send(
-            request("/api/v1/logout", cookies(session) + "; XSRF-TOKEN=" + xsrf)
-                .header("X-XSRF-TOKEN", xsrf)
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build(),
-            HttpResponse.BodyHandlers.ofString());
-
-    assertThat(logout.statusCode()).isEqualTo(204);
+    assertThat(logout(session).statusCode()).isEqualTo(204);
     assertThat(httpGet("/api/v1/me", cookies(session)).statusCode()).isEqualTo(401);
+  }
+
+  @Test
+  void githubTokenIsNotRetainedAsAuthorizedClient() throws Exception {
+    String session = loginAs(42, "octo", "gho_token1");
+    String userId = users.findByGithubId(42).orElseThrow().getId();
+    assertThat(authorizedClients.<OAuth2AuthorizedClient>loadAuthorizedClient("github", userId))
+        .isNull();
+
+    logout(session);
+    assertThat(authorizedClients.<OAuth2AuthorizedClient>loadAuthorizedClient("github", userId))
+        .isNull();
   }
 
   @Test
@@ -227,6 +232,17 @@ class OAuthLoginIT {
     }
     // The principal is in the session, so the dump is not empty; the token is not.
     assertThat(sessionData).contains("octo").doesNotContain("gho_token1");
+  }
+
+  /** Signs the session out through the API, as the SPA does, and returns the response. */
+  private HttpResponse<String> logout(String session) throws Exception {
+    String xsrf = cookieValue(httpGet("/api/v1/me", cookies(session)), "XSRF-TOKEN");
+    return http.send(
+        request("/api/v1/logout", cookies(session) + "; XSRF-TOKEN=" + xsrf)
+            .header("X-XSRF-TOKEN", xsrf)
+            .POST(HttpRequest.BodyPublishers.noBody())
+            .build(),
+        HttpResponse.BodyHandlers.ofString());
   }
 
   /** Runs the browser login as {@code githubId} and returns the SESSION value it issued. */

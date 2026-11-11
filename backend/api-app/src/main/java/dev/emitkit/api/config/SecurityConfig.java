@@ -21,7 +21,9 @@ import org.springframework.security.config.annotation.web.configurers.CsrfConfig
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
@@ -83,6 +85,7 @@ public class SecurityConfig {
       HttpSecurity http,
       @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
       GitHubUserService gitHubUserService,
+      OAuth2AuthorizedClientRepository authorizedClientRepository,
       LoginSuccessHandler loginSuccessHandler)
       throws Exception {
     return http.cors(c -> c.configurationSource(cors))
@@ -100,6 +103,7 @@ public class SecurityConfig {
                 .authenticated())
         .oauth2Login(login ->
             login
+                .authorizedClientRepository(authorizedClientRepository)
                 .userInfoEndpoint(info -> info.userService(gitHubUserService))
                 .successHandler(loginSuccessHandler))
         .logout(logout ->
@@ -112,6 +116,17 @@ public class SecurityConfig {
             ex.authenticationEntryPoint(SecurityConfig::unauthenticated)
                 .accessDeniedHandler(SecurityConfig::forbidden))
         .build();
+  }
+
+  /**
+   * Stores no authorized client. Boot would otherwise keep each user's plaintext GitHub token in an
+   * in-memory store for the life of the process, and logout would not clear it. The token lives
+   * only encrypted in oauth_accounts and is decrypted on demand by DbTokenSource, so nothing is
+   * kept here. Declaring this bean also makes Boot back off its own repository.
+   */
+  @Bean
+  OAuth2AuthorizedClientRepository authorizedClientRepository() {
+    return new NoAuthorizedClientRepository();
   }
 
   /** Origins from emitkit.cors.allowed-origins; credentials allowed, no wildcard origins. */
@@ -174,6 +189,31 @@ public class SecurityConfig {
       HttpServletRequest request, HttpServletResponse response, AccessDeniedException ex)
       throws IOException {
     writeProblem(response, 403, FORBIDDEN_BODY);
+  }
+
+  /** Answers "no client" to every lookup and drops every save and removal. */
+  private static final class NoAuthorizedClientRepository
+      implements OAuth2AuthorizedClientRepository {
+
+    @Override
+    public <T extends OAuth2AuthorizedClient> T loadAuthorizedClient(
+        String clientRegistrationId, Authentication principal, HttpServletRequest request) {
+      return null;
+    }
+
+    @Override
+    public void saveAuthorizedClient(
+        OAuth2AuthorizedClient authorizedClient,
+        Authentication principal,
+        HttpServletRequest request,
+        HttpServletResponse response) {}
+
+    @Override
+    public void removeAuthorizedClient(
+        String clientRegistrationId,
+        Authentication principal,
+        HttpServletRequest request,
+        HttpServletResponse response) {}
   }
 
   private static void writeProblem(HttpServletResponse response, int status, String body)

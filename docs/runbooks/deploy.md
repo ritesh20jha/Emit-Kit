@@ -19,7 +19,7 @@ Networks: `edge` (Caddy only), `app` (internal, everything else) and `egress` (n
 - A Linux host with Docker Engine and the Compose plugin, and a checkout of the release tag.
 - DNS for the public host name points at the host, and ports 80 and 443 are open.
 - The SBX-01 sandbox daemon runs and listens on `/run/emitkit-sandbox/docker.sock`. Set it up with `sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootful`. The worker fails to start without this socket, because `create_host_path: false` stops Docker from creating an empty directory in its place.
-- A GitHub OAuth app for sign-in, with its callback URL on the public host name.
+- A GitHub OAuth app for sign-in, with the callback URL `https://<host>/login/oauth2/code/github`, where `<host>` is the public host name (`EMITKIT_SITE_ADDRESS`).
 
 All commands below run from `deploy/compose`:
 
