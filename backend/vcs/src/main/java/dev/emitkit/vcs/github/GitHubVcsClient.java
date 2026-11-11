@@ -12,19 +12,23 @@ import dev.emitkit.vcs.VcsOrg;
 import dev.emitkit.vcs.VcsOrg.VcsRole;
 import dev.emitkit.vcs.VcsRepo;
 import dev.emitkit.vcs.Webhook;
+import dev.emitkit.vcs.error.VcsNotFoundException;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.kohsuke.github.GHContent;
 import org.kohsuke.github.GHContentBuilder;
 import org.kohsuke.github.GHCreateRepositoryBuilder;
+import org.kohsuke.github.GHEvent;
 import org.kohsuke.github.GHException;
+import org.kohsuke.github.GHHook;
 import org.kohsuke.github.GHMembership;
 import org.kohsuke.github.GHMyself;
 import org.kohsuke.github.GHOrganization;
@@ -178,12 +182,39 @@ final class GitHubVcsClient implements VcsClient {
 
   @Override
   public Webhook registerWebhook(String repo, String url, String secret, Set<String> events) {
-    throw new UnsupportedOperationException("VCS-04");
+    try {
+      GHHook hook =
+          github
+              .getRepository(repo)
+              .createHook(
+                  "web",
+                  Map.of("url", url, "content_type", "json", "secret", secret, "insecure_ssl", "0"),
+                  events.stream().map(GitHubVcsClient::toEvent).toList(),
+                  true);
+      return new Webhook(hook.getId(), url);
+    } catch (IOException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
+  /** A missing hook is the outcome the caller asked for, so only a 404 from the hook is a no-op. */
   @Override
   public void deleteWebhook(String repo, long id) {
-    throw new UnsupportedOperationException("VCS-04");
+    GHRepository target;
+    try {
+      target = github.getRepository(repo);
+    } catch (IOException e) {
+      throw GitHubErrors.map(e);
+    }
+    try {
+      target.deleteHook(Math.toIntExact(id));
+    } catch (IOException e) {
+      RuntimeException failure = GitHubErrors.map(e);
+      if (failure instanceof VcsNotFoundException) {
+        return;
+      }
+      throw failure;
+    }
   }
 
   @Override
@@ -204,6 +235,11 @@ final class GitHubVcsClient implements VcsClient {
     } catch (IllegalArgumentException unknownRole) {
       return VcsRole.MEMBER;
     }
+  }
+
+  /** Hook events are named by their lower-case GitHub names, such as "pull_request". */
+  private static GHEvent toEvent(String name) {
+    return GHEvent.valueOf(name.toUpperCase(Locale.ROOT));
   }
 
   private static VcsRepo toRepo(GHRepository repo) {

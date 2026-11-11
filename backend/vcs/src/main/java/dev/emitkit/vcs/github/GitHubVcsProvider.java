@@ -82,7 +82,7 @@ public final class GitHubVcsProvider implements VcsProvider {
 
   @Override
   public WebhookVerifier webhookVerifier() {
-    throw new UnsupportedOperationException("VCS-04");
+    return new GitHubWebhookVerifier();
   }
 
   private static OkHttpClient httpClient(GitHubProperties props, RateLimitListener listener) {
