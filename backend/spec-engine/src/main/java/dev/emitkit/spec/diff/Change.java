@@ -1,5 +1,9 @@
 package dev.emitkit.spec.diff;
 
+import static io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * One change inside an operation.
  *
@@ -7,4 +11,7 @@ package dev.emitkit.spec.diff;
  *     200.items[].id}
  * @param breaking true when existing clients can stop working because of the change
  */
-public record Change(ChangeKind kind, String location, boolean breaking) {}
+public record Change(
+    @Schema(requiredMode = REQUIRED) ChangeKind kind,
+    @Schema(requiredMode = REQUIRED) String location,
+    @Schema(requiredMode = REQUIRED) boolean breaking) {}

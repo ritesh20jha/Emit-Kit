@@ -1,6 +1,9 @@
 package dev.emitkit.spec.diff;
 
+import static io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED;
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
@@ -11,7 +14,10 @@ import java.util.List;
  * @param removed operations that exist only in the older spec
  * @param modified operations in both specs that changed
  */
-public record SpecDiff(List<OpRef> added, List<OpRef> removed, List<OpChange> modified) {
+public record SpecDiff(
+    @Schema(requiredMode = REQUIRED) List<OpRef> added,
+    @Schema(requiredMode = REQUIRED) List<OpRef> removed,
+    @Schema(requiredMode = REQUIRED) List<OpChange> modified) {
 
   /** A diff with no changes at all. */
   public static SpecDiff empty() {
