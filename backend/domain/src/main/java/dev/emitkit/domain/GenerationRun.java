@@ -134,10 +134,6 @@ public class GenerationRun extends BaseEntity {
     return specSnapshotId;
   }
 
-  public void setSpecSnapshotId(String specSnapshotId) {
-    this.specSnapshotId = specSnapshotId;
-  }
-
   public RunTrigger getTrigger() {
     return trigger;
   }
@@ -146,16 +142,8 @@ public class GenerationRun extends BaseEntity {
     return triggeredByUserId;
   }
 
-  public void setTriggeredByUserId(String triggeredByUserId) {
-    this.triggeredByUserId = triggeredByUserId;
-  }
-
   public String getParentRunId() {
     return parentRunId;
-  }
-
-  public void setParentRunId(String parentRunId) {
-    this.parentRunId = parentRunId;
   }
 
   public boolean isDryRun() {
@@ -174,40 +162,20 @@ public class GenerationRun extends BaseEntity {
     return currentStep;
   }
 
-  public void setCurrentStep(StepName currentStep) {
-    this.currentStep = currentStep;
-  }
-
   public String getFailureCode() {
     return failureCode;
-  }
-
-  public void setFailureCode(String failureCode) {
-    this.failureCode = failureCode;
   }
 
   public String getFailureMessage() {
     return failureMessage;
   }
 
-  public void setFailureMessage(String failureMessage) {
-    this.failureMessage = failureMessage;
-  }
-
   public boolean isCancelRequested() {
     return cancelRequested;
   }
 
-  public void setCancelRequested(boolean cancelRequested) {
-    this.cancelRequested = cancelRequested;
-  }
-
   public int getAttempt() {
     return attempt;
-  }
-
-  public void setAttempt(int attempt) {
-    this.attempt = attempt;
   }
 
   public String getStepOutputs() {
@@ -222,24 +190,12 @@ public class GenerationRun extends BaseEntity {
     return commitSha;
   }
 
-  public void setCommitSha(String commitSha) {
-    this.commitSha = commitSha;
-  }
-
   public String getSdkVersion() {
     return sdkVersion;
   }
 
-  public void setSdkVersion(String sdkVersion) {
-    this.sdkVersion = sdkVersion;
-  }
-
   public ChangeType getChangeType() {
     return changeType;
-  }
-
-  public void setChangeType(ChangeType changeType) {
-    this.changeType = changeType;
   }
 
   public String getDiffSummary() {
@@ -254,24 +210,12 @@ public class GenerationRun extends BaseEntity {
     return branchName;
   }
 
-  public void setBranchName(String branchName) {
-    this.branchName = branchName;
-  }
-
   public String getPrUrl() {
     return prUrl;
   }
 
-  public void setPrUrl(String prUrl) {
-    this.prUrl = prUrl;
-  }
-
   public Integer getPrNumber() {
     return prNumber;
-  }
-
-  public void setPrNumber(Integer prNumber) {
-    this.prNumber = prNumber;
   }
 
   public Instant getCreatedAt() {
@@ -282,15 +226,7 @@ public class GenerationRun extends BaseEntity {
     return startedAt;
   }
 
-  public void setStartedAt(Instant startedAt) {
-    this.startedAt = startedAt;
-  }
-
   public Instant getFinishedAt() {
     return finishedAt;
-  }
-
-  public void setFinishedAt(Instant finishedAt) {
-    this.finishedAt = finishedAt;
   }
 }
