@@ -29,10 +29,10 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
- * Three filter chains, matched in order. Actuator is stateless and open, because its management
- * port is not published. Webhooks are stateless and CSRF-free (their HMAC check lives in the hook
- * module). Everything else is the browser/API chain: session-backed, CSRF-protected, CORS
- * allowlisted, and answering failures as Problem Details.
+ * Three filter chains, matched in order. Actuator and the internal probes are stateless and open,
+ * because the management port is not published. Webhooks are stateless and CSRF-free (their HMAC
+ * check lives in the hook module). Everything else is the browser/API chain: session-backed,
+ * CSRF-protected, CORS allowlisted, and answering failures as Problem Details.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(CorsProperties.class)
@@ -58,13 +58,15 @@ public class SecurityConfig {
   }
 
   /**
-   * Actuator: the management port is not published, so the network is the boundary. Ordered ahead
-   * of appChain, whose catch-all would otherwise answer 401 on the management port.
+   * Actuator and {@code /internal/**} (the restore-drill probe, served only on the management
+   * port): the management port is not published, so the network is the boundary. Ordered ahead of
+   * appChain, whose catch-all would otherwise answer 401 on the management port. The main port has
+   * no handler for {@code /internal/**}, so it answers 404 there.
    */
   @Bean
   @Order(0)
   public SecurityFilterChain actuatorChain(HttpSecurity http) throws Exception {
-    return http.securityMatcher("/actuator/**")
+    return http.securityMatcher("/actuator/**", "/internal/**")
         .csrf(csrf -> csrf.disable())
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
