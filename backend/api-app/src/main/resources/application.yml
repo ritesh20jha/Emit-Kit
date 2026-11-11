@@ -14,6 +14,24 @@ spring:
   ai:
     model:
       chat: none
+  security:
+    oauth2:
+      client:
+        registration:
+          # The client id and secret come from the environment (SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_
+          # GITHUB_CLIENT_ID and _SECRET); startup fails without them.
+          github:
+            scope: repo,read:org,workflow,user:email,write:repo_hook
+server:
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+emitkit:
+  web:
+    base-url: http://localhost:5173
 springdoc:
   default-produces-media-type: application/json
 management:

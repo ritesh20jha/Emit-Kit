@@ -1,5 +1,7 @@
 package dev.emitkit.api.config;
 
+import dev.emitkit.api.auth.GitHubUserService;
+import dev.emitkit.api.auth.LoginSuccessHandler;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,6 +19,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -35,7 +38,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * allowlisted, and answering failures as Problem Details.
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(CorsProperties.class)
+@EnableConfigurationProperties({CorsProperties.class, WebProperties.class})
 public class SecurityConfig {
 
   private static final String UNAUTHENTICATED_BODY =
@@ -76,7 +79,10 @@ public class SecurityConfig {
   @Bean
   @Order(2)
   public SecurityFilterChain appChain(
-      HttpSecurity http, @Qualifier("corsConfigurationSource") CorsConfigurationSource cors)
+      HttpSecurity http,
+      @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
+      GitHubUserService gitHubUserService,
+      LoginSuccessHandler loginSuccessHandler)
       throws Exception {
     return http.cors(c -> c.configurationSource(cors))
         .csrf(csrfCustomizer())
@@ -90,6 +96,16 @@ public class SecurityConfig {
                 .permitAll()
                 .anyRequest()
                 .authenticated())
+        .oauth2Login(login ->
+            login
+                .userInfoEndpoint(info -> info.userService(gitHubUserService))
+                .successHandler(loginSuccessHandler))
+        .logout(logout ->
+            logout
+                .logoutUrl("/api/v1/logout")
+                .logoutSuccessHandler(SecurityConfig::noContent)
+                .invalidateHttpSession(true)
+                .deleteCookies("SESSION"))
         .exceptionHandling(ex ->
             ex.authenticationEntryPoint(SecurityConfig::unauthenticated)
                 .accessDeniedHandler(SecurityConfig::forbidden))
@@ -125,6 +141,12 @@ public class SecurityConfig {
       }
       chain.doFilter(request, response);
     };
+  }
+
+  /** Logout answers 204 and leaves the browser on the SPA, which owns the navigation. */
+  private static void noContent(
+      HttpServletRequest request, HttpServletResponse response, Authentication authentication) {
+    response.setStatus(HttpServletResponse.SC_NO_CONTENT);
   }
 
   private static void unauthenticated(
