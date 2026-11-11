@@ -16,6 +16,7 @@ export const errorMessages: Record<ErrorCode, string> = {
   VCS_AUTH: "GitHub access was revoked or expired. Reconnect GitHub and try again.",
   VCS_RATE_LIMITED: "GitHub rate limit reached. Try again later.",
   SECRETS_UNAVAILABLE: "The secrets service is unavailable. Try again shortly.",
+  UNAUTHENTICATED: "Your session ended. Sign in again.",
   FORBIDDEN: "You don't have permission to do this.",
   NOT_FOUND: "This item was not found. It may have been deleted.",
   VALIDATION_FAILED: "Some fields are invalid. Check the highlighted fields.",

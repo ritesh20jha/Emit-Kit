@@ -37,7 +37,9 @@ const sessionMiddleware: Middleware = {
   async onResponse({ response }) {
     if (response.status !== 401) return;
     const body: unknown = await response.clone().json().catch(() => undefined);
-    redirectToLogin();
+    // Only a session failure ends the session. Other 401 codes (e.g. VCS_AUTH) reject without navigating.
+    const code = (body as { code?: unknown } | null | undefined)?.code;
+    if (code === undefined || code === "UNAUTHENTICATED") redirectToLogin();
     throw toAppError(response, body);
   },
 };

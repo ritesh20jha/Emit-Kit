@@ -16,6 +16,7 @@ export const ERROR_CODES = [
   "VCS_AUTH",
   "VCS_RATE_LIMITED",
   "SECRETS_UNAVAILABLE",
+  "UNAUTHENTICATED",
   "FORBIDDEN",
   "NOT_FOUND",
   "VALIDATION_FAILED",
@@ -30,7 +31,7 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 const KNOWN_CODES: ReadonlySet<string> = new Set(ERROR_CODES);
 
 /** RFC 9457 members that become AppError fields rather than `extra`. */
-const STANDARD_FIELDS = new Set(["type", "title", "status", "detail", "code", "fieldErrors"]);
+const STANDARD_FIELDS = new Set(["type", "title", "status", "detail", "code", "errors", "instance", "fieldErrors"]);
 
 /** An API failure with a stable code, a plain-language message, and any details the body carried. */
 export class AppError extends Error {
@@ -62,9 +63,21 @@ export function toAppError(res: Response, body: unknown): AppError {
   const problem = isRecord(body) ? body : {};
   const code: ErrorCode = isErrorCode(problem.code) ? problem.code : "INTERNAL";
   const detail = typeof problem.detail === "string" ? problem.detail : undefined;
-  const fieldErrors = isRecord(problem.fieldErrors) ? (problem.fieldErrors as Record<string, string>) : undefined;
+  const fieldErrors = toFieldErrors(problem.errors);
   const extra = Object.fromEntries(Object.entries(problem).filter(([key]) => !STANDARD_FIELDS.has(key)));
   return new AppError({ code, status: res.status, detail, fieldErrors, extra });
+}
+
+/** Builds field -> message from the backend's `errors: [{field, message}]`. Malformed entries are ignored. */
+function toFieldErrors(errors: unknown): Record<string, string> | undefined {
+  if (!Array.isArray(errors)) return undefined;
+  const result: Record<string, string> = {};
+  for (const entry of errors) {
+    if (isRecord(entry) && typeof entry.field === "string" && typeof entry.message === "string") {
+      result[entry.field] = entry.message;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function isErrorCode(value: unknown): value is ErrorCode {

@@ -8,6 +8,7 @@ import { errorMessages } from "./errorMessages";
 afterEach(() => {
   vi.unstubAllGlobals();
   resetLoginRedirectForTests();
+  window.history.pushState({}, "", "/");
   document.cookie = "XSRF-TOKEN=; Max-Age=0; path=/";
 });
 
@@ -66,6 +67,52 @@ describe("401 redirect loop guard", () => {
     expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
     expect(assignments).toBe(1);
     expect(href).toContain("/login?next=%2Fprojects%2Fp1%2Fruns%3Fstatus%3DFAILED");
+  });
+});
+
+/** Points the page at `path` and replaces window.location with a settable stand-in. */
+function stubLocationAt(path: string) {
+  window.history.pushState({}, "", path);
+  const location = { pathname: window.location.pathname, search: window.location.search, href: window.location.href };
+  vi.stubGlobal("location", location);
+  return location;
+}
+
+describe("401 scope", () => {
+  it("rejects a VCS_AUTH 401 with its own code and does not navigate", async () => {
+    server.use(
+      http.get(
+        "/api/v1/me",
+        () =>
+          HttpResponse.json(
+            { type: "about:blank", title: "GitHub access revoked", status: 401, code: "VCS_AUTH" },
+            { status: 401 },
+          ),
+      ),
+    );
+    const location = stubLocationAt("/projects/p1/runs");
+    const before = location.href;
+
+    await expect(api.GET("/me")).rejects.toBeInstanceOf(AppError);
+    await expect(api.GET("/me")).rejects.toMatchObject({ code: "VCS_AUTH", status: 401 });
+    expect(location.href).toBe(before);
+  });
+
+  it("redirects to /login on an UNAUTHENTICATED 401", async () => {
+    server.use(
+      http.get(
+        "/api/v1/me",
+        () =>
+          HttpResponse.json(
+            { type: "about:blank", title: "Unauthenticated", status: 401, code: "UNAUTHENTICATED" },
+            { status: 401 },
+          ),
+      ),
+    );
+    const location = stubLocationAt("/projects/p1/runs?status=FAILED");
+
+    await expect(api.GET("/me")).rejects.toMatchObject({ code: "UNAUTHENTICATED", status: 401 });
+    expect(location.href).toContain("/login?next=%2Fprojects%2Fp1%2Fruns%3Fstatus%3DFAILED");
   });
 });
 
@@ -135,13 +182,33 @@ describe("error mapping", () => {
       status: 422,
       code: "VALIDATION_FAILED",
       detail: "Fix the form",
-      fieldErrors: { name: "Required" },
+      instance: "/projects/p1/spec",
+      errors: [{ field: "name", message: "Required" }],
       retryAfter: 30,
     });
 
     expect(err.code).toBe("VALIDATION_FAILED");
     expect(err.fieldErrors).toEqual({ name: "Required" });
     expect(err.extra).toEqual({ retryAfter: 30 });
+  });
+
+  it("ignores malformed entries in errors and leaves fieldErrors undefined when none are usable", () => {
+    const err = toAppError(new Response(null, { status: 422 }), {
+      code: "VALIDATION_FAILED",
+      errors: [
+        { field: "name", message: "Required" },
+        { field: 3, message: "not a field name" },
+        "junk",
+        { field: "age" },
+        null,
+        { field: "email", message: "Invalid" },
+      ],
+    });
+    const none = toAppError(new Response(null, { status: 422 }), { code: "VALIDATION_FAILED", errors: [{ field: 3 }] });
+
+    expect(err.fieldErrors).toEqual({ name: "Required", email: "Invalid" });
+    expect(err.extra).toEqual({});
+    expect(none.fieldErrors).toBeUndefined();
   });
 
   it.each([
@@ -155,13 +222,13 @@ describe("error mapping", () => {
     expect(err.status).toBe(500);
   });
 
-  it("has exactly the 21 backend codes, each with a plain-language message", () => {
+  it("has exactly the 22 backend codes, each with a plain-language message", () => {
     expect([...ERROR_CODES].sort()).toEqual(
       [
         "SPEC_CONFLICT", "SPEC_NOT_FOUND", "SPEC_TOO_LARGE", "SPEC_INVALID", "LINT_FAILED",
         "BREAKING_BLOCKED", "GENERATOR_ERROR", "CHECK_FAILED", "SANDBOX_TIMEOUT", "STORAGE_ERROR",
-        "VCS_CONFLICT", "VCS_AUTH", "VCS_RATE_LIMITED", "SECRETS_UNAVAILABLE", "FORBIDDEN",
-        "NOT_FOUND", "VALIDATION_FAILED", "CONFLICT", "RATE_LIMITED", "NOT_IMPLEMENTED", "INTERNAL",
+        "VCS_CONFLICT", "VCS_AUTH", "VCS_RATE_LIMITED", "SECRETS_UNAVAILABLE", "UNAUTHENTICATED",
+        "FORBIDDEN", "NOT_FOUND", "VALIDATION_FAILED", "CONFLICT", "RATE_LIMITED", "NOT_IMPLEMENTED", "INTERNAL",
       ].sort(),
     );
     for (const code of ERROR_CODES) {
