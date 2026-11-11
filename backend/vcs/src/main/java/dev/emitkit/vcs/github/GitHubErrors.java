@@ -53,11 +53,21 @@ final class GitHubErrors {
   }
 
   /** The HTTP status of a failure, or -1 when the failure carries none. */
-  private static int statusOf(Exception e) {
+  static int statusOf(Exception e) {
     if (e instanceof HttpException http) {
       return http.getResponseCode();
     }
     return e instanceof GHFileNotFoundException ? 404 : -1;
+  }
+
+  /**
+   * True when a create failed because the ref or pull request already exists. GitHub answers 422
+   * and says "already exists" in the message, for both refs and pull requests.
+   */
+  static boolean alreadyExists(Exception e) {
+    return e instanceof HttpException http
+        && http.getResponseCode() == 422
+        && String.valueOf(http.getMessage()).contains("already exists");
   }
 
   private static Map<String, List<String>> headersOf(Exception e) {
