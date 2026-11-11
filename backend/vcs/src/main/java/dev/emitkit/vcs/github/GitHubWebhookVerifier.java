@@ -23,6 +23,11 @@ public final class GitHubWebhookVerifier implements WebhookVerifier {
 
   @Override
   public boolean verify(byte[] body, String signatureHeader, String secret) {
+    // Fail closed: a project without a secret must not verify, and an empty key would let anyone
+    // compute a valid signature. Also keeps the "never throws" contract when the secret is absent.
+    if (secret == null || secret.isEmpty()) {
+      return false;
+    }
     if (signatureHeader == null || !signatureHeader.startsWith(PREFIX)) {
       return false;
     }

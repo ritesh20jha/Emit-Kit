@@ -48,4 +48,29 @@ class GitHubWebhookVerifierTest {
   void nullHeader_fails() {
     assertThat(v.verify(BODY, null, SECRET)).isFalse();
   }
+
+  @Test
+  void emptyHeader_fails() {
+    assertThat(v.verify(BODY, "", SECRET)).isFalse();
+  }
+
+  @Test
+  void prefixOnlyHeader_fails() {
+    assertThat(v.verify(BODY, "sha256=", SECRET)).isFalse();
+  }
+
+  @Test
+  void wrongSecret_fails() {
+    assertThat(v.verify(BODY, VALID_SIGNATURE, "not the secret")).isFalse();
+  }
+
+  @Test
+  void nullSecret_fails() {
+    assertThat(v.verify(BODY, VALID_SIGNATURE, null)).isFalse();
+  }
+
+  @Test
+  void emptySecret_fails() {
+    assertThat(v.verify(BODY, VALID_SIGNATURE, "")).isFalse();
+  }
 }
