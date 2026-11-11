@@ -153,7 +153,19 @@ class OpenApiSnapshotTest {
             "/projects/{id}/spec",
             "/projects/{id}/spec/snapshots",
             "/projects/{id}/spec/diff",
-            "/lint");
+            "/lint",
+            "/projects/{id}/runs",
+            "/runs/{runId}",
+            "/runs/{runId}/cancel",
+            "/runs/{runId}/rerun",
+            "/runs/{runId}/approval",
+            "/runs/{runId}/logs",
+            "/runs/{runId}/logs/stream",
+            "/runs/{runId}/files",
+            "/runs/{runId}/files/{path}",
+            "/runs/{runId}/artifact",
+            "/runs/{runId}/lint",
+            "/projects/{id}/versions");
   }
 
   /** Status codes the contract promises beyond the 200 default. */
@@ -166,6 +178,41 @@ class OpenApiSnapshotTest {
     assertThat(doc.at("/paths/~1projects~1{id}/delete/responses").propertyNames()).contains("204");
     assertThat(doc.at("/paths/~1projects~1{id}~1spec/put/responses").propertyNames())
         .contains("200", "202");
+    assertThat(doc.at("/paths/~1projects~1{id}~1runs/post/responses").propertyNames())
+        .contains("201");
+    assertThat(doc.at("/paths/~1runs~1{runId}~1rerun/post/responses").propertyNames())
+        .contains("201");
+  }
+
+  /** The log stream is server-sent events only; a client must not expect JSON from it. */
+  @Test
+  void streamDocumentedAsEventStream() throws Exception {
+    JsonNode content =
+        apiDocs().at("/paths/~1runs~1{runId}~1logs~1stream/get/responses/200/content");
+
+    assertThat(content.propertyNames()).containsExactly("text/event-stream");
+  }
+
+  @Test
+  void artifactDocumentedAsZip() throws Exception {
+    JsonNode content = apiDocs().at("/paths/~1runs~1{runId}~1artifact/get/responses/200/content");
+
+    assertThat(content.propertyNames()).containsExactly("application/zip");
+  }
+
+  /** The run fields that are null until a step, a diff or an approval exists. */
+  @Test
+  void runDetailNullableReferencesAreRequiredAndNullable() throws Exception {
+    JsonNode detail = apiDocs().at("/components/schemas/RunDetail");
+
+    for (String field : List.of("currentStep", "changeType", "diffSummary", "approval")) {
+      assertThat(listed(detail.path("required"), field))
+          .as("RunDetail." + field + " required")
+          .isTrue();
+      assertThat(detail.at("/properties/" + field + "/oneOf").size())
+          .as("RunDetail." + field + " oneOf branches")
+          .isEqualTo(2);
+    }
   }
 
   @Test
