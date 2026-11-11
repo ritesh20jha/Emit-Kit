@@ -11,9 +11,20 @@ function readCookie(name: string): string | undefined {
   return match === undefined ? undefined : decodeURIComponent(match.slice(prefix.length));
 }
 
+/** Set once a 401 has started the redirect, so concurrent 401s navigate only once. */
+let redirectingToLogin = false;
+
 function redirectToLogin() {
-  const next = window.location.pathname + window.location.search;
-  window.location.href = `/login?next=${encodeURIComponent(next)}`;
+  const { pathname, search } = window.location;
+  // Already on the login page (or redirecting): a 401 there must not navigate again.
+  if (redirectingToLogin || pathname === "/login" || pathname.startsWith("/login/")) return;
+  redirectingToLogin = true;
+  window.location.href = `/login?next=${encodeURIComponent(pathname + search)}`;
+}
+
+/** Test-only: clears the one-shot redirect flag so each test starts clean. */
+export function resetLoginRedirectForTests() {
+  redirectingToLogin = false;
 }
 
 const sessionMiddleware: Middleware = {

@@ -1,12 +1,13 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { server } from "@/test/msw/server";
-import { api } from "./client";
+import { api, resetLoginRedirectForTests } from "./client";
 import { AppError, ERROR_CODES, toAppError } from "./appError";
 import { errorMessages } from "./errorMessages";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetLoginRedirectForTests();
   document.cookie = "XSRF-TOKEN=; Max-Age=0; path=/";
 });
 
@@ -24,6 +25,47 @@ describe("401 handling", () => {
 
     await expect(api.GET("/me")).rejects.toBeInstanceOf(AppError);
     expect(location.href).toContain("/login?next=%2Fprojects%2Fp1%2Fruns%3Fstatus%3DFAILED");
+  });
+});
+
+describe("401 redirect loop guard", () => {
+  it("does not navigate again when the 401 comes from the login page, and still rejects", async () => {
+    server.use(http.get("/api/v1/me", () => new HttpResponse(null, { status: 401 })));
+    window.history.pushState({}, "", "/login?next=%2Fprojects");
+    const before = window.location.href;
+    const location = { pathname: window.location.pathname, search: window.location.search, href: before };
+    vi.stubGlobal("location", location);
+
+    await expect(api.GET("/me")).rejects.toBeInstanceOf(AppError);
+    expect(location.href).toBe(before);
+  });
+
+  it("navigates once when several requests get 401 at the same time, and rejects each one", async () => {
+    server.use(
+      http.get("/api/v1/me", () => new HttpResponse(null, { status: 401 })),
+      http.get("/api/v1/orgs", () => new HttpResponse(null, { status: 401 })),
+    );
+    window.history.pushState({}, "", "/projects/p1/runs?status=FAILED");
+    let assignments = 0;
+    let href = window.location.href;
+    const location = {
+      pathname: window.location.pathname,
+      search: window.location.search,
+      get href() {
+        return href;
+      },
+      set href(value: string) {
+        assignments += 1;
+        href = value;
+      },
+    };
+    vi.stubGlobal("location", location);
+
+    const results = await Promise.allSettled([api.GET("/me"), api.GET("/orgs")]);
+
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+    expect(assignments).toBe(1);
+    expect(href).toContain("/login?next=%2Fprojects%2Fp1%2Fruns%3Fstatus%3DFAILED");
   });
 });
 

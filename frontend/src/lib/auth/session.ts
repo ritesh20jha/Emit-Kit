@@ -10,8 +10,9 @@ export const meQuery = queryOptions({
   queryKey: qk.me,
   queryFn: async (): Promise<Me> => {
     const { data, error, response } = await api.GET("/me");
-    if (!data) throw toAppError(response, error);
-    return data;
+    if (!response.ok) throw toAppError(response, error);
+    // An empty 2xx is returned as-is: only failed responses are reported as errors.
+    return data as Me;
   },
 });
 
