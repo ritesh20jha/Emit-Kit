@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.delete;
 import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getAllServeEvents;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
@@ -12,6 +13,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.patch;
 import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.resetAllRequests;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -29,6 +31,7 @@ import dev.emitkit.vcs.CommitFile;
 import dev.emitkit.vcs.CommitRef;
 import dev.emitkit.vcs.PullRequest;
 import dev.emitkit.vcs.VcsClient;
+import dev.emitkit.vcs.error.VcsConflictException;
 import dev.emitkit.vcs.error.VcsNotFoundException;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +101,17 @@ class GitHubGitDataTest {
 
   @Test
   void commitTree_usesFourCallsFor50Files() {
+    // The request count is fixed: a 50-file commit makes as many requests as a 1-file commit.
+    // The first call on a client also fetches the identity once, so warm up before counting.
+    client.commitTree("acme/api", "emitkit/run-1", files(1), "msg");
+    resetAllRequests();
+    client.commitTree("acme/api", "emitkit/run-1", files(1), "msg");
+    int requestsFor1File = getAllServeEvents().size();
+    resetAllRequests();
+
     client.commitTree("acme/api", "emitkit/run-1", files(50), "msg");
+
+    assertThat(getAllServeEvents()).hasSize(requestsFor1File);
     verify(1, postRequestedFor(urlPathEqualTo(TREES)));
     verify(1, postRequestedFor(urlPathEqualTo(COMMITS)));
     verify(1, patchRequestedFor(urlPathEqualTo(REFS + "/heads/emitkit/run-1")));
@@ -318,6 +331,69 @@ class GitHubGitDataTest {
   }
 
   @Test
+  void createBranch_422NotAlreadyExists_isConflict() {
+    stubFor(
+        post(urlPathEqualTo(REFS))
+            .withRequestBody(matchingJsonPath("$.ref", equalTo("refs/heads/b9")))
+            .willReturn(json(422, "{\"message\":\"Object does not exist\"}")));
+
+    assertThatThrownBy(() -> client.createBranch("acme/api", "b9", HEAD))
+        .isInstanceOf(VcsConflictException.class);
+    verify(0, getRequestedFor(urlPathEqualTo(REFS + "/heads/b9")));
+  }
+
+  @Test
+  void createTag_422NotAlreadyExists_isConflict() {
+    stubFor(
+        post(urlPathEqualTo(REFS))
+            .withRequestBody(matchingJsonPath("$.ref", equalTo("refs/tags/v9")))
+            .willReturn(json(422, "{\"message\":\"Object does not exist\"}")));
+
+    assertThatThrownBy(() -> client.createTag("acme/api", "v9", HEAD))
+        .isInstanceOf(VcsConflictException.class);
+  }
+
+  @Test
+  void openPr_422NotAlreadyExists_isConflict() {
+    stubFor(
+        post(urlPathEqualTo(PULLS))
+            .willReturn(
+                json(
+                    422,
+                    "{\"message\":\"Validation Failed\",\"errors\":[{\"message\":\"No commits"
+                        + " between main and feat\"}]}")));
+
+    assertThatThrownBy(() -> client.openPr("acme/api", "feat", "main", "t", "b"))
+        .isInstanceOf(VcsConflictException.class);
+    verify(0, getRequestedFor(urlPathEqualTo(PULLS)));
+  }
+
+  /**
+   * GitHub answers a plural ref read with a JSON array when the exact ref is absent but a sibling
+   * shares its prefix. The read must count as not found, not as a server error.
+   */
+  @Test
+  void branchHead_siblingRefOnly_throwsNotFound() {
+    stubFor(
+        get(urlPathEqualTo(REFS + "/heads/emitkit/run-2"))
+            .willReturn(okJson("[" + ref("refs/heads/emitkit/run-20", HEAD) + "]")));
+
+    assertThatThrownBy(() -> client.branchHead("acme/api", "emitkit/run-2"))
+        .isInstanceOf(VcsNotFoundException.class);
+  }
+
+  @Test
+  void deleteBranch_siblingRefOnly_isNoOp() {
+    stubFor(
+        get(urlPathEqualTo(REFS + "/heads/emitkit/run-2"))
+            .willReturn(okJson("[" + ref("refs/heads/emitkit/run-20", HEAD) + "]")));
+
+    assertThatCode(() -> client.deleteBranch("acme/api", "emitkit/run-2"))
+        .doesNotThrowAnyException();
+    verify(0, deleteRequestedFor(urlPathEqualTo(REFS + "/heads/emitkit/run-2")));
+  }
+
+  @Test
   void comment_postsOnThePullRequestThread() {
     stubFor(
         get(urlPathEqualTo(REPO + "/issues/7"))
@@ -388,6 +464,11 @@ class GitHubGitDataTest {
   /** A tree write's response: the new tree's sha, with its (here empty) entry list. */
   private static String treeJson(String sha) {
     return "{\"sha\":\"" + sha + "\",\"tree\":[]}";
+  }
+
+  /** A single ref as GitHub returns it, at {@code sha}. */
+  private static String ref(String ref, String sha) {
+    return "{\"ref\":\"" + ref + "\",\"object\":{\"sha\":\"" + sha + "\",\"type\":\"commit\"}}";
   }
 
   private static ResponseDefinitionBuilder json(int status, String body) {
