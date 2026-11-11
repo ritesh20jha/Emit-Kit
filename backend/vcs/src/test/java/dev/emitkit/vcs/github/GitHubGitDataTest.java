@@ -70,15 +70,7 @@ class GitHubGitDataTest {
                     "{\"name\":\"api\",\"full_name\":\"acme/api\",\"owner\":{\"login\":\"acme\"}}")));
     stubBranchAt("emitkit/run-1", HEAD);
     stubFor(
-        get(urlPathEqualTo(REPO + "/commits/" + HEAD))
-            .willReturn(
-                json(
-                    200,
-                    "{\"sha\":\""
-                        + HEAD
-                        + "\",\"commit\":{\"tree\":{\"sha\":\""
-                        + BASE_TREE
-                        + "\"}}}")));
+        get(urlEqualTo(REPO + "/git/trees/" + HEAD)).willReturn(json(200, treeJson(BASE_TREE))));
     stubFor(post(urlPathEqualTo(TREES)).willReturn(json(201, treeJson("tree-sha"))));
     stubFor(
         post(urlPathEqualTo(COMMITS))
@@ -100,7 +92,7 @@ class GitHubGitDataTest {
   }
 
   @Test
-  void commitTree_usesFourCallsFor50Files() {
+  void commitTree_requestCountIndependentOfFileCount() {
     // The request count is fixed: a 50-file commit makes as many requests as a 1-file commit.
     // The first call on a client also fetches the identity once, so warm up before counting.
     client.commitTree("acme/api", "emitkit/run-1", files(1), "msg");

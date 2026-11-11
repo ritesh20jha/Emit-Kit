@@ -43,7 +43,10 @@ import org.kohsuke.github.GitCommit;
 import org.kohsuke.github.GitHub;
 import org.kohsuke.github.HttpException;
 
-/** Repository, file, organization and quota operations for one identity. */
+/**
+ * Repository, file, organization and quota operations for one identity, plus the git data behind
+ * branches, commits, pull requests and tags.
+ */
 final class GitHubVcsClient implements VcsClient {
 
   /** The contents API serves files up to 1 MB. Larger files go through the blob API. */
@@ -224,7 +227,9 @@ final class GitHubVcsClient implements VcsClient {
       GHRepository target = github.getRepository(repo);
       GHRef head = target.getRef("heads/" + branch);
       String parent = head.getObject().getSha();
-      String tree = target.getCommit(parent).getCommitShortInfo().getTreeSHA1();
+      // The tree endpoint takes a commit sha and returns its root tree. The commits endpoint would
+      // also compute the commit's diff, which is slow on large merges and can fail with a 422.
+      String tree = target.getTree(parent).getSha();
       for (int start = 0; start < files.size(); start += TREE_ENTRY_LIMIT) {
         GHTreeBuilder builder = target.createTree().baseTree(tree);
         for (CommitFile file :

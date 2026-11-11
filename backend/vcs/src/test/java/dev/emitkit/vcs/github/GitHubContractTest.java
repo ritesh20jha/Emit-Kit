@@ -93,15 +93,8 @@ class GitHubContractTest extends VcsClientContractTest {
         patch(urlPathEqualTo("/repos/acme/api/git/refs/heads/b1"))
             .willReturn(json(200, refJson("refs/heads/b1", COMMIT))));
     stubFor(
-        get(urlPathEqualTo("/repos/acme/api/commits/" + HEAD))
-            .willReturn(
-                json(
-                    200,
-                    "{\"sha\":\""
-                        + HEAD
-                        + "\",\"commit\":{\"tree\":{\"sha\":\""
-                        + BASE_TREE
-                        + "\"}}}")));
+        get(urlEqualTo("/repos/acme/api/git/trees/" + HEAD))
+            .willReturn(json(200, "{\"sha\":\"" + BASE_TREE + "\",\"tree\":[]}")));
     stubFor(
         post(urlPathEqualTo("/repos/acme/api/git/trees"))
             .willReturn(json(201, "{\"sha\":\"" + NEW_TREE + "\",\"tree\":[]}")));
