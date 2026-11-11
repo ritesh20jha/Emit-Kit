@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 /** Generation run logs, keyed by database sequence. */
 public interface GenerationRunLogRepository extends JpaRepository<GenerationRunLog, Long> {
@@ -14,6 +15,7 @@ public interface GenerationRunLogRepository extends JpaRepository<GenerationRunL
   List<GenerationRunLog> findByRunIdAndSeqGreaterThanOrderBySeq(String runId, int seq);
 
   /** Retention: deletes every log line written before {@code cutoff}. Returns the count. */
+  @Transactional
   @Modifying
   @Query("delete from GenerationRunLog l where l.ts < :cutoff")
   int deleteByTsBefore(@Param("cutoff") Instant cutoff);

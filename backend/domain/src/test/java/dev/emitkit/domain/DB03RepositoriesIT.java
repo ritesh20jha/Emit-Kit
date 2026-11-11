@@ -7,7 +7,9 @@ import dev.emitkit.common.id.Ids;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,6 +85,7 @@ class DB03RepositoriesIT extends PostgresIT {
     run(RunStatus.SUCCESS, false, t1);
     run(RunStatus.SUCCESS, true, t2);
     run(RunStatus.FAILED, false, t3);
+    run(RunStatus.SUCCESS, false, at(0));
     assertThat(runs.findLastSuccessfulNonDryRun(project.getId()))
         .get()
         .extracting(GenerationRun::getCreatedAt)
@@ -103,6 +106,35 @@ class DB03RepositoriesIT extends PostgresIT {
 
     List<GenerationRun> page3 = runs.findByProjectId(project.getId(), cursorOf(page2), 2);
     assertThat(page3).extracting(GenerationRun::getCreatedAt).containsExactly(at(1));
+  }
+
+  @Test
+  void runList_tieOnCreatedAt_pagesWithoutDuplicatesOrSkips() {
+    Instant tie = at(2);
+    GenerationRun older = run(RunStatus.SUCCESS, false, at(1));
+    List<GenerationRun> sameInstant =
+        List.of(
+            run(RunStatus.SUCCESS, false, tie),
+            run(RunStatus.SUCCESS, false, tie),
+            run(RunStatus.SUCCESS, false, tie));
+    em.clear();
+
+    List<GenerationRun> page1 = runs.findByProjectId(project.getId(), null, 2);
+    List<GenerationRun> page2 = runs.findByProjectId(project.getId(), cursorOf(page1), 2);
+    List<GenerationRun> page3 = runs.findByProjectId(project.getId(), cursorOf(page2), 2);
+
+    // Page 1 ends inside the tie group; page 2 finishes it and continues with the older run.
+    assertThat(page1).extracting(GenerationRun::getCreatedAt).containsExactly(tie, tie);
+    assertThat(page2).extracting(GenerationRun::getCreatedAt).containsExactly(tie, at(1));
+    assertThat(page3).isEmpty();
+
+    List<String> expected =
+        Stream.concat(
+                sameInstant.stream().map(GenerationRun::getId).sorted(Comparator.reverseOrder()),
+                Stream.of(older.getId()))
+            .toList();
+    assertThat(Stream.of(page1, page2).flatMap(List::stream).map(GenerationRun::getId).toList())
+        .containsExactlyElementsOf(expected);
   }
 
   @Test
