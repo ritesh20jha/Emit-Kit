@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.lang.Nullable;
 
 /** Generation runs, keyed by ULID. */
 public interface GenerationRunRepository extends JpaRepository<GenerationRun, String> {
@@ -22,19 +23,21 @@ public interface GenerationRunRepository extends JpaRepository<GenerationRun, St
   }
 
   /**
-   * One page of a project's runs, newest first.
+   * One page of a project's runs, newest first. Callers decode a client's token with {@link
+   * RunCursor#decode} first, so a malformed token surfaces as an {@link IllegalArgumentException}
+   * rather than a persistence exception.
    *
-   * @param cursor the token from {@link RunCursor#encode} for the last run of the previous page, or
-   *     {@code null} for the first page
+   * @param after the position just after the last run of the previous page, or {@code null} for the
+   *     first page
    * @param limit the maximum number of runs to return
    * @return at most {@code limit} runs, empty when there are no more
    */
-  default List<GenerationRun> findByProjectId(String projectId, String cursor, int limit) {
+  default List<GenerationRun> findByProjectId(
+      String projectId, @Nullable RunCursor after, int limit) {
     Pageable page = PageRequest.of(0, limit);
-    if (cursor == null) {
+    if (after == null) {
       return findFirstPageByProjectId(projectId, page);
     }
-    RunCursor after = RunCursor.decode(cursor);
     return findPageAfter(projectId, after.createdAt(), after.id(), page);
   }
 

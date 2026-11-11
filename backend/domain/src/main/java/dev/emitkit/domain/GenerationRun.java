@@ -104,8 +104,8 @@ public class GenerationRun extends BaseEntity {
    *
    * @param id the ULID to use, or {@code null} to generate one
    * @param configId the project config the run uses
-   * @param createdAt when the run was created, or {@code null} for now (truncated to the
-   *     microseconds PostgreSQL stores, so a run read back compares equal to this one)
+   * @param createdAt when the run was created, or {@code null} for now. Truncated to the
+   *     microseconds PostgreSQL stores, so a run read back compares equal to this one.
    */
   public GenerationRun(
       String id,
@@ -119,7 +119,7 @@ public class GenerationRun extends BaseEntity {
     this.configId = configId;
     this.trigger = trigger;
     this.dryRun = dryRun;
-    this.createdAt = createdAt != null ? createdAt : Instant.now().truncatedTo(ChronoUnit.MICROS);
+    this.createdAt = (createdAt != null ? createdAt : Instant.now()).truncatedTo(ChronoUnit.MICROS);
   }
 
   public String getProjectId() {

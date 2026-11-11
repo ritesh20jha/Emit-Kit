@@ -222,9 +222,10 @@ class DB03RepositoriesIT extends PostgresIT {
     return EPOCH.plusSeconds(seconds);
   }
 
-  private static String cursorOf(List<GenerationRun> page) {
+  /** The cursor a client would send back: encoded from the last run, then decoded by the caller. */
+  private static RunCursor cursorOf(List<GenerationRun> page) {
     GenerationRun last = page.get(page.size() - 1);
-    return RunCursor.encode(last.getCreatedAt(), last.getId());
+    return RunCursor.decode(RunCursor.encode(last.getCreatedAt(), last.getId()));
   }
 
   private SpecSnapshot snapshot(String projectId, String contentHash) {
