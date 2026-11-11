@@ -3,7 +3,9 @@ package dev.emitkit.api.projects;
 import dev.emitkit.api.common.Page;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import dev.emitkit.domain.RunStatus;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.jspecify.annotations.Nullable;
@@ -28,7 +30,10 @@ public class ProjectController {
       @PathVariable("orgId") String orgId,
       @RequestParam(name = "cursor", required = false) @Nullable String cursor,
       @RequestParam(name = "limit", required = false) @Nullable Integer limit,
-      @RequestParam(name = "q", required = false) @Nullable String q) {
+      @RequestParam(name = "q", required = false) @Nullable String q,
+      @Parameter(description = "Only projects whose last run has this status")
+          @RequestParam(name = "status", required = false)
+          @Nullable RunStatus status) {
     throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
   }
 

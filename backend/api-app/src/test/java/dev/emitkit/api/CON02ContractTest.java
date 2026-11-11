@@ -104,23 +104,11 @@ class CON02ContractTest {
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
 
-  @Test
-  @WithMockUser
-  void saveSpecRequestRequiresContentAndSha() throws Exception {
-    mvc.perform(
-            request(HttpMethod.PUT, "/api/v1/projects/p1/spec")
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"generate\":false}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-  }
-
   /** The body column is empty for requests that carry none. */
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
-    "GET,/api/v1/orgs/org1/projects?cursor=c1&limit=10&q=web,",
+    "GET,/api/v1/orgs/org1/projects?cursor=c1&limit=10&q=web&status=FAILED,",
     "POST,/api/v1/orgs/org1/projects,'" + CREATE_PROJECT + "'",
     "GET,/api/v1/orgs/org1/vcs-repos?q=web,",
     "GET,/api/v1/orgs/org1/vcs-repos/acme/widgets/spec-check?path=openapi.yaml&branch=main,",

@@ -462,7 +462,7 @@ export interface components {
             isPrivate: boolean;
             owner: string;
             /** Format: date-time */
-            pushedAt: string;
+            pushedAt: string | null;
         };
         /** @enum {string} */
         Role: "ADMIN" | "EDITOR" | "VIEWER";
@@ -708,6 +708,8 @@ export interface operations {
                 cursor?: string;
                 limit?: number;
                 q?: string;
+                /** @description Only projects whose last run has this status */
+                status?: components["schemas"]["RunStatus"];
             };
             header?: never;
             path: {
@@ -932,7 +934,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved; no generation run was started */
+            /** @description Saved; runId is set when a generation run was started */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -941,7 +943,7 @@ export interface operations {
                     "application/json": components["schemas"]["SaveSpecResponse"];
                 };
             };
-            /** @description Saved and a generation run was started */
+            /** @description Saved, but the generation run could not be started; see runError */
             202: {
                 headers: {
                     [name: string]: unknown;

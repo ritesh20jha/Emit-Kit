@@ -706,7 +706,10 @@
           },
           "pushedAt": {
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1237,6 +1240,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Only projects whose last run has this status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RunStatus"
+            }
           }
         ],
         "responses": {
@@ -1585,7 +1597,7 @@
                 }
               }
             },
-            "description": "Saved; no generation run was started"
+            "description": "Saved; runId is set when a generation run was started"
           },
           "202": {
             "content": {
@@ -1595,7 +1607,7 @@
                 }
               }
             },
-            "description": "Saved and a generation run was started"
+            "description": "Saved, but the generation run could not be started; see runError"
           }
         },
         "summary": "Save the spec, optionally starting a generation run",

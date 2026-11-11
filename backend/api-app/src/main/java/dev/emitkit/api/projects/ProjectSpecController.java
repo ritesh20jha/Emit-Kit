@@ -32,8 +32,12 @@ public class ProjectSpecController {
   @PutMapping
   @Operation(summary = "Save the spec, optionally starting a generation run")
   @ApiResponses({
-    @ApiResponse(responseCode = "200", description = "Saved; no generation run was started"),
-    @ApiResponse(responseCode = "202", description = "Saved and a generation run was started")
+    @ApiResponse(
+        responseCode = "200",
+        description = "Saved; runId is set when a generation run was started"),
+    @ApiResponse(
+        responseCode = "202",
+        description = "Saved, but the generation run could not be started; see runError")
   })
   public SaveSpecResponse saveSpec(
       @PathVariable("id") String id, @Valid @RequestBody SaveSpecRequest request) {
