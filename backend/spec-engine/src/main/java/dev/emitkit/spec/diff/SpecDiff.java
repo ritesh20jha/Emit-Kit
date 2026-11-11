@@ -1,6 +1,9 @@
 package dev.emitkit.spec.diff;
 
+import static io.swagger.v3.oas.annotations.media.Schema.RequiredMode.REQUIRED;
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Objects;
 
@@ -8,7 +11,10 @@ import java.util.Objects;
  * Result of comparing two models. {@code added} and {@code removed} follow the order of the model
  * they come from; {@code modified} follows the after model and lists only operations with changes.
  */
-public record SpecDiff(List<OpRef> added, List<OpRef> removed, List<OpChange> modified) {
+public record SpecDiff(
+    @Schema(requiredMode = REQUIRED) List<OpRef> added,
+    @Schema(requiredMode = REQUIRED) List<OpRef> removed,
+    @Schema(requiredMode = REQUIRED) List<OpChange> modified) {
 
   public SpecDiff {
     added = List.copyOf(Objects.requireNonNull(added, "added"));

@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/lint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lint a spec and return its issues */
+        post: operations["lint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -123,10 +140,230 @@ export interface paths {
         patch: operations["updateMemberRole"];
         trace?: never;
     };
+    "/orgs/{orgId}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the projects of an organization, one page at a time */
+        get: operations["listProjects"];
+        put?: never;
+        /** Create a project for an existing or a new repository */
+        post: operations["createProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{orgId}/vcs-repos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the repositories the user can see, optionally filtered by name */
+        get: operations["listRepos"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orgs/{orgId}/vcs-repos/{owner}/{repo}/spec-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check that a spec file in a repository parses and is valid */
+        get: operations["checkSpec"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one project */
+        get: operations["getProject"];
+        put?: never;
+        post?: never;
+        /** Delete a project */
+        delete: operations["deleteProject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the generation settings of a project */
+        get: operations["getConfig"];
+        /** Replace the generation settings of a project */
+        put: operations["saveConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current spec of a project */
+        get: operations["getSpec"];
+        /** Save the spec, optionally starting a generation run */
+        put: operations["saveSpec"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/spec/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diff two saved versions of the spec */
+        get: operations["diffSpec"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/spec/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the saved versions of the spec, newest first */
+        get: operations["listSnapshots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register the push webhook on the project's repository */
+        post: operations["registerWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        BreakingGate: "ALLOW" | "REQUIRE_APPROVAL" | "BLOCK";
+        Change: {
+            breaking: boolean;
+            kind: components["schemas"]["ChangeKind"];
+            location: string;
+        };
+        /** @enum {string} */
+        ChangeKind: "PARAM_ADDED" | "PARAM_REMOVED" | "PARAM_BECAME_REQUIRED" | "PARAM_BECAME_OPTIONAL" | "BODY_BECAME_REQUIRED" | "REQUEST_REQUIRED_PROPERTY_ADDED" | "REQUEST_PROPERTY_ADDED" | "RESPONSE_PROPERTY_REMOVED" | "RESPONSE_PROPERTY_ADDED" | "ENUM_VALUE_REMOVED" | "ENUM_VALUE_ADDED" | "TYPE_CHANGED" | "DESCRIPTION_CHANGED";
+        ConfigRequest: {
+            aiApiKey?: string | null;
+            aiModel?: string | null;
+            aiProvider?: string | null;
+            breakingGate: components["schemas"]["BreakingGate"];
+            lintFailOn: components["schemas"]["LintFailOn"];
+            mavenArtifactId?: string | null;
+            mavenGroupId?: string | null;
+            npmScope?: string | null;
+            outputDir: string;
+            outputs: components["schemas"]["OutputKind"][];
+            pypiName?: string | null;
+            sdkLanguages?: string[] | null;
+            versionStrategy: components["schemas"]["VersionStrategy"];
+        };
+        ConfigResponse: {
+            aiKeySet: boolean;
+            aiModel: string | null;
+            aiProvider: string | null;
+            breakingGate: components["schemas"]["BreakingGate"];
+            lintFailOn: components["schemas"]["LintFailOn"];
+            mavenArtifactId: string | null;
+            mavenGroupId: string | null;
+            npmScope: string | null;
+            outputDir: string;
+            outputs: components["schemas"]["OutputKind"][];
+            pypiName: string | null;
+            sdkLanguages: string[] | null;
+            /** Format: int32 */
+            version: number;
+            versionStrategy: components["schemas"]["VersionStrategy"];
+        };
+        CreateProjectRequest: {
+            defaultBranch: string;
+            mode: components["schemas"]["Mode"];
+            outputMode: components["schemas"]["OutputMode"];
+            outputRepo?: string | null;
+            repo: string;
+            specPath: string;
+            visibility?: components["schemas"]["Visibility"] | null;
+        };
+        /** @enum {string} */
+        LintFailOn: "NEVER" | "ERROR" | "WARNING";
+        LintIssue: {
+            jsonPath: string;
+            /** Format: int32 */
+            line: number | null;
+            message: string;
+            ruleId: string;
+            severity: components["schemas"]["Severity"];
+        };
+        LintRequest: {
+            content: string;
+        };
         MeResponse: {
             avatarUrl: string;
             id: string;
@@ -141,6 +378,17 @@ export interface components {
             role: components["schemas"]["Role"];
             roleSource: components["schemas"]["RoleSource"];
             userId: string;
+        };
+        /** @enum {string} */
+        Mode: "EXISTING" | "NEW";
+        OpChange: {
+            changes: components["schemas"]["Change"][];
+            op: components["schemas"]["OpRef"];
+        };
+        OpRef: {
+            method: string;
+            operationId: string;
+            path: string;
         };
         OrgDetail: {
             id: string;
@@ -168,6 +416,38 @@ export interface components {
             role: components["schemas"]["Role"];
             slug: string;
         };
+        /** @enum {string} */
+        OutputKind: "SDK" | "CLI" | "MCP" | "DOCS";
+        /** @enum {string} */
+        OutputMode: "APPEND" | "SEPARATE";
+        PageProjectSummary: {
+            items: components["schemas"]["ProjectSummary"][];
+            nextCursor: string | null;
+        };
+        ProblemSummary: {
+            code: string;
+            detail: string;
+        };
+        ProjectDetail: {
+            /** Format: date-time */
+            createdAt: string;
+            defaultBranch: string;
+            id: string;
+            orgId: string;
+            outputMode: components["schemas"]["OutputMode"];
+            outputRepoFullName: string | null;
+            repoFullName: string;
+            specPath: string;
+            webhook: components["schemas"]["WebhookStatus"];
+        };
+        ProjectSummary: {
+            currentVersion: string | null;
+            id: string;
+            /** Format: date-time */
+            lastRunAt: string | null;
+            lastRunStatus: components["schemas"]["RunStatus"] | null;
+            repoFullName: string;
+        };
         QuotaResponse: {
             /** Format: int32 */
             limit: number;
@@ -176,12 +456,69 @@ export interface components {
             /** Format: date-time */
             resetAt: string;
         };
+        RepoOption: {
+            defaultBranch: string;
+            fullName: string;
+            isPrivate: boolean;
+            owner: string;
+            /** Format: date-time */
+            pushedAt: string | null;
+        };
         /** @enum {string} */
         Role: "ADMIN" | "EDITOR" | "VIEWER";
         /** @enum {string} */
         RoleSource: "SYNC" | "MANUAL";
+        /** @enum {string} */
+        RunStatus: "QUEUED" | "RUNNING" | "AWAITING_APPROVAL" | "SUCCESS" | "FAILED" | "CANCELLED";
+        SaveSpecRequest: {
+            content: string;
+            generate: boolean;
+            message?: string | null;
+            sha: string;
+        };
+        SaveSpecResponse: {
+            commitSha: string;
+            newSha: string;
+            runError: components["schemas"]["ProblemSummary"] | null;
+            runId: string | null;
+        };
+        /** @enum {string} */
+        Severity: "ERROR" | "WARNING" | "INFO";
+        SnapshotSummary: {
+            contentHash: string;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            infoVersion: string | null;
+        };
+        SpecCheckResponse: {
+            errors: string[];
+            found: boolean;
+            title: string | null;
+            valid: boolean;
+            version: string | null;
+        };
+        SpecDiff: {
+            added: components["schemas"]["OpRef"][];
+            modified: components["schemas"]["OpChange"][];
+            removed: components["schemas"]["OpRef"][];
+        };
+        SpecResponse: {
+            content: string;
+            format: string;
+            sha: string;
+        };
         UpdateRoleRequest: {
             role: components["schemas"]["Role"];
+        };
+        /** @enum {string} */
+        VersionStrategy: "EMITKIT_MANAGED" | "SPEC_VERSION";
+        /** @enum {string} */
+        Visibility: "PUBLIC" | "PRIVATE";
+        WebhookStatus: {
+            registered: boolean;
+            /** Format: int64 */
+            webhookId: number | null;
         };
     };
     responses: never;
@@ -192,6 +529,30 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    lint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LintRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LintIssue"][];
+                };
+            };
+        };
+    };
     me: {
         parameters: {
             query?: never;
@@ -337,6 +698,327 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberResponse"];
+                };
+            };
+        };
+    };
+    listProjects: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                q?: string;
+                /** @description Only projects whose last run has this status */
+                status?: components["schemas"]["RunStatus"];
+            };
+            header?: never;
+            path: {
+                orgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageProjectSummary"];
+                };
+            };
+        };
+    };
+    createProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
+                };
+            };
+        };
+    };
+    listRepos: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path: {
+                orgId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoOption"][];
+                };
+            };
+        };
+    };
+    checkSpec: {
+        parameters: {
+            query: {
+                path: string;
+                branch?: string;
+            };
+            header?: never;
+            path: {
+                orgId: string;
+                owner: string;
+                repo: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecCheckResponse"];
+                };
+            };
+        };
+    };
+    getProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
+                };
+            };
+        };
+    };
+    deleteProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigResponse"];
+                };
+            };
+        };
+    };
+    saveConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigResponse"];
+                };
+            };
+        };
+    };
+    getSpec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecResponse"];
+                };
+            };
+        };
+    };
+    saveSpec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveSpecRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved; runId is set when a generation run was started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveSpecResponse"];
+                };
+            };
+            /** @description Saved, but the generation run could not be started; see runError */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveSpecResponse"];
+                };
+            };
+        };
+    };
+    diffSpec: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecDiff"];
+                };
+            };
+        };
+    };
+    listSnapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotSummary"][];
+                };
+            };
+        };
+    };
+    registerWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookStatus"];
                 };
             };
         };
