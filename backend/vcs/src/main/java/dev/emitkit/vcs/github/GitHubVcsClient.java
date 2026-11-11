@@ -23,21 +23,33 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
+import org.kohsuke.github.GHCommit;
 import org.kohsuke.github.GHContent;
 import org.kohsuke.github.GHContentBuilder;
 import org.kohsuke.github.GHCreateRepositoryBuilder;
 import org.kohsuke.github.GHEvent;
 import org.kohsuke.github.GHException;
+import org.kohsuke.github.GHIssueState;
 import org.kohsuke.github.GHHook;
 import org.kohsuke.github.GHMembership;
 import org.kohsuke.github.GHMyself;
 import org.kohsuke.github.GHOrganization;
+import org.kohsuke.github.GHPullRequest;
 import org.kohsuke.github.GHRateLimit;
+import org.kohsuke.github.GHRef;
 import org.kohsuke.github.GHRepository;
+import org.kohsuke.github.GHTree;
+import org.kohsuke.github.GHTreeBuilder;
+import org.kohsuke.github.GHTreeEntry;
 import org.kohsuke.github.GitCommit;
 import org.kohsuke.github.GitHub;
+import org.kohsuke.github.HttpException;
 
-/** Repository, file, organization and quota operations for one identity. */
+/**
+ * Repository, file, organization and quota operations for one identity, plus the git data behind
+ * branches, commits, pull requests and tags.
+ */
 final class GitHubVcsClient implements VcsClient {
 
   /** The contents API serves files up to 1 MB. Larger files go through the blob API. */
@@ -45,6 +57,9 @@ final class GitHubVcsClient implements VcsClient {
 
   private static final int REPO_PAGE_SIZE = 100;
   private static final int REPO_LIMIT = 300;
+
+  /** Entries per tree write. Larger commits chain several trees, one per chunk. */
+  private static final int TREE_ENTRY_LIMIT = 1000;
 
   private final GitHub github;
 
@@ -142,42 +157,139 @@ final class GitHubVcsClient implements VcsClient {
 
   @Override
   public void createBranch(String repo, String name, String fromSha) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      GHRepository target = github.getRepository(repo);
+      if (createRef(target, "refs/heads/" + name, fromSha)) {
+        return;
+      }
+      // The branch exists. Creating it again is a no-op only when it already points at fromSha.
+      String current = target.getRef("heads/" + name).getObject().getSha();
+      if (!current.equals(fromSha)) {
+        throw new VcsConflictException("branch " + name + " exists at another commit");
+      }
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
   @Override
   public String branchHead(String repo, String branch) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      return github.getRepository(repo).getRef("heads/" + branch).getObject().getSha();
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
   @Override
   public void deleteBranch(String repo, String name) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      github.getRepository(repo).getRef("heads/" + name).delete();
+    } catch (IOException | GHException e) {
+      // A missing branch is a no-op: the lookup answers 404, and a delete can answer 422.
+      int status = GitHubErrors.statusOf(e);
+      if (status != 404 && status != 422) {
+        throw GitHubErrors.map(e);
+      }
+    }
   }
 
+  /**
+   * Reads the blob shas under {@code pathPrefix}. A recursive listing is one call; when GitHub
+   * truncates it, the subtrees under the prefix are read one directory at a time.
+   */
   @Override
   public Map<String, String> listBlobShas(String repo, String ref, String pathPrefix) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      GHRepository target = github.getRepository(repo);
+      GHTree tree = target.getTreeRecursive(ref, 1);
+      var shas = new TreeMap<String, String>();
+      if (tree.isTruncated()) {
+        collectBlobShas(target, target.getTree(ref), "", pathPrefix, shas);
+      } else {
+        for (GHTreeEntry entry : tree.getTree()) {
+          if ("blob".equals(entry.getType()) && entry.getPath().startsWith(pathPrefix)) {
+            shas.put(entry.getPath(), entry.getSha());
+          }
+        }
+      }
+      return shas;
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
+  /**
+   * Commits {@code files} on the head of {@code branch}. The new trees start from the parent's
+   * tree, so files not named here are kept. Each tree write takes at most {@link #TREE_ENTRY_LIMIT}
+   * entries, and each chunk's tree is the base of the next.
+   */
   @Override
   public CommitRef commitTree(String repo, String branch, List<CommitFile> files, String message) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      GHRepository target = github.getRepository(repo);
+      GHRef head = target.getRef("heads/" + branch);
+      String parent = head.getObject().getSha();
+      // The tree endpoint takes a commit sha and returns its root tree. The commits endpoint would
+      // also compute the commit's diff, which is slow on large merges and can fail with a 422.
+      String tree = target.getTree(parent).getSha();
+      for (int start = 0; start < files.size(); start += TREE_ENTRY_LIMIT) {
+        GHTreeBuilder builder = target.createTree().baseTree(tree);
+        for (CommitFile file :
+            files.subList(start, Math.min(files.size(), start + TREE_ENTRY_LIMIT))) {
+          // textEntry inlines the content. add() would post each file as a blob first.
+          builder.textEntry(file.path(), file.content(), false);
+        }
+        tree = builder.create().getSha();
+      }
+      GHCommit commit = target.createCommit().message(message).parent(parent).tree(tree).create();
+      head.updateTo(commit.getSHA1());
+      return new CommitRef(commit.getSHA1(), commit.getHtmlUrl().toString());
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
+  /**
+   * Opens the pull request. If one is already open for the same head and base, GitHub refuses the
+   * create with "already exists", and the open pull request is returned instead.
+   */
   @Override
   public PullRequest openPr(String repo, String head, String base, String title, String body) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      GHRepository target = github.getRepository(repo);
+      GHPullRequest pr;
+      try {
+        pr = target.createPullRequest(title, head, base, body);
+      } catch (HttpException e) {
+        if (!GitHubErrors.alreadyExists(e)) {
+          throw e;
+        }
+        pr = openPrFor(target, head, base);
+      }
+      return new PullRequest(pr.getNumber(), pr.getHtmlUrl().toString(), pr.getHead().getRef());
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
   @Override
   public void comment(String repo, int prNumber, String body) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      github.getRepository(repo).getIssue(prNumber).comment(body);
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
+  /** Creates the tag ref. Returns false when GitHub reports that the ref already exists. */
   @Override
   public boolean createTag(String repo, String tag, String sha) {
-    throw new UnsupportedOperationException("VCS-03");
+    try {
+      return createRef(github.getRepository(repo), "refs/tags/" + tag, sha);
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
   }
 
   @Override
@@ -226,6 +338,62 @@ final class GitHubVcsClient implements VcsClient {
     } catch (IOException e) {
       throw GitHubErrors.map(e);
     }
+  }
+
+  /**
+   * Creates {@code ref} at {@code sha}. Returns false, rather than failing, when the ref already
+   * exists.
+   */
+  private static boolean createRef(GHRepository target, String ref, String sha) throws IOException {
+    try {
+      target.createRef(ref, sha);
+      return true;
+    } catch (HttpException e) {
+      if (GitHubErrors.alreadyExists(e)) {
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Adds the blobs under {@code prefix} in {@code tree}, which sits at directory {@code dir}. Only
+   * directories that can hold such a path are read.
+   */
+  private static void collectBlobShas(
+      GHRepository target, GHTree tree, String dir, String prefix, Map<String, String> shas)
+      throws IOException {
+    for (GHTreeEntry entry : tree.getTree()) {
+      String path = dir + entry.getPath();
+      if ("blob".equals(entry.getType())) {
+        if (path.startsWith(prefix)) {
+          shas.put(path, entry.getSha());
+        }
+      } else if ("tree".equals(entry.getType())
+          && (path.startsWith(prefix) || prefix.startsWith(path + "/"))) {
+        collectBlobShas(target, target.getTree(entry.getSha()), path + "/", prefix, shas);
+      }
+    }
+  }
+
+  /**
+   * The open pull request from {@code head} into {@code base}. GitHub filters on both, and the
+   * match is checked again here.
+   */
+  private static GHPullRequest openPrFor(GHRepository target, String head, String base)
+      throws IOException {
+    return target
+        .queryPullRequests()
+        .state(GHIssueState.OPEN)
+        .head(target.getOwnerName() + ":" + head)
+        .base(base)
+        .list()
+        .toList()
+        .stream()
+        .filter(pr -> head.equals(pr.getHead().getRef()) && base.equals(pr.getBase().getRef()))
+        .findFirst()
+        .orElseThrow(
+            () -> new VcsConflictException("no open pull request from " + head + " into " + base));
   }
 
   /** Admins own the org. Roles GitHub adds later, such as billing_manager, count as members. */
