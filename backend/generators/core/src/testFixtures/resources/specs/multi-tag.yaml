@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: Multi Tag
+  version: 1.0.0
+tags:
+  - name: pets
+  - name: store
+  - name: admin
+paths:
+  /pets/{id}/inventory:
+    get:
+      operationId: getPetInventory
+      tags: [pets, store]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: ok}
+  /admin/reset:
+    post:
+      operationId: resetPets
+      tags: [admin, pets]
+      responses:
+        '200': {description: ok}

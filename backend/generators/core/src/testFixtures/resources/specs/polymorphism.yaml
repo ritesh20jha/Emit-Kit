@@ -1,0 +1,91 @@
+openapi: 3.0.3
+info:
+  title: Polymorphism
+  version: 1.0.0
+paths:
+  /pets:
+    post:
+      operationId: createPet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Pet'}
+      responses:
+        '200': {description: ok}
+  /shapes:
+    get:
+      operationId: listShapes
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Shape'}
+  /kittens:
+    get:
+      operationId: getKitten
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Kitten'}
+  /owners:
+    get:
+      operationId: getOwner
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OptionalOwner'}
+components:
+  schemas:
+    Pet:
+      oneOf:
+        - $ref: '#/components/schemas/Cat'
+        - $ref: '#/components/schemas/Dog'
+      discriminator:
+        propertyName: petType
+    Cat:
+      type: object
+      required: [petType, lives]
+      properties:
+        petType: {type: string}
+        lives: {type: integer}
+    Dog:
+      type: object
+      properties:
+        petType: {type: string}
+        good: {type: boolean}
+    Shape:
+      oneOf:
+        - $ref: '#/components/schemas/Circle'
+        - $ref: '#/components/schemas/Square'
+    Circle:
+      type: object
+      properties:
+        radius: {type: number}
+    Square:
+      type: object
+      properties:
+        side: {type: number}
+    Animal:
+      type: object
+      properties:
+        name: {type: string}
+    Kitten:
+      allOf:
+        - $ref: '#/components/schemas/Animal'
+        - type: object
+          properties:
+            ageMonths: {type: integer}
+    Owner:
+      type: object
+      properties:
+        nickname: {type: string}
+    OptionalOwner:
+      nullable: true
+      allOf:
+        - $ref: '#/components/schemas/Owner'
