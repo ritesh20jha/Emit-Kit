@@ -88,10 +88,11 @@ class FixtureSpecsTest {
             .filter(OneOfSchema.class::isInstance)
             .map(OneOfSchema.class::cast)
             .toList();
-    assertThat(unions).anyMatch(u -> u.discriminator() != null);
-    assertThat(unions).anyMatch(u -> u.discriminator() == null);
+    assertThat(unions).extracting(OneOfSchema::discriminator).contains("petType", (String) null);
     assertThat(schemas).anyMatch(AllOfSchema.class::isInstance);
     assertThat(schemas).anyMatch(s -> s instanceof RefSchema ref && ref.nullable());
+    var cat = (ObjectSchema) FixtureSpecs.load("polymorphism").schemas().get("Cat");
+    assertThat(cat.properties().get("owner")).isEqualTo(new RefSchema("Owner", true, null));
   }
 
   @Test
@@ -100,13 +101,22 @@ class FixtureSpecsTest {
     assertThat(model.operations())
         .extracting(Operation::operationId)
         .contains("class", "delete", "import", "default");
+    assertThat(model.operations())
+        .filteredOn(op -> op.operationId().equals("delete"))
+        .extracting(Operation::tag)
+        .containsExactly("default");
     assertThat(model.schemas().keySet()).contains("Error", "Object", "String", "None");
     assertThat(model.operations())
         .flatExtracting(Operation::parameters)
         .filteredOn(p -> p.in() == ParamLocation.PATH)
         .extracting(Parameter::name)
         .contains("in");
-    assertThat(propertyNames(model.schemas().values())).contains("type", "from", "self", "2fa");
+    assertThat(model.operations())
+        .flatExtracting(Operation::parameters)
+        .extracting(Parameter::name, Parameter::in)
+        .contains(tuple("default", ParamLocation.QUERY));
+    assertThat(propertyNames(model.schemas().values()))
+        .contains("type", "from", "self", "2fa", "class");
   }
 
   @Test
@@ -131,7 +141,8 @@ class FixtureSpecsTest {
             children -> assertThat(children.items()).isEqualTo(new RefSchema("Node", false, null)));
     assertThat(schemas.values())
         .anyMatch(s -> s instanceof ArraySchema outer && outer.items() instanceof ArraySchema);
-    assertThat(maxObjectDepth(schemas.get("Deep"), 0)).isGreaterThanOrEqualTo(5);
+    // Deep is six objects deep: Deep, level1..level5. Removing a level must fail this check.
+    assertThat(maxObjectDepth(schemas.get("Deep"), 0)).isEqualTo(6);
   }
 
   @Test
@@ -152,7 +163,7 @@ class FixtureSpecsTest {
     assertThat(model.tags()).extracting(Tag::name).contains("pets", "store", "admin");
     assertThat(model.operations())
         .extracting(Operation::tag)
-        .containsExactlyInAnyOrder("pets", "admin");
+        .containsExactlyInAnyOrder("pets", "admin", "store");
   }
 
   private static List<String> propertyNames(Collection<Schema> schemas) {

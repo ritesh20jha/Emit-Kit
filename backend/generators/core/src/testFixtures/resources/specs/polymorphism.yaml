@@ -48,14 +48,22 @@ components:
         - $ref: '#/components/schemas/Dog'
       discriminator:
         propertyName: petType
+        mapping:
+          cat: '#/components/schemas/Cat'
+          dog: '#/components/schemas/Dog'
     Cat:
       type: object
       required: [petType, lives]
       properties:
         petType: {type: string}
         lives: {type: integer}
+        owner:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Owner'
     Dog:
       type: object
+      required: [petType]
       properties:
         petType: {type: string}
         good: {type: boolean}

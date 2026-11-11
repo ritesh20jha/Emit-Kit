@@ -15,7 +15,6 @@ paths:
   /delete:
     post:
       operationId: delete
-      tags: [User]
       responses:
         '200': {description: ok}
   /import:
@@ -27,6 +26,8 @@ paths:
   /default:
     get:
       operationId: default
+      parameters:
+        - {name: default, in: query, schema: {type: string}}
       responses:
         '200': {description: ok}
         default:
@@ -55,6 +56,7 @@ components:
         from: {type: string}
         self: {type: string}
         2fa: {type: boolean}
+        class: {type: string}
     Object:
       type: object
       properties:

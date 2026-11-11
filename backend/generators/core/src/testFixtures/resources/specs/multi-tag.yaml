@@ -21,3 +21,9 @@ paths:
       tags: [admin, pets]
       responses:
         '200': {description: ok}
+  /store/orders:
+    get:
+      operationId: listStoreOrders
+      tags: [store, pets]
+      responses:
+        '200': {description: ok}
