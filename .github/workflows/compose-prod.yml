@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "deploy/**"
+      - "scripts/restore-drill.sh"
       - ".github/workflows/compose-prod.yml"
   pull_request:
     paths:
       - "deploy/**"
+      - "scripts/restore-drill.sh"
       - ".github/workflows/compose-prod.yml"
 
 permissions:
@@ -36,3 +38,16 @@ jobs:
       # smoke.sh prints container logs and tears the stack down, also on failure.
       - name: Smoke test
         run: bash deploy/compose/smoke.sh
+
+  # Backups restore: seeds a source stack, backs it up off-host, restores into a fresh stack and checks that a
+  # stored webhook secret still decrypts. Throwaway secrets only. The script removes all its stacks and volumes,
+  # also on failure. Separate job so that it has its own time limit (it builds the api image).
+  restore-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore drill
+        run: bash scripts/restore-drill.sh

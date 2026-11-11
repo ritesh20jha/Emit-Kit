@@ -157,15 +157,50 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-emitkit}
       POSTGRES_USER: ${POSTGRES_USER:-emitkit}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+    # WAL archive for the backup job. Each segment is copied to the spool as the postgres user, with umask 027 so
+    # that group postgres (the backup job's group) can read it. The rename comes last, so the backup job never
+    # reads a partial segment. Point-in-time recovery also needs base backups: see docs/runbooks/restore.md.
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - "archive_command=umask 027 && cp %p /wal-archive/%f.partial && mv /wal-archive/%f.partial /wal-archive/%f"
     # Postgres 18+ images keep PGDATA under a version-specific subdirectory of /var/lib/postgresql.
     volumes:
       - postgres-data:/var/lib/postgresql
+      - wal-archive:/wal-archive
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 20
+    depends_on:
+      wal-init:
+        condition: service_healthy
     networks: [app]
+
+  # A new named volume is owned by root, so postgres could not write the WAL spool. This sets the owner to
+  # postgres (uid and gid 70) once per start. Same pattern as rustfs-init: it stays up so that `up --wait` passes.
+  wal-init:
+    <<: *common
+    image: postgres:18.6-alpine
+    user: "0:0"
+    network_mode: none
+    volumes:
+      - wal-archive:/wal-archive
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        rm -f /tmp/ready &&
+        chown 70:70 /wal-archive && chmod 0770 /wal-archive &&
+        touch /tmp/ready && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
 
   rabbitmq:
     <<: *common
@@ -244,6 +279,59 @@ services:
     restart: "no"
     networks: [app]
 
+  # Off-host backups (docs/runbooks/restore.md). Root runs busybox crond, which runs each job as user backup
+  # (uid 10001). crond needs SETUID to switch to that user and SETGID to set its groups. Each one alone fails
+  # with "Operation not permitted" when a job starts, so both are added back and nothing else.
+  backup:
+    <<: *common
+    build:
+      context: ./backup
+    image: emitkit/backup:${EMITKIT_IMAGE_TAG:-local}
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-emitkit}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-emitkit}
+      VAULT_ADDR: http://vault:8200
+      BACKUP_VAULT_ROLE_ID: ${BACKUP_VAULT_ROLE_ID:?set in .env.prod}
+      BACKUP_VAULT_SECRET_ID_FILE: /run/secrets/backup_vault_secret_id
+      S3_BUCKET: ${S3_BUCKET:-emitkit-artifacts}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:?set in .env.prod}
+      # rclone remotes, from the environment only. offhost: the off-host target. rustfs: the artifacts bucket here.
+      RCLONE_CONFIG_OFFHOST_TYPE: s3
+      RCLONE_CONFIG_OFFHOST_PROVIDER: Other
+      RCLONE_CONFIG_OFFHOST_ENDPOINT: ${BACKUP_S3_ENDPOINT:?set in .env.prod}
+      RCLONE_CONFIG_OFFHOST_REGION: ${BACKUP_S3_REGION:?set in .env.prod}
+      RCLONE_CONFIG_OFFHOST_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY:?set in .env.prod}
+      RCLONE_CONFIG_OFFHOST_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY:?set in .env.prod}
+      RCLONE_CONFIG_RUSTFS_TYPE: s3
+      RCLONE_CONFIG_RUSTFS_PROVIDER: Other
+      RCLONE_CONFIG_RUSTFS_ENDPOINT: http://rustfs:9000
+      RCLONE_CONFIG_RUSTFS_REGION: us-east-1
+      RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:?set in .env.prod}
+      RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:?set in .env.prod}
+    secrets: [backup_vault_secret_id]
+    volumes:
+      - wal-archive:/wal-archive
+      - backup-state:/var/lib/backup
+    healthcheck:
+      test: ["CMD", "pidof", "crond"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # egress: the off-host S3 target is outside the stack. Only api, worker and backup join it.
+    networks: [app, egress]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs-init:
+        condition: service_healthy
+      wal-init:
+        condition: service_healthy
+
   # Sealed after every start. Healthy means reachable (`vault status` exits 2 when sealed), so
   # `up --wait` passes on a fresh install before the operator unseals it. Apps do not depend on it.
   vault:
@@ -270,6 +358,8 @@ secrets:
     file: ${API_VAULT_SECRET_ID_FILE:-./secrets/api-secret-id}
   worker_vault_secret_id:
     file: ${WORKER_VAULT_SECRET_ID_FILE:-./secrets/worker-secret-id}
+  backup_vault_secret_id:
+    file: ${BACKUP_VAULT_SECRET_ID_FILE:-./secrets/backup-secret-id}
 
 networks:
   edge: {}
@@ -283,5 +373,8 @@ volumes:
   redis-data:
   rustfs-data:
   vault-data:
+  # WAL spool (postgres writes, backup moves it off-host) and the backup job's state (last-success, logs).
+  wal-archive:
+  backup-state:
   caddy-data:
   caddy-config:

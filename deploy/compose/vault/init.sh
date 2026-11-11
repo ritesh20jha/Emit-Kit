@@ -14,8 +14,9 @@ vault read transit/keys/emitkit-secrets >/dev/null 2>&1 ||
 
 vault policy write emitkit-api "$POLICIES/emitkit-api.hcl"
 vault policy write emitkit-worker "$POLICIES/emitkit-worker.hcl"
+vault policy write emitkit-backup "$POLICIES/emitkit-backup.hcl"
 
-for app in api worker; do
+for app in api worker backup; do
   vault write "auth/approle/role/emitkit-$app" token_policies="emitkit-$app" token_ttl=1h
   vault read -field=role_id "auth/approle/role/emitkit-$app/role-id" > "$SECRETS/$app-role-id"
   vault write -f -field=secret_id "auth/approle/role/emitkit-$app/secret-id" > "$SECRETS/$app-secret-id"
@@ -23,4 +24,4 @@ done
 
 # Dev only: Docker creates the bind mount root:root, so the host user must be able to read and delete these.
 chmod 777 "$SECRETS"
-chmod 644 "$SECRETS"/api-role-id "$SECRETS"/api-secret-id "$SECRETS"/worker-role-id "$SECRETS"/worker-secret-id
+chmod 644 "$SECRETS"/*-role-id "$SECRETS"/*-secret-id

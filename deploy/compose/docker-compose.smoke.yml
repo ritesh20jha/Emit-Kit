@@ -46,3 +46,5 @@ secrets:
     file: ./smoke-secrets/api-secret-id
   worker_vault_secret_id:
     file: ./smoke-secrets/worker-secret-id
+  backup_vault_secret_id:
+    file: ./smoke-secrets/backup-secret-id
