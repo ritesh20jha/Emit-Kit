@@ -1,9 +1,12 @@
 package dev.emitkit.vcs.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.within;
 
 import dev.emitkit.vcs.RateLimit;
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -115,6 +118,37 @@ class RedisRateLimitStoreIT {
     redis.opsForHash().delete(KEY, "resetAt");
     redis.opsForHash().put(KEY, "remaining", "5");
     assertThat(store.get(USER)).isEmpty();
+  }
+
+  @Test
+  void wrongTypeKey_getAndRecordFailOpen() {
+    redis.opsForValue().set("ratelimit:u1", "plain");
+
+    assertThat(store.get("u1")).isEmpty();
+    assertThatCode(() -> store.record("u1", 1, futureReset())).doesNotThrowAnyException();
+  }
+
+  @Test
+  void redisUnreachable_getAndRecordFailOpen() throws IOException {
+    LettuceConnectionFactory down = new LettuceConnectionFactory("127.0.0.1", closedPort());
+    down.afterPropertiesSet();
+    try {
+      RedisRateLimitStore offline = new RedisRateLimitStore(new StringRedisTemplate(down));
+
+      assertThat(offline.get(USER)).isEmpty();
+      assertThatCode(() -> offline.record(USER, 1, futureReset())).doesNotThrowAnyException();
+      assertThatCode(() -> offline.record(USER, 0, Instant.now().minusSeconds(120)))
+          .doesNotThrowAnyException();
+    } finally {
+      down.destroy();
+    }
+  }
+
+  /** A port that was free a moment ago, so nothing listens on it. */
+  private static int closedPort() throws IOException {
+    try (ServerSocket socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
+    }
   }
 
   private static Instant futureReset() {
