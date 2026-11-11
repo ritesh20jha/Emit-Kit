@@ -15,7 +15,8 @@ public record ApprovalView(
         @Nullable Decision decision,
     @Schema(
             requiredMode = REQUIRED,
-            types = {"string", "null"})
+            types = {"string", "null"},
+            description = "GitHub login of the reviewer")
         @Nullable String decidedBy,
     @Schema(
             requiredMode = REQUIRED,

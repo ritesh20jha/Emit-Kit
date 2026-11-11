@@ -12,7 +12,12 @@ import java.time.Instant;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
-/** One run in full, with its steps, lint counts and approval. */
+/**
+ * One run in full, with its steps, lint counts and approval.
+ *
+ * @param artifactAvailable true while the run's zip can be downloaded; artifacts expire after 30
+ *     days, and a failed run never has one
+ */
 public record RunDetail(
     @Schema(requiredMode = REQUIRED) String id,
     @Schema(requiredMode = REQUIRED) String projectId,
@@ -73,4 +78,5 @@ public record RunDetail(
     @Schema(
             requiredMode = REQUIRED,
             types = {"string", "null"})
-        @Nullable Instant finishedAt) {}
+        @Nullable Instant finishedAt,
+    @Schema(requiredMode = REQUIRED) boolean artifactAvailable) {}

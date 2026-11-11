@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
 public record LogLine(
     @Schema(requiredMode = REQUIRED) int seq,
     @Schema(requiredMode = REQUIRED) Instant ts,
-    @Schema(requiredMode = REQUIRED) String level,
+    @Schema(requiredMode = REQUIRED, description = "INFO, WARN or ERROR") String level,
     @Schema(
             requiredMode = REQUIRED,
             types = {"string", "null"})

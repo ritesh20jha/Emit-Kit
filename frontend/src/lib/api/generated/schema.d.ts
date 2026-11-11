@@ -424,7 +424,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read one generated file, or its diff against the previous run */
+        /** Read one generated file, or its diff against the target branch */
         get: operations["getFile"];
         put?: never;
         post?: never;
@@ -477,7 +477,7 @@ export interface paths {
         };
         /**
          * Stream the log of a run as server-sent events
-         * @description Two events. `log` carries one LogLine as JSON for each new line. `done` carries the text `[DONE]` once the run has finished and the stream closes.
+         * @description Two events. `log` carries one LogLine as JSON for each new line. `done` carries the text `[DONE]` once the run has finished and the stream closes. SSE id is the log seq; on reconnect the stream resumes after Last-Event-ID.
          */
         get: operations["streamLogs"];
         put?: never;
@@ -517,6 +517,7 @@ export interface components {
             comment: string | null;
             /** Format: date-time */
             decidedAt: string | null;
+            /** @description GitHub login of the reviewer */
             decidedBy: string | null;
             decision: components["schemas"]["Decision"] | null;
         };
@@ -604,6 +605,7 @@ export interface components {
             content: string;
         };
         LogLine: {
+            /** @description INFO, WARN or ERROR */
             level: string;
             message: string;
             /** Format: int32 */
@@ -729,6 +731,7 @@ export interface components {
         RoleSource: "SYNC" | "MANUAL";
         RunDetail: {
             approval: components["schemas"]["ApprovalView"] | null;
+            artifactAvailable: boolean;
             branchName: string | null;
             changeType: components["schemas"]["ChangeType"] | null;
             commitSha: string | null;
@@ -1481,7 +1484,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The zipped output of the run */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1544,6 +1547,7 @@ export interface operations {
             header?: never;
             path: {
                 runId: string;
+                /** @description Manifest path. Send '/' separators unencoded; percent-encode each segment. */
                 path: string;
             };
             cookie?: never;
@@ -1610,7 +1614,10 @@ export interface operations {
     streamLogs: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The seq of the last log line the client received */
+                "Last-Event-ID"?: number;
+            };
             path: {
                 runId: string;
             };

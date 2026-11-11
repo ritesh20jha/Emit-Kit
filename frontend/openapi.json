@@ -36,6 +36,7 @@
             ]
           },
           "decidedBy": {
+            "description": "GitHub login of the reviewer",
             "type": [
               "string",
               "null"
@@ -456,6 +457,7 @@
       "LogLine": {
         "properties": {
           "level": {
+            "description": "INFO, WARN or ERROR",
             "type": "string"
           },
           "message": {
@@ -963,6 +965,9 @@
               }
             ]
           },
+          "artifactAvailable": {
+            "type": "boolean"
+          },
           "branchName": {
             "type": [
               "string",
@@ -1080,6 +1085,7 @@
         },
         "required": [
           "approval",
+          "artifactAvailable",
           "branchName",
           "changeType",
           "commitSha",
@@ -2483,7 +2489,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "The zipped output of the run"
           }
         },
         "summary": "Download the zipped output of a run",
@@ -2570,6 +2576,7 @@
             }
           },
           {
+            "description": "Manifest path. Send '/' separators unencoded; percent-encode each segment.",
             "in": "path",
             "name": "path",
             "required": true,
@@ -2599,7 +2606,7 @@
             "description": "OK"
           }
         },
-        "summary": "Read one generated file, or its diff against the previous run",
+        "summary": "Read one generated file, or its diff against the target branch",
         "tags": [
           "Run files"
         ]
@@ -2684,7 +2691,7 @@
     },
     "/runs/{runId}/logs/stream": {
       "get": {
-        "description": "Two events. `log` carries one LogLine as JSON for each new line. `done` carries the text `[DONE]` once the run has finished and the stream closes.",
+        "description": "Two events. `log` carries one LogLine as JSON for each new line. `done` carries the text `[DONE]` once the run has finished and the stream closes. SSE id is the log seq; on reconnect the stream resumes after Last-Event-ID.",
         "operationId": "streamLogs",
         "parameters": [
           {
@@ -2693,6 +2700,16 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "The seq of the last log line the client received",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
             }
           }
         ],

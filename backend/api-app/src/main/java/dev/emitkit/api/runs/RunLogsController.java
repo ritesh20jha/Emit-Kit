@@ -3,6 +3,7 @@ package dev.emitkit.api.runs;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -12,6 +13,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -43,8 +45,13 @@ public class RunLogsController {
       summary = "Stream the log of a run as server-sent events",
       description =
           "Two events. `log` carries one LogLine as JSON for each new line. `done` carries the"
-              + " text `[DONE]` once the run has finished and the stream closes.")
-  public SseEmitter streamLogs(@PathVariable("runId") String runId) {
+              + " text `[DONE]` once the run has finished and the stream closes. SSE id is the"
+              + " log seq; on reconnect the stream resumes after Last-Event-ID.")
+  public SseEmitter streamLogs(
+      @PathVariable("runId") String runId,
+      @Parameter(description = "The seq of the last log line the client received")
+          @RequestHeader(name = "Last-Event-ID", required = false)
+          @Nullable Integer lastEventId) {
     throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
   }
 }

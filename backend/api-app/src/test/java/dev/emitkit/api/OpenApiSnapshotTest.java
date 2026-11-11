@@ -117,6 +117,14 @@ class OpenApiSnapshotTest {
     }
   }
 
+  /** The download button depends on this, so it is always sent. */
+  @Test
+  void artifactAvailableIsRequired() throws Exception {
+    JsonNode required = apiDocs().at("/components/schemas/RunDetail/required");
+
+    assertThat(listed(required, "artifactAvailable")).as("RunDetail.artifactAvailable").isTrue();
+  }
+
   @Test
   void meResponseNameIsRequiredAndNullable() throws Exception {
     JsonNode name = apiDocs().at("/components/schemas/MeResponse/properties/name");
@@ -193,11 +201,13 @@ class OpenApiSnapshotTest {
     assertThat(content.propertyNames()).containsExactly("text/event-stream");
   }
 
+  /** The artifact is a binary zip, not a generated component, so RUN-04 can stream it. */
   @Test
   void artifactDocumentedAsZip() throws Exception {
     JsonNode content = apiDocs().at("/paths/~1runs~1{runId}~1artifact/get/responses/200/content");
 
     assertThat(content.propertyNames()).containsExactly("application/zip");
+    assertThat(content.at("/application~1zip/schema/format").asString()).isEqualTo("binary");
   }
 
   /** The run fields that are null until a step, a diff or an approval exists. */
