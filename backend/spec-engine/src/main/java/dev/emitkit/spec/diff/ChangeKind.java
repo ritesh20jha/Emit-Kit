@@ -1,6 +1,8 @@
 package dev.emitkit.spec.diff;
 
-/** What kind of change one {@link Change} describes. */
+/**
+ * Kinds of change the differ can report. Operation-level add/remove is carried by {@link SpecDiff}.
+ */
 public enum ChangeKind {
   PARAM_ADDED,
   PARAM_REMOVED,

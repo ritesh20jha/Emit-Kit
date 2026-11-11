@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Reserved Words
+  version: 1.0.0
+tags:
+  - name: user
+  - name: User
+paths:
+  /class:
+    get:
+      operationId: class
+      tags: [user]
+      responses:
+        '200': {description: ok}
+  /delete:
+    post:
+      operationId: delete
+      responses:
+        '200': {description: ok}
+  /import:
+    get:
+      operationId: import
+      tags: [User]
+      responses:
+        '200': {description: ok}
+  /default:
+    get:
+      operationId: default
+      parameters:
+        - {name: default, in: query, schema: {type: string}}
+      responses:
+        '200': {description: ok}
+        default:
+          description: error
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /items/{in}:
+    get:
+      operationId: getItemIn
+      tags: [user]
+      parameters:
+        - {name: in, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        type: {type: string}
+        from: {type: string}
+        self: {type: string}
+        2fa: {type: boolean}
+        class: {type: string}
+    Object:
+      type: object
+      properties:
+        none: {$ref: '#/components/schemas/None'}
+        value: {$ref: '#/components/schemas/String'}
+    None:
+      type: object
+      properties:
+        reason: {type: string}
+    String:
+      type: string

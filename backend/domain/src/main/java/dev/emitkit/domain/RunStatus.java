@@ -1,9 +1,6 @@
 package dev.emitkit.domain;
 
-/**
- * Where a generation run is in its life. Stored by name in the runs table. The three end states are
- * terminal: a run in one of them never changes status again.
- */
+/** Where a generation run is in its lifecycle. Stored by name in {@code generation_runs.status}. */
 public enum RunStatus {
   QUEUED,
   RUNNING,
@@ -12,7 +9,7 @@ public enum RunStatus {
   FAILED,
   CANCELLED;
 
-  /** True for SUCCESS, FAILED and CANCELLED. */
+  /** Whether the run has finished and will not change again. */
   public boolean isTerminal() {
     return this == SUCCESS || this == FAILED || this == CANCELLED;
   }
