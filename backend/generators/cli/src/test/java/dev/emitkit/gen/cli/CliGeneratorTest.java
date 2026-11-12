@@ -102,6 +102,16 @@ class CliGeneratorTest {
   }
 
   @Test
+  void versionParamDoesNotCollideWithCommanderVersionFlag() {
+    // Commander's program-level -V, --version would consume a subcommand's --version value.
+    var op = operation("search", "Search", param("version", ParamLocation.QUERY, false));
+    assertThat(source(generate(model(op)), "src/commands/things.ts"))
+        .contains(".option(\"--version-2 <value>\"")
+        .contains("\"version\": opts[\"version2\"],")
+        .doesNotContain("--version <value>");
+  }
+
+  @Test
   void specStringsCannotBreakOutOfTheStringLiteral() {
     var op = operation("getThing", "Find \"thing\" \\ done\nnow */");
     assertThat(source(generate(model(op)), "src/commands/things.ts"))

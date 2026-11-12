@@ -35,7 +35,7 @@ record CommandOperation(
 
   /** Global options and the body flag. A parameter with one of these flags gets a suffix. */
   private static final Set<String> RESERVED_FLAGS =
-      Set.of("json", "base-url", "token", "api-key", "output", "help");
+      Set.of("json", "base-url", "token", "api-key", "output", "help", "version");
 
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]+)}");
 
