@@ -1,0 +1,22 @@
+{
+  "name": "@acme/petstore-cli",
+  "version": "1.2.3",
+  "type": "module",
+  "bin": {
+    "petstore-cli": "dist/index.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "commander": "^11"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
