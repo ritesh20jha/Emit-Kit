@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class PythonSdkGeneratorTest {
@@ -65,22 +66,6 @@ class PythonSdkGeneratorTest {
         .isEqualTo(FileKind.CUSTOM_STUB);
   }
 
-  @ParameterizedTest
-  @ValueSource(strings = {".emitkit/", ".emitkit", ".emitkit//"})
-  void outputDirIsNormalisedToOneTrailingSlash(String outputDir) {
-    assertThat(generate("petstore", outputDir, names("acme-pets")))
-        .extracting(GeneratedFile::path)
-        .allSatisfy(path -> assertThat(path).startsWith(ROOT))
-        .contains(ROOT + "acme_pets/client.py");
-  }
-
-  @Test
-  void emptyOutputDirWritesUnderSdkRoot() {
-    assertThat(generate("petstore", "", names("acme-pets")))
-        .extracting(GeneratedFile::path)
-        .contains("sdk/python/acme_pets/client.py");
-  }
-
   @Test
   void pyprojectDeclaresNameVersionAndDependencies() {
     assertThat(pyproject(names("acme-pets")))
@@ -96,14 +81,6 @@ class PythonSdkGeneratorTest {
   @ValueSource(strings = {"Petstore", "Petstore Client"})
   void clientNameEndsWithClientSuffixOnce(String title) {
     assertThat(clientSource(title, List.of())).contains("class PetstoreClient:");
-  }
-
-  @Test
-  void asyncClientUsesHttpxAsyncClient() {
-    assertThat(clientSource("Petstore", List.of()))
-        .contains("class AsyncPetstoreClient:")
-        .contains("self._http = http_client if http_client is not None else httpx.AsyncClient()")
-        .contains("async def aclose(self) -> None:");
   }
 
   @Test
@@ -123,22 +100,6 @@ class PythonSdkGeneratorTest {
     assertThat(clientSource(Map.of("queryKey", queryKey)))
         .contains("self._params[\"api_key\"] = api_key")
         .doesNotContain("self._headers[\"");
-  }
-
-  @Test
-  void oauthOnlyApiGetsABearerTokenOption() {
-    var oauth = new SecurityScheme("oauth", SecurityScheme.Kind.OAUTH2, null, null, null);
-    assertThat(clientSource(Map.of("oauth", oauth)))
-        .contains("bearer_token: Optional[str] = None,")
-        .contains("self._headers[\"Authorization\"] = f\"Bearer {bearer_token}\"");
-  }
-
-  @Test
-  void openIdConnectOnlyApiGetsABearerTokenOption() {
-    var oidc = new SecurityScheme("oidc", SecurityScheme.Kind.OPENID_CONNECT, null, null, null);
-    assertThat(clientSource(Map.of("oidc", oidc)))
-        .contains("bearer_token: Optional[str] = None,")
-        .contains("self._headers[\"Authorization\"] = f\"Bearer {bearer_token}\"");
   }
 
   @Test
@@ -175,37 +136,6 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
-  void firstAbsoluteServerIsTheDefaultBaseUrl() {
-    assertThat(clientSource("Petstore", List.of(new Server("https://api.example.com/v1", null))))
-        .contains("DEFAULT_BASE_URL = \"https://api.example.com/v1\"");
-  }
-
-  @Test
-  void relativeServerIsNotADefaultBaseUrl() {
-    // The parser reports a relative "/" server when the document declares none.
-    assertThat(clientSource("Petstore", List.of(new Server("/", null))))
-        .contains("DEFAULT_BASE_URL = \"\"");
-  }
-
-  @Test
-  void readmeDescribesTheDefaultBaseUrlWhenOneExists() {
-    assertThat(readmeSource("Petstore", List.of(new Server("https://api.example.com/v1", null))))
-        .contains("Requests go to `https://api.example.com/v1` unless `base_url` is passed.");
-  }
-
-  @Test
-  void readmeNamesTheRelativeServerWhenNoDefaultExists() {
-    assertThat(readmeSource("Petstore", List.of(new Server("/api/v3", null))))
-        .contains("The first server, /api/v3, is not an absolute http(s) URL.");
-  }
-
-  @Test
-  void quoteEscapesQuotesBackslashesControlCharactersAndSeparators() {
-    assertThat(PyClientView.quote("a\"b\\c\nd\t\r \u0001"))
-        .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u2028\\u0001\"");
-  }
-
-  @Test
   void docTextCannotCloseADocstring() {
     assertThat(PyClientView.docText("  Pets \"\"\" \\ \n  Store\tAPI "))
         .isEqualTo("Pets \\\"\\\"\\\" \\\\ Store API");
@@ -216,6 +146,73 @@ class PythonSdkGeneratorTest {
     assertThat(clientSource("Pets \"\"\" Store", List.of()))
         .contains("\"\"\"Client for the Pets \\\"\\\"\\\" Store API.\"\"\"")
         .contains("class PetsStoreClient:");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {".emitkit/", ".emitkit", ".emitkit//", ""})
+  void outputDirIsNormalisedToOneTrailingSlash(String outputDir) {
+    String root = outputDir.isEmpty() ? "sdk/python/" : ROOT;
+    assertThat(generate("petstore", outputDir, names("acme-pets")))
+        .extracting(GeneratedFile::path)
+        .allSatisfy(path -> assertThat(path).startsWith(root))
+        .contains(root + "acme_pets/client.py");
+  }
+
+  @Test
+  void asyncClientNamesItselfInItsErrors() {
+    assertThat(clientSource("Petstore", List.of()))
+        .contains("class AsyncPetstoreClient:")
+        .contains("\"AsyncPetstoreClient: base_url is required. The API declares no absolute ")
+        .contains("\"AsyncPetstoreClient: max_retries must be a non-negative integer\"")
+        .contains("async def aclose(self) -> None:");
+  }
+
+  @Test
+  void clientsFollowRedirectsLikeTheTypeScriptFetchClient() {
+    assertThat(clientSource("Petstore", List.of()))
+        .contains("httpx.Client(follow_redirects=True)")
+        .contains("httpx.AsyncClient(follow_redirects=True)");
+  }
+
+  @ParameterizedTest
+  @EnumSource(
+      value = SecurityScheme.Kind.class,
+      names = {"OAUTH2", "OPENID_CONNECT"})
+  void bearerOnlyApiGetsABearerTokenOption(SecurityScheme.Kind kind) {
+    var scheme = new SecurityScheme("bearer", kind, null, null, null);
+    assertThat(clientSource(Map.of("bearer", scheme)))
+        .contains("bearer_token: Optional[str] = None,")
+        .contains("self._headers[\"Authorization\"] = f\"Bearer {bearer_token}\"");
+  }
+
+  @Test
+  void basicOnlyImportsAreOmittedWithoutABasicScheme() {
+    assertThat(clientSource("Petstore", List.of()))
+        .doesNotContain("import base64")
+        .doesNotContain("Tuple");
+  }
+
+  @Test
+  void defaultBaseUrlIsOnlyAnAbsoluteFirstServer() {
+    assertThat(clientSource("Petstore", List.of(new Server("https://api.example.com/v1", null))))
+        .contains("DEFAULT_BASE_URL = \"https://api.example.com/v1\"");
+    // The parser reports a relative "/" server when the document declares none.
+    assertThat(clientSource("Petstore", List.of(new Server("/", null))))
+        .contains("DEFAULT_BASE_URL = \"\"");
+  }
+
+  @Test
+  void readmeStatesTheDefaultBaseUrlOrTheRelativeServer() {
+    assertThat(readmeSource("Petstore", List.of(new Server("https://api.example.com/v1", null))))
+        .contains("Requests go to `https://api.example.com/v1` unless `base_url` is passed.");
+    assertThat(readmeSource("Petstore", List.of(new Server("/api/v3", null))))
+        .contains("The first server, /api/v3, is not an absolute http(s) URL.");
+  }
+
+  @Test
+  void quoteEscapesQuotesBackslashesControlCharactersAndSeparators() {
+    assertThat(PyClientView.quote("a\"b\\c\nd\t\r\u0001\u007F\u2028"))
+        .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u0001\\u007F\\u2028\"");
   }
 
   private String pyproject(PackageNames names) {

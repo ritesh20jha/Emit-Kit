@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import time
 from types import TracebackType
-from typing import Any, Dict, Mapping, Optional, Tuple, Type
+from typing import Any, Dict, Mapping, Optional, Type
 
 import httpx
 
@@ -45,7 +44,7 @@ class PetstoreClient:
             max_retries,
             "PetstoreClient: max_retries must be a non-negative integer",
         )
-        self._http = http_client if http_client is not None else httpx.Client()
+        self._http = http_client if http_client is not None else httpx.Client(follow_redirects=True)
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
@@ -108,13 +107,13 @@ class AsyncPetstoreClient:
     ) -> None:
         self._base_url = _base_url_or_raise(
             base_url,
-            "PetstoreClient: base_url is required. The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.",
+            "AsyncPetstoreClient: base_url is required. The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.",
         )
         self._max_retries = _check_max_retries(
             max_retries,
-            "PetstoreClient: max_retries must be a non-negative integer",
+            "AsyncPetstoreClient: max_retries must be a non-negative integer",
         )
-        self._http = http_client if http_client is not None else httpx.AsyncClient()
+        self._http = http_client if http_client is not None else httpx.AsyncClient(follow_redirects=True)
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}

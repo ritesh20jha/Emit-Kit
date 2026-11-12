@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+{{#hasBasic}}
 import base64
+{{/hasBasic}}
 import json
 import time
 from types import TracebackType
-from typing import Any, Dict, Mapping, Optional, Tuple, Type
+from typing import Any, Dict, Mapping, Optional{{#hasBasic}}, Tuple{{/hasBasic}}, Type
 
 import httpx
 
@@ -54,7 +56,7 @@ class {{className}}:
             max_retries,
             {{{maxRetriesErrorLiteral}}},
         )
-        self._http = http_client if http_client is not None else httpx.Client()
+        self._http = http_client if http_client is not None else httpx.Client(follow_redirects=True)
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
@@ -144,13 +146,13 @@ class {{asyncClassName}}:
     ) -> None:
         self._base_url = _base_url_or_raise(
             base_url,
-            {{{baseUrlErrorLiteral}}},
+            {{{asyncBaseUrlErrorLiteral}}},
         )
         self._max_retries = _check_max_retries(
             max_retries,
-            {{{maxRetriesErrorLiteral}}},
+            {{{asyncMaxRetriesErrorLiteral}}},
         )
-        self._http = http_client if http_client is not None else httpx.AsyncClient()
+        self._http = http_client if http_client is not None else httpx.AsyncClient(follow_redirects=True)
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}

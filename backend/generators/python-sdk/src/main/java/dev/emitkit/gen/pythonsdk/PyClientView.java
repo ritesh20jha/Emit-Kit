@@ -28,7 +28,9 @@ import java.util.regex.Pattern;
  * @param hasDefaultBaseUrl whether a default base URL exists
  * @param baseUrlAdvice plain-text sentence telling the caller what base URL to pass
  * @param baseUrlErrorLiteral the constructor's base URL error message as a string literal
- * @param maxRetriesErrorLiteral the constructor's retry validation message as a string literal
+ * @param maxRetriesErrorLiteral the sync constructor's retry validation message as a string literal
+ * @param asyncBaseUrlErrorLiteral the async constructor's base URL error as a string literal
+ * @param asyncMaxRetriesErrorLiteral the async constructor's retry error as a string literal
  * @param hasApiKey whether the API declares a header or query apiKey scheme
  * @param hasBearer whether the API declares an HTTP bearer, OAuth2 or OpenID Connect scheme
  * @param hasBasic whether the API declares an HTTP basic scheme
@@ -52,6 +54,8 @@ record PyClientView(
     String baseUrlAdvice,
     String baseUrlErrorLiteral,
     String maxRetriesErrorLiteral,
+    String asyncBaseUrlErrorLiteral,
+    String asyncMaxRetriesErrorLiteral,
     boolean hasApiKey,
     boolean hasBearer,
     boolean hasBasic,
@@ -94,6 +98,8 @@ record PyClientView(
         advice,
         quote(className + ": base_url is required. " + advice),
         quote(className + ": max_retries must be a non-negative integer"),
+        quote("Async" + className + ": base_url is required. " + advice),
+        quote("Async" + className + ": max_retries must be a non-negative integer"),
         !headers.isEmpty() || !queries.isEmpty(),
         schemes.stream().anyMatch(PyClientView::isBearerScheme),
         schemes.stream()
@@ -181,7 +187,7 @@ record PyClientView(
         case '\r' -> out.append("\\r");
         case '\t' -> out.append("\\t");
         default -> {
-          if (c < 0x20 || c == 0x2028 || c == 0x2029) {
+          if (c < 0x20 || c == 0x7F || c == 0x2028 || c == 0x2029) {
             out.append(String.format("\\u%04X", (int) c));
           } else {
             out.append(c);
