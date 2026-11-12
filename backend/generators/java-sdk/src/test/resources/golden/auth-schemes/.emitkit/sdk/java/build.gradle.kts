@@ -17,10 +17,10 @@ repositories {
 
 tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
+    options.encoding = "UTF-8"
 }
 
 dependencies {
-    // JSON is handled by Jackson 2, the version this SDK is built against.
     api("com.fasterxml.jackson.core:jackson-databind:2.17.2")
 }
 

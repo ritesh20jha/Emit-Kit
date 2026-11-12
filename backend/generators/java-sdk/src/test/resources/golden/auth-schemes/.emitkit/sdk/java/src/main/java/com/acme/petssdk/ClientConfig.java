@@ -7,15 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * Resolved settings for {@link AuthSchemesClient}, built by {@link AuthSchemesClient.Builder}.
- *
- * @param baseUrl base URL without trailing slashes
- * @param maxRetries retries for 429 and 5xx responses
- * @param httpClient HTTP client that sends requests
- * @param authHeaders headers that carry credentials
- * @param authQuery query parameters that carry credentials
- */
+/** Settings for {@link AuthSchemesClient}, built by its builder. */
 record ClientConfig(
     String baseUrl,
     int maxRetries,

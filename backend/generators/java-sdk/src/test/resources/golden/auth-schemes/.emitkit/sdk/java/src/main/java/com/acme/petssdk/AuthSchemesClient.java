@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +23,7 @@ public final class AuthSchemesClient {
   private static final String DEFAULT_BASE_URL = "";
   private static final int DEFAULT_MAX_RETRIES = 2;
   private static final long RETRY_BASE_DELAY_MILLIS = 500;
+  private static final int MAX_BACKOFF_SHIFT = 10;
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final ClientConfig config;
@@ -40,6 +40,11 @@ public final class AuthSchemesClient {
   /**
    * Sends a request with the configured credentials. 429 and 5xx responses are retried with
    * exponential backoff. Other non-2xx statuses throw an {@link ApiException} subclass.
+   *
+   * <p>{@code path} must start with {@code /} and must already be percent-encoded, so the caller
+   * escapes path parameters. Query names and values are encoded here. Entries with a null name or
+   * value are skipped, and a null {@code query} is treated as empty. A null {@code body} sends no
+   * body.
    */
   public HttpResponse<String> request(
       String method, String path, Map<String, String> query, Object body) {
@@ -53,14 +58,21 @@ public final class AuthSchemesClient {
       if (!isRetryable(status) || attempt >= config.maxRetries()) {
         throw toApiException(status, response.body());
       }
-      sleep(RETRY_BASE_DELAY_MILLIS * (1L << attempt));
+      sleep(RETRY_BASE_DELAY_MILLIS * (1L << Math.min(attempt, MAX_BACKOFF_SHIFT)));
     }
   }
 
   private HttpRequest buildRequest(
       String method, String path, Map<String, String> query, Object body) {
     Map<String, String> allQuery = new LinkedHashMap<>(config.authQuery());
-    allQuery.putAll(query);
+    if (query != null) {
+      query.forEach(
+          (name, value) -> {
+            if (name != null && value != null) {
+              allQuery.put(name, value);
+            }
+          });
+    }
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
     config.authHeaders().forEach(builder::header);
@@ -136,7 +148,7 @@ public final class AuthSchemesClient {
 
     private String baseUrl;
     private int maxRetries = DEFAULT_MAX_RETRIES;
-    private HttpClient httpClient;
+    private java.net.http.HttpClient httpClient;
     private String apiKey;
     private String bearerToken;
     private String basicUsername;
@@ -156,8 +168,8 @@ public final class AuthSchemesClient {
       return this;
     }
 
-    /** HTTP client for requests. Defaults to {@code HttpClient.newHttpClient()}. */
-    public Builder httpClient(HttpClient httpClient) {
+    /** HTTP client for requests. Defaults to a client that follows redirects. */
+    public Builder httpClient(java.net.http.HttpClient httpClient) {
       this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
       return this;
     }
@@ -203,7 +215,12 @@ public final class AuthSchemesClient {
       if (basicUsername != null && !headers.containsKey("Authorization")) {
         headers.put("Authorization", basicCredentials(basicUsername, basicPassword));
       }
-      HttpClient client = httpClient == null ? HttpClient.newHttpClient() : httpClient;
+      java.net.http.HttpClient client =
+          httpClient != null
+              ? httpClient
+              : java.net.http.HttpClient.newBuilder()
+                  .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+                  .build();
       return new AuthSchemesClient(
           new ClientConfig(resolvedBaseUrl, maxRetries, client, headers, query));
     }

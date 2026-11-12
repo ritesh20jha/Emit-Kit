@@ -38,9 +38,3 @@ Non-2xx responses throw an `ApiException` subclass: `UnauthorizedException` (401
 
 429 and 5xx responses are retried with exponential backoff, twice by default. Set `maxRetries` on
 the builder to change that.
-
-## Build
-
-```sh
-gradle build
-```

@@ -1,6 +1,7 @@
 package dev.emitkit.gen.javasdk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.emitkit.gen.core.FileKind;
 import dev.emitkit.gen.core.GeneratedFile;
@@ -186,6 +187,23 @@ class JavaSdkGeneratorTest {
     assertThat(clientSource("Pets */ Store", List.of()))
         .contains("/** Client for the Pets *&#47; Store API. */")
         .contains("public final class PetsStoreClient {");
+  }
+
+  @Test
+  void clientNamedAfterAnImportedTypeDoesNotClash() {
+    // "HttpClient" already ends in Client, so the name is not suffixed. The client must not also
+    // import java.net.http.HttpClient, which would be a duplicate declaration.
+    assertThat(clientSource("Http Client", List.of()))
+        .contains("public final class HttpClient {")
+        .doesNotContain("import java.net.http.HttpClient;")
+        .contains("private java.net.http.HttpClient httpClient;");
+  }
+
+  @Test
+  void coordinatesThatCannotSitInAKotlinStringAreRejected() {
+    assertThatThrownBy(() -> generate("petstore", ".emitkit/", names("com.acme", "pets sdk")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("artifactId");
   }
 
   private static String missingBaseUrl(String advice) {

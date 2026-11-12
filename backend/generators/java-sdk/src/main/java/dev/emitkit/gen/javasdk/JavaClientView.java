@@ -15,9 +15,9 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Values rendered by the Java SDK templates. {@code *Literal} fields are quoted for their target:
- * Java string literals, or Kotlin literals for {@code build.gradle.kts}. The other fields are plain
- * text for comments and Markdown.
+ * Values rendered by the Java SDK templates. {@code *Literal} fields are Java string literals. The
+ * coordinates are validated to characters that are safe inside Kotlin and Markdown, so the
+ * templates place them between plain quotes.
  */
 record JavaClientView(
     String packageName,
@@ -27,9 +27,6 @@ record JavaClientView(
     String version,
     String groupId,
     String artifactId,
-    String groupLiteral,
-    String artifactLiteral,
-    String versionLiteral,
     String defaultBaseUrlLiteral,
     String defaultBaseUrl,
     boolean hasDefaultBaseUrl,
@@ -43,6 +40,7 @@ record JavaClientView(
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
   private static final Pattern JAVA_SEGMENT = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+  private static final Pattern COORDINATE = Pattern.compile("[A-Za-z0-9._+-]+");
 
   /** A quoted name rendered verbatim into the template. */
   record Literal(String text) {}
@@ -50,7 +48,10 @@ record JavaClientView(
   static JavaClientView of(ApiModel model, GeneratorContext ctx) {
     PackageNames names = ctx.names();
     String groupId = Objects.requireNonNull(names.mavenGroupId(), "mavenGroupId");
-    String artifactId = Objects.requireNonNull(names.mavenArtifactId(), "mavenArtifactId");
+    String artifactId =
+        coordinate(
+            Objects.requireNonNull(names.mavenArtifactId(), "mavenArtifactId"), "artifactId");
+    String version = coordinate(ctx.version(), "version");
     String packageName = basePackage(groupId, artifactId);
     String className =
         clientName(NameStrategy.forLanguage(Language.JAVA).type(model.info().title()));
@@ -64,12 +65,9 @@ record JavaClientView(
         packageName.replace('.', '/'),
         className,
         docText(model.info().title()),
-        ctx.version(),
+        version,
         groupId,
         artifactId,
-        kotlinQuote(groupId),
-        kotlinQuote(artifactId),
-        kotlinQuote(ctx.version()),
         quote(defaultUrl),
         defaultUrl,
         !defaultUrl.isEmpty(),
@@ -81,6 +79,15 @@ record JavaClientView(
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
         headers,
         queries);
+  }
+
+  /** Rejects a Maven artifact id or version that could not be written raw into a Kotlin string. */
+  static String coordinate(String value, String field) {
+    if (!COORDINATE.matcher(value).matches()) {
+      throw new IllegalArgumentException(
+          field + " may only contain letters, digits, '.', '_', '+' and '-': " + value);
+    }
+    return value;
   }
 
   /**
@@ -181,26 +188,6 @@ record JavaClientView(
           if (c < 0x20) {
             out.append(String.format("\\%03o", (int) c));
           } else if (c >= 0x7F) {
-            out.append(String.format("\\u%04X", (int) c));
-          } else {
-            out.append(c);
-          }
-        }
-      }
-    }
-    return out.append('"').toString();
-  }
-
-  /** Renders {@code value} as a double-quoted Kotlin string literal, escaping {@code $}. */
-  static String kotlinQuote(String value) {
-    StringBuilder out = new StringBuilder("\"");
-    for (char c : value.toCharArray()) {
-      switch (c) {
-        case '"' -> out.append("\\\"");
-        case '\\' -> out.append("\\\\");
-        case '$' -> out.append("\\$");
-        default -> {
-          if (c < 0x20 || c >= 0x7F) {
             out.append(String.format("\\u%04X", (int) c));
           } else {
             out.append(c);
