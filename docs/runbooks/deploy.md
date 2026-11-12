@@ -13,7 +13,7 @@ Runbook for the single-host production stack in `deploy/compose/docker-compose.p
 | `postgres`, `rabbitmq`, `redis`, `rustfs` | 1 | Named volumes. `rustfs-init` creates the artifact bucket. |
 | `backup` | 1 | Scheduled off-host backups of Postgres, Vault, RustFS and the WAL. No port. See [restore.md](restore.md). |
 
-Networks: `edge` (Caddy only), `app` (internal, everything else) and `egress` (non-internal, `api` and `worker` only, for outbound calls). Nothing else is published on the host.
+Networks: `edge` (Caddy only), `app` (internal, everything else) and `egress` (non-internal, `api`, `worker` and `backup` only, for outbound calls). Nothing else is published on the host.
 
 ## Before you start
 
@@ -40,9 +40,9 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
    getent group emitkit-sandbox | cut -d: -f3   # the value for SANDBOX_GID (the example's 10010 is a sample)
    ```
 
-   Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID` and `BACKUP_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them.
+   Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID` and `BACKUP_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them. Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
 
-   The off-host backup target is a bucket on another service, not on this host. Fill `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` with a key that can write to `BACKUP_S3_BUCKET` (and nothing else), and check `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET` and `BACKUP_S3_REGION`. Create the bucket first. The first backup runs at 02:00 UTC, or run it by hand (restore.md). Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
+   The off-host backup target is a bucket on another service: fill `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` (a key for that bucket only), and check the other `BACKUP_S3_*` values. Backups and restores are in [restore.md](restore.md).
 
    `.env.prod`, `secrets/` and `backups/` are git-ignored. Keep them out of the repository.
 
@@ -83,7 +83,7 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
    $V write auth/approle/role/emitkit-backup token_policies=emitkit-backup token_ttl=1h
    ```
 
-6. Put the role IDs in `.env.prod` (`API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID`):
+6. Put the role IDs in `.env.prod` (`API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID`, `BACKUP_VAULT_ROLE_ID`):
 
    ```sh
    $V read -field=role_id auth/approle/role/emitkit-api/role-id
@@ -201,7 +201,7 @@ Shares are typed at the prompt. They must never go on the command line, where `p
 ## Known gaps
 
 - Traffic between the app containers and Vault, Postgres, RabbitMQ, Redis and RustFS is plain text on the `app` network. Vault has `tls_disable = true`. Redis has no password.
-- `app` is `internal: true`. `api` and `worker` also join `egress` (not internal) for outbound calls such as GitHub. Nothing on `egress` publishes a port. Anything that must not reach the internet belongs on `app` only.
+- `app` is `internal: true`. `api`, `worker` and `backup` also join `egress` (not internal) for outbound calls such as GitHub and the off-host target. Nothing on `egress` publishes a port. Anything that must not reach the internet belongs on `app` only.
 - The worker's sandbox socket is root-equivalent on the host. See `docs/spikes/2026-gvisor-rootless.md`, "Security under B". Who may join the `emitkit-sandbox` group is still to be decided.
 - Vault runs as a single node, unsealed by hand. High availability and auto-unseal are v4.
 - Backups run off-host on a schedule, and restores are a manual procedure. Point-in-time recovery is not possible yet. See [restore.md](restore.md), Known gaps.

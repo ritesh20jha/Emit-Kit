@@ -39,9 +39,7 @@ jobs:
       - name: Smoke test
         run: bash deploy/compose/smoke.sh
 
-  # Backups restore: seeds a source stack, backs it up off-host, restores into a fresh stack and checks that a
-  # stored webhook secret still decrypts. Throwaway secrets only. The script removes all its stacks and volumes,
-  # also on failure. Separate job so that it has its own time limit (it builds the api image).
+  # Restore drill (scripts/restore-drill.sh): throwaway secrets, removes its stacks also on failure.
   restore-drill:
     runs-on: ubuntu-latest
     timeout-minutes: 45

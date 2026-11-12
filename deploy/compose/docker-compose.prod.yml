@@ -157,15 +157,16 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-emitkit}
       POSTGRES_USER: ${POSTGRES_USER:-emitkit}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
-    # WAL archive for the backup job. Each segment is copied to the spool as the postgres user, with umask 027 so
-    # that group postgres (the backup job's group) can read it. The rename comes last, so the backup job never
-    # reads a partial segment. Point-in-time recovery also needs base backups: see docs/runbooks/restore.md.
+    # WAL spool for the backup job (restore.md). cp keeps the source's 0600 mode, so chmod 0640 makes the copy
+    # readable by group postgres, which the job is in. The rename comes last; test refuses to overwrite a segment.
     command:
       - postgres
       - -c
       - archive_mode=on
       - -c
-      - "archive_command=umask 027 && cp %p /wal-archive/%f.partial && mv /wal-archive/%f.partial /wal-archive/%f"
+      - archive_timeout=15min
+      - -c
+      - "archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f.partial && chmod 0640 /wal-archive/%f.partial && mv /wal-archive/%f.partial /wal-archive/%f"
     # Postgres 18+ images keep PGDATA under a version-specific subdirectory of /var/lib/postgresql.
     volumes:
       - postgres-data:/var/lib/postgresql
@@ -279,9 +280,7 @@ services:
     restart: "no"
     networks: [app]
 
-  # Off-host backups (docs/runbooks/restore.md). Root runs busybox crond, which runs each job as user backup
-  # (uid 10001). crond needs SETUID to switch to that user and SETGID to set its groups. Each one alone fails
-  # with "Operation not permitted" when a job starts, so both are added back and nothing else.
+  # Off-host backups (restore.md). crond needs SETUID and SETGID to run each job as uid 10001; each alone fails.
   backup:
     <<: *common
     build:

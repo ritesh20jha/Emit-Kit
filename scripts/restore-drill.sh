@@ -1,27 +1,17 @@
 #!/usr/bin/env bash
-# Restore drill (OPS-02). Proves that a backup restores a working stack and that the stored webhook secrets
-# still decrypt. Steps:
-#  1. Off-host target: a second RustFS in its own compose project (emitkit-drill-offhost) on a shared network.
-#  2. Source stack (emitkit-drill-src): Postgres, Vault with the real Raft config, RustFS, api (it creates the
-#     schema) and backup. Seed two projects (one with a Transit-encrypted webhook secret) and one artifact, then
-#     run `backup.sh now` to the off-host target.
-#  3. Remove the source stack with its volumes, so only off-host data is left.
-#  4. Drill stack (project drill): restore Postgres, Vault (snapshot, then the source unseal key) and RustFS from
-#     off-host data, start the api, then check the row count, the artifact and the selftest.
-#  Negative check: while the restored Vault is still sealed, the selftest must answer fail.
-# Needs only Docker with Compose. Runs from any directory: bash scripts/restore-drill.sh
+# Restore drill (OPS-02). Seeds a source stack and backs it up off-host, removes the source with its volumes, then
+# restores a fresh drill stack from off-host data only. Checks: WAL segment off-host, row count, artifact, selftest.
+# The selftest must fail while the restored Vault is sealed. Needs only Docker with Compose: bash scripts/restore-drill.sh
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")/../deploy/compose" && pwd)
 cd "$DIR"
 umask 077
-
 WORK=$(mktemp -d)
 SECRETS=$WORK/secrets
 ENV_FILE=$WORK/drill.env
 NETWORK=emitkit-drill-offsite
 OFF_BUCKET=backups
-ARTIFACT_BUCKET=emitkit-artifacts
 OBJECT_KEY=drill/seeded.txt
 OBJECT_BODY=$(openssl rand -hex 16)
 WEBHOOK_PLAINTEXT=$(openssl rand -hex 16)
@@ -33,7 +23,6 @@ PROJECT_B=$(printf '01DRILLPROJ%015d' 2)
 COMPOSE_ARGS=(-f docker-compose.prod.yml -f backup/docker-compose.drill.yml --env-file "$ENV_FILE")
 
 fail() { echo "restore drill FAILED: $*" >&2; exit 1; }
-
 src()   { docker compose -p emitkit-drill-src     "${COMPOSE_ARGS[@]}" "$@"; }
 drill() { docker compose -p drill                 "${COMPOSE_ARGS[@]}" "$@"; }
 off()   { docker compose -p emitkit-drill-offhost "${COMPOSE_ARGS[@]}" "$@"; }
@@ -60,21 +49,12 @@ cleanup() {
   rm -rf "$WORK" 2>/dev/null
   exit "$status"
 }
-trap cleanup EXIT
-
-# set_env KEY VALUE replaces KEY in the throwaway env file (the example's samples would otherwise point at real hosts).
-set_env() {
-  grep -v "^$1=" "$ENV_FILE" > "$ENV_FILE.new" || true
-  printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE.new"
-  mv "$ENV_FILE.new" "$ENV_FILE"
-}
 
 # init_vault STACK initializes Vault with one throwaway key and unseals it. Sets INIT_UNSEAL and INIT_ROOT.
-# The output is parsed and never printed.
+# The init output is parsed and never printed.
 init_vault() {
   local json flat
-  json=$("$1" exec -T vault vault operator init -key-shares=1 -key-threshold=1 -format=json) ||
-    fail "vault operator init ($1)"
+  json=$("$1" exec -T vault vault operator init -key-shares=1 -key-threshold=1 -format=json) || fail "vault init ($1)"
   flat=$(printf '%s' "$json" | tr -d ' \n')
   INIT_UNSEAL=$(printf '%s' "$flat" | sed -n 's/.*"unseal_keys_b64":\["\([^"]*\)".*/\1/p')
   INIT_ROOT=$(printf '%s' "$flat" | sed -n 's/.*"root_token":"\([^"]*\)".*/\1/p')
@@ -82,7 +62,7 @@ init_vault() {
   "$1" exec -T vault vault operator unseal "$INIT_UNSEAL" >/dev/null || fail "vault unseal ($1)"
 }
 
-# drill_sh runs a shell command in a one-off backup container of the drill stack (off-host reads and writes).
+# drill_sh runs a shell command in a one-off backup container of the drill stack.
 drill_sh() {
   drill run --rm --no-deps -T -u backup --entrypoint sh backup -c "$1"
 }
@@ -92,10 +72,10 @@ latest_offsite() {
   drill_sh "rclone lsf \"offhost:\$BACKUP_S3_BUCKET/$1/\" | sort | tail -n 1"
 }
 
-# seed_data writes two projects and their owner and org. The first project's webhook secret is encrypted by
-# Vault Transit with the context the api uses (SecretContext: table:column:rowId, base64 for Vault).
+# seed_data writes an owner, an org and two projects. The first project's webhook secret is encrypted by Vault
+# Transit with the context the api uses (SecretContext: table:column:rowId, base64 for Vault).
 seed_data() {
-  local ctx pt ct
+  local ctx pt ct sql
   ctx=$(printf '%s' "projects:webhook_secret_enc:$PROJECT_A" | base64 | tr -d '\n')
   pt=$(printf '%s' "$WEBHOOK_PLAINTEXT" | base64 | tr -d '\n')
   export VAULT_TOKEN=$SRC_ROOT
@@ -103,8 +83,6 @@ seed_data() {
     plaintext="$pt" context="$ctx") || fail "transit encrypt"
   unset VAULT_TOKEN
   case "$ct" in vault:v1:*) ;; *) fail "unexpected transit ciphertext format" ;; esac
-
-  local sql
   sql=$(cat <<SQL
 insert into users (id, github_id, login, avatar_url, created_at, updated_at)
 values ('$USER_ID', 9001, 'drill-owner', 'https://example.invalid/avatar.png', now(), now());
@@ -127,26 +105,30 @@ SQL
     fail "seed artifact"
 }
 
-# check_offsite asserts that the backup run left a dump, a snapshot and the artifact off-host.
-check_offsite() {
-  local kind got
-  for kind in pg vault; do
-    src exec -T -u backup backup rclone lsf "offhost:$OFF_BUCKET/$kind/" | grep -q . ||
-      fail "no $kind backup off-host after backup now"
-  done
-  got=$(src exec -T -u backup backup rclone cat "offhost:$OFF_BUCKET/rustfs/$OBJECT_KEY") ||
-    fail "artifact not mirrored off-host"
-  [ "$got" = "$OBJECT_BODY" ] || fail "mirrored artifact differs from the seeded one"
+# archived prints the source's pg_stat_archiver.archived_count.
+archived() {
+  src exec -T postgres sh -c 'exec psql -X -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select archived_count from pg_stat_archiver"' |
+    tr -d '[:space:]'
 }
 
-restore_postgres() {
-  local name
-  name=$(latest_offsite pg)
-  [ -n "$name" ] || fail "no pg dump off-host"
-  drill_sh "rclone cat \"offhost:\$BACKUP_S3_BUCKET/pg/$name\"" |
-    drill exec -T postgres sh -c \
-      'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error' ||
-    fail "pg_restore"
+# wal_drill forces a WAL segment on the source, waits until postgres has archived it, moves the spool off-host
+# (min age 0s, the drill only) and asserts that a segment arrived and that the spool is drained.
+wal_drill() {
+  local before now_count left
+  before=$(archived) || fail "read pg_stat_archiver"
+  src exec -T postgres sh -c 'exec psql -X -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select pg_switch_wal()"' >/dev/null ||
+    fail "pg_switch_wal"
+  for _ in $(seq 60); do
+    now_count=$(archived)
+    [ "$now_count" -gt "$before" ] && break
+    sleep 1
+  done
+  [ "${now_count:-0}" -gt "$before" ] || fail "postgres did not archive the switched WAL segment"
+  src exec -T -u backup -e WAL_MIN_AGE=0s backup /usr/local/bin/backup.sh wal || fail "backup.sh wal"
+  moved=$(src exec -T -u backup backup sh -c 'rclone lsf "offhost:$BACKUP_S3_BUCKET/wal/"') || fail "list off-host WAL"
+  [ -n "$moved" ] || fail "no WAL segment off-host after backup.sh wal"
+  left=$(src exec -T -u backup backup ls -A /wal-archive) || fail "list the WAL spool"
+  [ -z "$left" ] || fail "WAL spool not drained: $left"
 }
 
 restore_vault() {
@@ -177,39 +159,37 @@ restore_vault() {
   fi
 }
 
-restore_rustfs() {
-  drill_sh 'rclone sync "offhost:$BACKUP_S3_BUCKET/rustfs/" "rustfs:$S3_BUCKET"' ||
-    fail "rustfs sync from off-host"
-}
-
 # selftest prints the api's answer for the seeded project. It fails (non-zero) on any non-2xx answer.
 selftest() {
   drill exec -T api curl -fsS "http://127.0.0.1:8081/internal/selftest/decrypt?projectId=$PROJECT_A"
 }
 
-# --- 0. Environment: generated values for every empty key, then the off-host target's own throwaway keys.
 mkdir -p "$SECRETS"
+trap cleanup EXIT
+
+# Environment: generated values for every empty key, then the throwaway off-host keys and drill paths. Later
+# duplicates win in a compose env file, so these lines replace the example's samples.
 bash gen-env.sh > "$ENV_FILE"
 OFF_KEY=$(openssl rand -hex 16)
 OFF_SECRET=$(openssl rand -hex 24)
-set_env OFFHOST_RUSTFS_ACCESS_KEY "$OFF_KEY"
-set_env OFFHOST_RUSTFS_SECRET_KEY "$OFF_SECRET"
-set_env BACKUP_S3_ENDPOINT http://offhost:9000
-set_env BACKUP_S3_BUCKET "$OFF_BUCKET"
-set_env BACKUP_S3_REGION us-east-1
-set_env BACKUP_S3_ACCESS_KEY "$OFF_KEY"
-set_env BACKUP_S3_SECRET_KEY "$OFF_SECRET"
-set_env S3_BUCKET "$ARTIFACT_BUCKET"
-set_env DRILL_SECRETS_DIR "$SECRETS"
-set_env API_VAULT_SECRET_ID_FILE "$SECRETS/api-secret-id"
-set_env WORKER_VAULT_SECRET_ID_FILE "$SECRETS/worker-secret-id"
-set_env BACKUP_VAULT_SECRET_ID_FILE "$SECRETS/backup-secret-id"
+cat >> "$ENV_FILE" <<ENV
+OFFHOST_RUSTFS_ACCESS_KEY=$OFF_KEY
+OFFHOST_RUSTFS_SECRET_KEY=$OFF_SECRET
+BACKUP_S3_ENDPOINT=http://offhost:9000
+BACKUP_S3_BUCKET=$OFF_BUCKET
+BACKUP_S3_REGION=us-east-1
+BACKUP_S3_ACCESS_KEY=$OFF_KEY
+BACKUP_S3_SECRET_KEY=$OFF_SECRET
+DRILL_SECRETS_DIR=$SECRETS
+API_VAULT_SECRET_ID_FILE=$SECRETS/api-secret-id
+WORKER_VAULT_SECRET_ID_FILE=$SECRETS/worker-secret-id
+BACKUP_VAULT_SECRET_ID_FILE=$SECRETS/backup-secret-id
+ENV
 
 docker network create "$NETWORK" >/dev/null
 echo "== off-host target"
-off up -d --wait offhost offhost-init
+off up -d --wait offhost
 
-# --- 1. Source stack: Vault bootstrap (the same init.sh as smoke), the api creates the schema, seed, backup.
 echo "== source stack: vault bootstrap"
 src up -d --wait vault
 init_vault src
@@ -217,24 +197,30 @@ SRC_UNSEAL=$INIT_UNSEAL
 SRC_ROOT=$INIT_ROOT
 export DRILL_VAULT_ROOT_TOKEN=$SRC_ROOT
 src up -d --wait vault-init
-API_VAULT_ROLE_ID=$(cat "$SECRETS/api-role-id") || fail "api AppRole role id"
-BACKUP_VAULT_ROLE_ID=$(cat "$SECRETS/backup-role-id") || fail "backup AppRole role id"
+API_VAULT_ROLE_ID=$(cat "$SECRETS/api-role-id") || fail "api role id"
+BACKUP_VAULT_ROLE_ID=$(cat "$SECRETS/backup-role-id") || fail "backup role id"
 export API_VAULT_ROLE_ID BACKUP_VAULT_ROLE_ID
 
 echo "== source stack: api (creates the schema), backup"
 src up -d --wait --build api backup
+src run --rm --no-deps -T -u backup --entrypoint rclone backup mkdir "offhost:$OFF_BUCKET"
 seed_data
 src exec -T -u backup backup /usr/local/bin/backup.sh now
-check_offsite
+echo "== source stack: WAL segment off-host"
+wal_drill
 src down -v --remove-orphans
-echo "source stack removed with its volumes; only off-host data is left"
+echo "== source stack removed with its volumes; only off-host data is left"
 
-# --- 2. Drill stack: restore from off-host data only.
 echo "== drill stack: restore"
 drill up -d --wait postgres rustfs-init
-restore_postgres
+name=$(latest_offsite pg)
+[ -n "$name" ] || fail "no pg dump off-host"
+drill_sh "rclone cat \"offhost:\$BACKUP_S3_BUCKET/pg/$name\"" |
+  drill exec -T postgres sh -c \
+    'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --exit-on-error' ||
+  fail "pg_restore"
 restore_vault
-restore_rustfs
+drill_sh 'rclone sync "offhost:$BACKUP_S3_BUCKET/rustfs/" "rustfs:$S3_BUCKET"' || fail "rustfs sync from off-host"
 drill up -d --wait api
 
 if selftest >/dev/null 2>&1; then

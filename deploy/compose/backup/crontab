@@ -1,6 +1,5 @@
-# Schedule for backup.sh, in UTC. busybox crond runs each job as user backup (the file name), after dropping
-# privileges. Each job sources the environment that `backup.sh start` wrote. Output goes to the log file that
-# `backup.sh start` streams to the container log (a job running as backup cannot write to /proc/1/fd/1).
+# Schedule in UTC. Each job runs as user backup (the file name) and reads the env that `backup.sh start` wrote.
+# Output goes to cron.log, which `backup.sh start` streams to the container log.
 0 2 * * *     . /run/backup/env && umask 022 && /usr/local/bin/backup.sh pg >>/var/lib/backup/cron.log 2>&1
 0 3 * * *     . /run/backup/env && umask 022 && /usr/local/bin/backup.sh rustfs >>/var/lib/backup/cron.log 2>&1
 0 */6 * * *   . /run/backup/env && umask 022 && /usr/local/bin/backup.sh vault >>/var/lib/backup/cron.log 2>&1

@@ -1,7 +1,4 @@
-# Restore drill only (scripts/restore-drill.sh). Never use in production.
-# Adds a throwaway off-host RustFS on a network both stacks share, the Vault bootstrap container that smoke.sh
-# also uses (init.sh, with the drill's own root token), and access from the backup container to the off-host
-# network. Paths are relative to deploy/compose, the project directory of docker-compose.prod.yml.
+# Restore drill only (scripts/restore-drill.sh). Never use in production. Paths are relative to deploy/compose.
 services:
   backup:
     networks: !override [app, egress, offsite]
@@ -15,8 +12,7 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: ${DRILL_VAULT_ROOT_TOKEN:-}
-    # The secrets directory is created by the host user, but init.sh writes into it as root.
-    user: "0:0"
+    user: "0:0" # init.sh writes into the host-created secrets dir as root
     entrypoint: ["/bin/sh", "-c", "rm -f /tmp/ready && /bin/sh /init.sh && touch /tmp/ready && exec sleep infinity"]
     volumes:
       - ./vault/init.sh:/init.sh:ro
@@ -43,34 +39,6 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
-    networks: [offsite]
-
-  offhost-init:
-    image: amazon/aws-cli:2.39.3
-    depends_on:
-      offhost:
-        condition: service_healthy
-    environment:
-      AWS_ACCESS_KEY_ID: ${OFFHOST_RUSTFS_ACCESS_KEY:?}
-      AWS_SECRET_ACCESS_KEY: ${OFFHOST_RUSTFS_SECRET_KEY:?}
-      AWS_DEFAULT_REGION: us-east-1
-      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-      S3_ENDPOINT: http://offhost:9000
-      S3_BUCKET: backups
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        rm -f /tmp/ready &&
-        (aws --endpoint-url "$$S3_ENDPOINT" s3api head-bucket --bucket "$$S3_BUCKET" >/dev/null 2>&1 ||
-        aws --endpoint-url "$$S3_ENDPOINT" s3api create-bucket --bucket "$$S3_BUCKET") &&
-        touch /tmp/ready && exec sleep infinity
-    healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/ready"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-    restart: "no"
     networks: [offsite]
 
 volumes:
