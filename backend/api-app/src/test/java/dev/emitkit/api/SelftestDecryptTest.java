@@ -20,7 +20,12 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 @SpringBootTest(
     webEnvironment = RANDOM_PORT,
-    properties = {"management.server.port=0", "emitkit.vault.cipher=local"})
+    properties = {
+      "management.server.port=0",
+      "emitkit.vault.cipher=local",
+      GitHubTestCredentials.CLIENT_ID,
+      GitHubTestCredentials.CLIENT_SECRET
+    })
 @Import({RedisTestConfig.class, PostgresTestConfig.class})
 class SelftestDecryptTest {
 
