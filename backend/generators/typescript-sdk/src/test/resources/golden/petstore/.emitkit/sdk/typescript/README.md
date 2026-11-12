@@ -17,8 +17,16 @@ import { PetstoreClient } from "@acme/petstore-sdk";
 const client = new PetstoreClient({ baseUrl: "https://api.example.com" });
 ```
 
-Pass `baseUrl` when the API declares no servers. Credentials are set through the `AuthOptions`
-fields in `src/client.ts`, one per security scheme the API declares.
+## Base URL
+
+The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.
+
+## Authentication
+
+Credentials are set through the `AuthOptions` fields in `src/client.ts`. Each field exists only when
+the API declares a matching scheme: `apiKey` for API key schemes, `bearerToken` for HTTP bearer,
+OAuth2 and OpenID Connect schemes, and `basic` for HTTP basic. Other schemes, such as cookie API
+keys, are not mapped. Set them with a custom `fetch`.
 
 ## Errors
 

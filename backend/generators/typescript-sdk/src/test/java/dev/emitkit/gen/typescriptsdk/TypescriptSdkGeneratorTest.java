@@ -106,6 +106,79 @@ class TypescriptSdkGeneratorTest {
   }
 
   @Test
+  void oauthOnlyApiGetsABearerTokenOption() {
+    var oauth = new SecurityScheme("oauth", SecurityScheme.Kind.OAUTH2, null, null, null);
+    assertThat(clientSource(Map.of("oauth", oauth)))
+        .contains("  bearerToken?: string;")
+        .contains("this.authHeaders[\"Authorization\"] = `Bearer ${opts.bearerToken}`;");
+  }
+
+  @Test
+  void openIdConnectOnlyApiGetsABearerTokenOption() {
+    var oidc = new SecurityScheme("oidc", SecurityScheme.Kind.OPENID_CONNECT, null, null, null);
+    assertThat(clientSource(Map.of("oidc", oidc)))
+        .contains("  bearerToken?: string;")
+        .contains("this.authHeaders[\"Authorization\"] = `Bearer ${opts.bearerToken}`;");
+  }
+
+  @Test
+  void constructorErrorNamesWhatToPassWhenNoServersAreGiven() {
+    assertThat(clientSource("Petstore", List.of()))
+        .contains(
+            "throw new Error(\"PetstoreClient: baseUrl is required. The API declares no absolute "
+                + "server URL. Pass the full base URL, e.g. https://api.example.com.\");");
+  }
+
+  @Test
+  void constructorErrorNamesRelativeSlashServerAsNoAbsoluteUrl() {
+    assertThat(clientSource("Petstore", List.of(new Server("/", null))))
+        .contains(
+            "throw new Error(\"PetstoreClient: baseUrl is required. The API declares no absolute "
+                + "server URL. Pass the full base URL, e.g. https://api.example.com.\");");
+  }
+
+  @Test
+  void constructorErrorNamesRelativePathServerAndShowsAFullUrl() {
+    assertThat(clientSource("Petstore", List.of(new Server("/api/v3", null))))
+        .contains(
+            "throw new Error(\"PetstoreClient: baseUrl is required. The first server, /api/v3, is "
+                + "not an absolute http(s) URL. Pass the full base URL, e.g. "
+                + "https://api.example.com/api/v3.\");");
+  }
+
+  @Test
+  void constructorErrorNamesTemplatedServer() {
+    assertThat(clientSource("Petstore", List.of(new Server("https://{env}.example.com", null))))
+        .contains(
+            "throw new Error(\"PetstoreClient: baseUrl is required. The first server, "
+                + "https://{env}.example.com, has template variables. Pass the full base URL, "
+                + "e.g. https://api.example.com.\");");
+  }
+
+  @Test
+  void readmeDescribesTheDefaultBaseUrlWhenOneExists() {
+    assertThat(readmeSource("Petstore", List.of(new Server("https://api.example.com/v1", null))))
+        .contains("Requests go to `https://api.example.com/v1` unless `baseUrl` is passed.");
+  }
+
+  @Test
+  void readmeNamesTheRelativeServerWhenNoDefaultExists() {
+    assertThat(readmeSource("Petstore", List.of(new Server("/api/v3", null))))
+        .contains("The first server, /api/v3, is not an absolute http(s) URL.");
+  }
+
+  @Test
+  void quoteEscapesQuotesBackslashesControlCharactersAndSeparators() {
+    assertThat(TsClientView.quote("a\"b\\c\nd\t\r\u2028\u0001"))
+        .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u2028\\u0001\"");
+  }
+
+  @Test
+  void docTextCollapsesWhitespaceAndNeutralisesCommentClose() {
+    assertThat(TsClientView.docText("  Pets */ \n  Store\tAPI ")).isEqualTo("Pets *\\/ Store API");
+  }
+
+  @Test
   void titleCannotCloseTheDocComment() {
     assertThat(clientSource("Pets */ Store", List.of()))
         .contains("/** Client for the Pets *\\/ Store API. */")
@@ -116,7 +189,7 @@ class TypescriptSdkGeneratorTest {
   void noServersMeansTheConstructorRequiresBaseUrl() {
     assertThat(clientSource("Petstore", List.of()))
         .contains("const DEFAULT_BASE_URL = \"\";")
-        .contains("baseUrl is required because the API declares no servers");
+        .contains("The API declares no absolute server URL");
   }
 
   @Test
@@ -137,24 +210,33 @@ class TypescriptSdkGeneratorTest {
   }
 
   private String clientSource(String title, List<Server> servers) {
-    ApiModel base = FixtureSpecs.load("petstore");
-    ApiModel model =
-        new ApiModel(
-            new Info(title, "1.0.0", null, null),
-            servers,
-            base.securitySchemes(),
-            base.tags(),
-            base.operations(),
-            base.schemas());
-    return content(generate(model, ".emitkit/", names(null, "petstore-sdk")), "src/client.ts");
+    return sdkFile(
+        model(title, servers, FixtureSpecs.load("petstore").securitySchemes()), "src/client.ts");
   }
 
   private String clientSource(Map<String, SecurityScheme> schemes) {
+    return sdkFile(
+        model("Petstore", FixtureSpecs.load("petstore").servers(), schemes), "src/client.ts");
+  }
+
+  private String readmeSource(String title, List<Server> servers) {
+    return sdkFile(model(title, servers, Map.of()), "README.md");
+  }
+
+  private static ApiModel model(
+      String title, List<Server> servers, Map<String, SecurityScheme> schemes) {
     ApiModel base = FixtureSpecs.load("petstore");
-    ApiModel model =
-        new ApiModel(
-            base.info(), base.servers(), schemes, base.tags(), base.operations(), base.schemas());
-    return content(generate(model, ".emitkit/", names(null, "petstore-sdk")), "src/client.ts");
+    return new ApiModel(
+        new Info(title, "1.0.0", null, null),
+        servers,
+        schemes,
+        base.tags(),
+        base.operations(),
+        base.schemas());
+  }
+
+  private String sdkFile(ApiModel model, String relative) {
+    return content(generate(model, ".emitkit/", names(null, "petstore-sdk")), relative);
   }
 
   private static String content(List<GeneratedFile> files, String relative) {

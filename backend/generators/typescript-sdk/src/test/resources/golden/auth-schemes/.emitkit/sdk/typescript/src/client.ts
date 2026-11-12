@@ -10,7 +10,7 @@ import {
   UnauthorizedError,
 } from "./errors.js";
 
-/** Base URL used when the caller passes none. Empty when the API declares no servers. */
+/** Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL. */
 const DEFAULT_BASE_URL = "";
 const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 500;
@@ -19,7 +19,7 @@ const RETRY_BASE_DELAY_MS = 500;
 export interface AuthOptions {
   /** API key, sent as a header, or as a query parameter when the API has no header scheme. */
   apiKey?: string;
-  /** Bearer token, sent as `Authorization: Bearer <token>`. */
+  /** Bearer token, sent as `Authorization: Bearer <token>`. Also used for OAuth2 and OpenID Connect. */
   bearerToken?: string;
   /** HTTP Basic credentials, sent as `Authorization: Basic <base64>`. */
   basic?: { username: string; password: string };
@@ -42,7 +42,7 @@ export class AuthSchemesClient {
   constructor(opts: { baseUrl?: string; fetch?: typeof fetch; maxRetries?: number } & AuthOptions) {
     const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
     if (baseUrl === "") {
-      throw new Error("AuthSchemesClient: baseUrl is required because the API declares no servers");
+      throw new Error("AuthSchemesClient: baseUrl is required. The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.");
     }
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.fetchImpl =
@@ -96,6 +96,7 @@ export class AuthSchemesClient {
       if (!isRetryable(response.status) || attempt >= this.maxRetries) {
         throw await toApiError(response);
       }
+      await response.body?.cancel().catch(() => {});
       await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
     }
   }

@@ -1,6 +1,7 @@
 {
   "name": "@acme/petstore-sdk",
   "version": "1.2.3",
+  "types": "./dist/index.d.ts",
   "type": "module",
   "files": ["dist"],
   "exports": {

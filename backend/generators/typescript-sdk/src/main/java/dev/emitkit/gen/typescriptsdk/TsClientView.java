@@ -21,8 +21,12 @@ import java.util.regex.Pattern;
  * @param packageNameLiteral {@code packageName} as a string literal
  * @param versionLiteral package version as a string literal
  * @param defaultBaseUrlLiteral default base URL as a string literal, or {@code ""} when none
+ * @param defaultBaseUrl default base URL as plain text, or {@code ""} when none
+ * @param hasDefaultBaseUrl whether a default base URL exists
+ * @param baseUrlAdvice plain-text sentence telling the caller what base URL to pass
+ * @param baseUrlErrorLiteral the constructor's error message as a string literal
  * @param hasApiKey whether the API declares a header or query apiKey scheme
- * @param hasBearer whether the API declares an HTTP bearer scheme
+ * @param hasBearer whether the API declares an HTTP bearer, OAuth2 or OpenID Connect scheme
  * @param hasBasic whether the API declares an HTTP basic scheme
  * @param apiKeyHeaders header names that receive the API key
  * @param apiKeyQueries query parameter names that receive the API key, empty when a header apiKey
@@ -35,6 +39,10 @@ record TsClientView(
     String packageNameLiteral,
     String versionLiteral,
     String defaultBaseUrlLiteral,
+    String defaultBaseUrl,
+    boolean hasDefaultBaseUrl,
+    String baseUrlAdvice,
+    String baseUrlErrorLiteral,
     boolean hasApiKey,
     boolean hasBearer,
     boolean hasBasic,
@@ -54,7 +62,8 @@ record TsClientView(
     String packageName =
         scope == null || scope.isEmpty() ? names.npmName() : "@" + scope + "/" + names.npmName();
     List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
-    String baseUrl = defaultBaseUrl(model.servers());
+    String defaultUrl = defaultBaseUrl(model.servers());
+    String advice = baseUrlAdvice(model.servers());
     List<Literal> headers = apiKeyNames(schemes, "header");
     List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
     return new TsClientView(
@@ -63,14 +72,26 @@ record TsClientView(
         packageName,
         quote(packageName),
         quote(ctx.version()),
-        quote(baseUrl),
+        quote(defaultUrl),
+        defaultUrl,
+        !defaultUrl.isEmpty(),
+        advice,
+        quote(className + ": baseUrl is required. " + advice),
         !headers.isEmpty() || !queries.isEmpty(),
-        schemes.stream()
-            .anyMatch(s -> s.kind() == Kind.HTTP && "bearer".equalsIgnoreCase(s.scheme())),
+        schemes.stream().anyMatch(TsClientView::isBearerScheme),
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
         headers,
         queries);
+  }
+
+  /** HTTP bearer, OAuth2 and OpenID Connect schemes all carry an access token as a bearer. */
+  private static boolean isBearerScheme(SecurityScheme scheme) {
+    return switch (scheme.kind()) {
+      case HTTP -> "bearer".equalsIgnoreCase(scheme.scheme());
+      case OAUTH2, OPENID_CONNECT -> true;
+      case API_KEY -> false;
+    };
   }
 
   /**
@@ -83,6 +104,31 @@ record TsClientView(
       return "";
     }
     return servers.get(0).url();
+  }
+
+  /**
+   * What the caller must pass when there is no default base URL. A relative or templated first
+   * server is named in the sentence, with an example of a full URL.
+   */
+  static String baseUrlAdvice(List<Server> servers) {
+    if (!defaultBaseUrl(servers).isEmpty()) {
+      return "Pass a non-empty base URL.";
+    }
+    if (servers.isEmpty() || servers.get(0).url().equals("/")) {
+      return "The API declares no absolute server URL. Pass the full base URL, e.g. "
+          + "https://api.example.com.";
+    }
+    String url = servers.get(0).url();
+    boolean templated = url.contains("{");
+    String reason = templated ? "has template variables" : "is not an absolute http(s) URL";
+    String example = "https://api.example.com" + (url.startsWith("/") && !templated ? url : "");
+    return "The first server, "
+        + url
+        + ", "
+        + reason
+        + ". Pass the full base URL, e.g. "
+        + example
+        + ".";
   }
 
   /** Appends {@code Client} unless the name already ends with it. */

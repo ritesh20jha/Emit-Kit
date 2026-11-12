@@ -10,7 +10,7 @@ import {
   UnauthorizedError,
 } from "./errors.js";
 
-/** Base URL used when the caller passes none. Empty when the API declares no servers. */
+/** Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL. */
 const DEFAULT_BASE_URL = "";
 const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 500;
@@ -36,7 +36,7 @@ export class PetstoreClient {
   constructor(opts: { baseUrl?: string; fetch?: typeof fetch; maxRetries?: number } & AuthOptions) {
     const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
     if (baseUrl === "") {
-      throw new Error("PetstoreClient: baseUrl is required because the API declares no servers");
+      throw new Error("PetstoreClient: baseUrl is required. The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.");
     }
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.fetchImpl =
@@ -80,6 +80,7 @@ export class PetstoreClient {
       if (!isRetryable(response.status) || attempt >= this.maxRetries) {
         throw await toApiError(response);
       }
+      await response.body?.cancel().catch(() => {});
       await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
     }
   }
