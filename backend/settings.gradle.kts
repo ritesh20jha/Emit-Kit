@@ -21,6 +21,7 @@ include(
     "generators:core",
     "generators:workflows",
     "generators:typescript-sdk",
+    "generators:mcp",
     "ai",
     "api-app",
     "worker-app",
