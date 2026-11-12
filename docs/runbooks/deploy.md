@@ -42,7 +42,7 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
    Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID` and `BACKUP_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them. Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
 
-   The off-host backup target is a bucket on another service: fill `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` (a key for that bucket only), and check the other `BACKUP_S3_*` values. Backups and restores are in [restore.md](restore.md).
+   The off-host backup target is a bucket on another service: fill `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` (a key for that bucket only), and check the other `BACKUP_S3_*` values. Create the bucket first. It must be `https`, and the endpoint must not be empty. Backups and restores are in [restore.md](restore.md).
 
    `.env.prod`, `secrets/` and `backups/` are git-ignored. Keep them out of the repository.
 
@@ -127,6 +127,13 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
     ```sh
     curl -s -o /dev/null -w '%{http_code}\n' https://<public host>/api/v1/me
     curl -s https://<public host>/ | grep -c '<div id="root">'
+    ```
+
+11. Run one backup by hand. The bucket must already exist (the job does not create it). Check the `last-success` files:
+
+    ```sh
+    $COMPOSE exec -T -u backup backup /usr/local/bin/backup.sh now
+    $COMPOSE exec -T -u backup backup sh -c 'ls /var/lib/backup/last-success-*'
     ```
 
 ## Unseal

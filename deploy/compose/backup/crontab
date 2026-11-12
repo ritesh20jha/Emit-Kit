@@ -1,7 +1,7 @@
 # Schedule in UTC. Each job runs as user backup (the file name) and reads the env that `backup.sh start` wrote.
 # Output goes to cron.log, which `backup.sh start` streams to the container log.
 0 2 * * *     . /run/backup/env && umask 022 && /usr/local/bin/backup.sh pg >>/var/lib/backup/cron.log 2>&1
-0 3 * * *     . /run/backup/env && umask 022 && /usr/local/bin/backup.sh rustfs >>/var/lib/backup/cron.log 2>&1
+30 3 * * *    . /run/backup/env && umask 022 && /usr/local/bin/backup.sh rustfs >>/var/lib/backup/cron.log 2>&1
 0 */6 * * *   . /run/backup/env && umask 022 && /usr/local/bin/backup.sh vault >>/var/lib/backup/cron.log 2>&1
 */15 * * * *  . /run/backup/env && umask 022 && /usr/local/bin/backup.sh wal >>/var/lib/backup/cron.log 2>&1
 0 4 * * *     . /run/backup/env && umask 022 && /usr/local/bin/backup.sh prune >>/var/lib/backup/cron.log 2>&1

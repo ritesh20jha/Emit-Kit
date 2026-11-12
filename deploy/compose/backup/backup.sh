@@ -50,8 +50,7 @@ step_vault() {
 }
 
 step_rustfs() {
-  # Objects that are overwritten or deleted at the source are kept under rustfs-deleted/<run>: a lost RustFS volume
-  # must not erase the only off-host copy. Pruned by name, see step_prune.
+  # Overwritten or deleted objects are kept under rustfs-deleted/<run>: a lost RustFS must not erase the only copy.
   rclone sync "rustfs:$S3_BUCKET" "offhost:$BACKUP_S3_BUCKET/rustfs/" \
     --backup-dir "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/$(stamp)" || fail "rustfs mirror"
   log "rustfs: mirrored $S3_BUCKET"
@@ -67,17 +66,26 @@ step_wal() {
 }
 
 step_prune() {
-  # Seven days. rustfs/ (the mirror) is not pruned. rustfs-deleted/ is aged by its run name: a moved object may keep
-  # its original modification time, which can be older than the copy.
-  for kind in pg vault wal; do
-    rclone delete "offhost:$BACKUP_S3_BUCKET/$kind/" --min-age 7d || fail "prune $kind"
-  done
+  # Seven days. A kind is pruned only while its marker is under 48 h old. rustfs-deleted/ is aged by run name.
   cutoff=$(date -u -d "@$(( $(date -u +%s) - 604800 ))" +%Y%m%dT%H%M%SZ)
-  runs=$(rclone lsf "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/" --dirs-only) || fail "list rustfs-deleted"
-  for run in $(printf '%s\n' "$runs" | awk -v c="$cutoff" '{ n = $0; sub(/\/$/, "", n); if (n < c) print n }'); do
-    rclone purge "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/$run" || fail "prune rustfs-deleted $run"
+  for kind in pg vault wal rustfs-deleted; do
+    step=$kind
+    [ "$kind" = rustfs-deleted ] && step=rustfs
+    marker=$STATE/last-success-$step
+    if [ -z "$(find "$marker" -mmin -2880 2>/dev/null)" ]; then
+      log "WARN: prune of $kind skipped: $marker is missing or older than 48 h"
+      continue
+    fi
+    if [ "$kind" = rustfs-deleted ]; then
+      runs=$(rclone lsf "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/" --dirs-only) || fail "list rustfs-deleted"
+      for run in $(printf '%s\n' "$runs" | awk -v c="$cutoff" '{ n = $0; sub(/\/$/, "", n); if (n < c) print n }'); do
+        rclone purge "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/$run" || fail "prune rustfs-deleted $run"
+      done
+    else
+      rclone delete "offhost:$BACKUP_S3_BUCKET/$kind/" --min-age 7d || fail "prune $kind"
+    fi
   done
-  log "prune: removed objects older than 7 days"
+  log "prune: done"
   mark prune
 }
 
@@ -87,9 +95,7 @@ step_now() {
   done
 }
 
-# start runs as root (the container default). Cron jobs do not inherit the container environment: the job
-# environment goes to a file that the crontab sources. Root writes it into the setgid /run/backup, so the file is
-# group backup and the job user can read it.
+# start runs as root. Cron jobs do not inherit the container environment, so it goes to a file the crontab sources.
 start() {
   umask 027
   {

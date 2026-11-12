@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Restore drill (OPS-02). Seeds a source stack and backs it up off-host, removes the source with its volumes, then
-# restores a fresh drill stack from off-host data only. Checks: WAL segment off-host, row count, artifact, selftest.
-# The selftest must fail while the restored Vault is sealed. Needs only Docker with Compose: bash scripts/restore-drill.sh
+# Restore drill (OPS-02): back up a seeded source stack off-host, remove it, restore from off-host data only.
+# Needs only Docker with Compose: bash scripts/restore-drill.sh
 set -euo pipefail
 
 DIR=$(cd "$(dirname "$0")/../deploy/compose" && pwd)
@@ -67,13 +66,13 @@ drill_sh() {
   drill run --rm --no-deps -T -u backup --entrypoint sh backup -c "$1"
 }
 
-# latest_offsite PREFIX prints the newest object name under PREFIX/ (names start with a UTC timestamp).
+# latest_offsite PREFIX prints the newest object name under PREFIX/.
 latest_offsite() {
   drill_sh "rclone lsf \"offhost:\$BACKUP_S3_BUCKET/$1/\" | sort | tail -n 1"
 }
 
-# seed_data writes an owner, an org and two projects. The first project's webhook secret is encrypted by Vault
-# Transit with the context the api uses (SecretContext: table:column:rowId, base64 for Vault).
+# seed_data writes an owner, an org, two projects and an artifact. Project A's webhook secret is Transit-encrypted
+# with the api's SecretContext (table:column:rowId, base64).
 seed_data() {
   local ctx pt ct sql
   ctx=$(printf '%s' "projects:webhook_secret_enc:$PROJECT_A" | base64 | tr -d '\n')
@@ -111,8 +110,7 @@ archived() {
     tr -d '[:space:]'
 }
 
-# wal_drill forces a WAL segment on the source, waits until postgres has archived it, moves the spool off-host
-# (min age 0s, the drill only) and asserts that a segment arrived and that the spool is drained.
+# wal_drill archives one WAL segment off-host from the source (min age 0s) and asserts it arrived and the spool drained.
 wal_drill() {
   local before now_count left
   before=$(archived) || fail "read pg_stat_archiver"
@@ -167,8 +165,7 @@ selftest() {
 mkdir -p "$SECRETS"
 trap cleanup EXIT
 
-# Environment: generated values for every empty key, then the throwaway off-host keys and drill paths. Later
-# duplicates win in a compose env file, so these lines replace the example's samples.
+# Generated values for every empty key, then the drill's overrides (a later duplicate wins in a compose env file).
 bash gen-env.sh > "$ENV_FILE"
 OFF_KEY=$(openssl rand -hex 16)
 OFF_SECRET=$(openssl rand -hex 24)
@@ -203,9 +200,15 @@ export API_VAULT_ROLE_ID BACKUP_VAULT_ROLE_ID
 
 echo "== source stack: api (creates the schema), backup"
 src up -d --wait --build api backup
-src run --rm --no-deps -T -u backup --entrypoint rclone backup mkdir "offhost:$OFF_BUCKET"
+src run --rm --no-deps -T -u backup --entrypoint rclone backup mkdir "offhost,no_check_bucket=false:$OFF_BUCKET"
 seed_data
 src exec -T -u backup backup /usr/local/bin/backup.sh now
+# The pg job exactly as crond runs it: the command text from the crontab, an empty environment, the env file it sources.
+cron_pg=$(sed -E 's/^([^ ]+ +){5}//' backup/crontab | grep 'backup.sh pg ')
+dumps() { src exec -T -u backup backup sh -c 'rclone lsf "offhost:$BACKUP_S3_BUCKET/pg/"' | wc -l; }
+before=$(dumps)
+src exec -T -u backup backup env -i /bin/sh -c "$cron_pg" || fail "the pg cron line failed"
+[ "$(dumps)" -gt "$before" ] || fail "the pg cron line added no dump off-host"
 echo "== source stack: WAL segment off-host"
 wal_drill
 src down -v --remove-orphans
