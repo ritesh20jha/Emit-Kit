@@ -33,12 +33,24 @@ import org.jspecify.annotations.Nullable;
  * is therefore reported only at the first location reached.
  *
  * <p>Locations are property names joined by {@code "."} after the given location, e.g. {@code
- * "body.tag"} or {@code "200.owner.address.zip"}. Array items keep the location of the array.
+ * "body.tag"} or {@code "200.owner.address.zip"}. Array items and {@code additionalProperties} keep
+ * the location of their parent.
  *
- * <p>Request side: a required property added is breaking, an optional one is not. Removed
- * properties and required-ness changes are not reported. Response side: a property removed is
- * breaking, an added one is not. Both sides: an enum value removed is breaking, an added one is
- * not, and a change of schema kind or primitive type is breaking.
+ * <p>Request side: a required property added, or an existing property that became required, is
+ * breaking; an optional property added is not. Removed request properties are not reported.
+ * Response side: a property removed is breaking, an added one is not. Both sides: an enum value
+ * removed is breaking, an added one is not, and a change of schema kind or primitive type is
+ * breaking.
+ *
+ * <p>Known limitations:
+ *
+ * <ul>
+ *   <li>{@code allOf} and {@code oneOf} parts are compared pairwise by index, and only when both
+ *       sides have the same kind and the same part count. An object refactored into {@code allOf},
+ *       reordered parts, or a changed part count can give a false {@code TYPE_CHANGED} or miss a
+ *       change. A follow-up is planned.
+ *   <li>A response schema that appears or disappears on one side (a null side) reports nothing.
+ * </ul>
  */
 public final class DefaultSchemaDiffer implements SchemaDiffer {
 
@@ -125,12 +137,19 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
       }
     }
 
-    /** Added properties in after order, then removed properties in before order. */
+    /**
+     * Properties in after order: shared ones are compared, added ones reported, and on the request
+     * side a shared property that became required is reported. Then response-side removals in
+     * before order. Finally {@code additionalProperties} at the same location.
+     */
     private void compareObjects(ObjectSchema b, ObjectSchema a, String location) {
       for (var entry : a.properties().entrySet()) {
         var name = entry.getKey();
         var propertyLocation = location + "." + name;
         if (b.properties().containsKey(name)) {
+          if (request && !b.required().contains(name) && a.required().contains(name)) {
+            changes.add(new Change(REQUEST_REQUIRED_PROPERTY_ADDED, propertyLocation, true));
+          }
           compare(b.properties().get(name), entry.getValue(), propertyLocation);
         } else if (!request) {
           changes.add(new Change(RESPONSE_PROPERTY_ADDED, propertyLocation, false));
@@ -140,14 +159,14 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
           changes.add(new Change(REQUEST_PROPERTY_ADDED, propertyLocation, false));
         }
       }
-      if (request) {
-        return;
-      }
-      for (var name : b.properties().keySet()) {
-        if (!a.properties().containsKey(name)) {
-          changes.add(new Change(RESPONSE_PROPERTY_REMOVED, location + "." + name, true));
+      if (!request) {
+        for (var name : b.properties().keySet()) {
+          if (!a.properties().containsKey(name)) {
+            changes.add(new Change(RESPONSE_PROPERTY_REMOVED, location + "." + name, true));
+          }
         }
       }
+      compare(b.additionalProperties(), a.additionalProperties(), location);
     }
 
     /** One entry per enum per direction: the change carries no value, so repeats would be noise. */

@@ -1,5 +1,6 @@
 package dev.emitkit.spec.diff;
 
+import static dev.emitkit.spec.diff.ChangeKind.ENUM_VALUE_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.ENUM_VALUE_REMOVED;
 import static dev.emitkit.spec.diff.ChangeKind.REQUEST_PROPERTY_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.REQUEST_REQUIRED_PROPERTY_ADDED;
@@ -19,11 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import dev.emitkit.spec.diff.ModelBuilder.Op;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.ObjectSchema;
 import dev.emitkit.spec.model.Schema;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SchemaDiffTest {
@@ -137,8 +140,8 @@ class SchemaDiffTest {
 
   @Test
   void denseMutualRefs_terminatesQuickly() {
-    // S0..S7 each refer to every other schema. S3 loses its leaf, which must be reported once.
-    int count = 8;
+    // S0..S11 each refer to every other schema. S3 loses its leaf, which must be reported once.
+    int count = 12;
     var before = new LinkedHashMap<String, Schema>();
     var after = new LinkedHashMap<String, Schema>();
     for (int i = 0; i < count; i++) {
@@ -167,5 +170,54 @@ class SchemaDiffTest {
     // Reached first through S0.r1.r2.r3; later paths to S3 are skipped as already visited.
     assertThat(changes)
         .containsExactly(new Change(RESPONSE_PROPERTY_REMOVED, "200.r1.r2.r3.leaf", true));
+  }
+
+  @Test
+  void requestPropertyBecameRequired_isBreaking() {
+    var before = model(Map.of("Pet", object(Map.of("name", string()))), createPet);
+    var after = model(Map.of("Pet", object(Map.of("name", string()), "name")), createPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(REQUEST_REQUIRED_PROPERTY_ADDED, "body.name", true));
+
+    // The same optional-to-required change on the response side is not reported.
+    var responseBefore = model(Map.of("Pet", object(Map.of("name", string()))), getPet);
+    var responseAfter = model(Map.of("Pet", object(Map.of("name", string()), "name")), getPet);
+    assertThat(changes(responseBefore, responseAfter)).isEmpty();
+  }
+
+  @Test
+  void mapValueTypeChanged_isBreaking() {
+    var before = model(Map.of("Pet", mapOf(integer())), getPet);
+    var after = model(Map.of("Pet", mapOf(string())), getPet);
+    assertThat(changes(before, after)).containsExactly(new Change(TYPE_CHANGED, "200", true));
+  }
+
+  @Test
+  void requestPropertyTypeChanged_isBreaking() {
+    var before = model(Map.of("Pet", object(Map.of("id", integer()))), createPet);
+    var after = model(Map.of("Pet", object(Map.of("id", string()))), createPet);
+    assertThat(changes(before, after)).containsExactly(new Change(TYPE_CHANGED, "body.id", true));
+  }
+
+  @Test
+  void requestEnumValueRemoved_isBreaking() {
+    var before =
+        model(Map.of("Pet", object(Map.of("status", enumOf("available", "sold")))), createPet);
+    var after = model(Map.of("Pet", object(Map.of("status", enumOf("available")))), createPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(ENUM_VALUE_REMOVED, "body.status", true));
+  }
+
+  @Test
+  void enumValueAdded_notBreaking() {
+    var before = model(Map.of("Pet", object(Map.of("status", enumOf("available")))), getPet);
+    var after = model(Map.of("Pet", object(Map.of("status", enumOf("available", "sold")))), getPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(ENUM_VALUE_ADDED, "200.status", false));
+  }
+
+  /** An object with no fixed properties whose values have the given schema. */
+  private static Schema mapOf(Schema values) {
+    return new ObjectSchema(Map.of(), Set.of(), values, false, null);
   }
 }

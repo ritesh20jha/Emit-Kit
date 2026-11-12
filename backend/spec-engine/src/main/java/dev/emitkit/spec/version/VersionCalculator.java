@@ -48,6 +48,13 @@ public final class VersionCalculator {
     return new VersionResult(bump(current, applied).toString(), Optional.of(applied));
   }
 
+  /**
+   * The version is {@code info.version}, or {@code 0.1.0} when it is not valid semver. A difference
+   * from the last version is labelled by its highest differing component, whichever direction it
+   * moves in. So a downgrade (2.0.0 to 1.5.0) is labelled MAJOR, and an invalid {@code
+   * info.version} that falls back to {@code 0.1.0} is labelled by the same rule. Callers must guard
+   * against reusing an existing version.
+   */
   private static VersionResult specVersion(Optional<Version> last, String infoVersion) {
     Optional<Version> info = Version.tryParse(infoVersion);
     Version resulting = info.orElse(FIRST_VERSION);
