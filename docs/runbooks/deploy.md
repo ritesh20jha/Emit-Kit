@@ -11,8 +11,9 @@ Runbook for the single-host production stack in `deploy/compose/docker-compose.p
 | `worker` | 2 | `worker-app`. Gets only the sandbox daemon socket `/run/emitkit-sandbox/docker.sock`. |
 | `vault` | 1 | Vault server with Raft storage. Starts sealed. |
 | `postgres`, `rabbitmq`, `redis`, `rustfs` | 1 | Named volumes. `rustfs-init` creates the artifact bucket. |
+| `backup` | 1 | Scheduled off-host backups of Postgres, Vault, RustFS and the WAL. No port. See [restore.md](restore.md). |
 
-Networks: `edge` (Caddy only), `app` (internal, everything else) and `egress` (non-internal, `api` and `worker` only, for outbound calls). Nothing else is published on the host.
+Networks: `edge` (Caddy only), `app` (internal, everything else) and `egress` (non-internal, `api`, `worker` and `backup` only, for outbound calls). Nothing else is published on the host.
 
 ## Before you start
 
@@ -39,7 +40,9 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
    getent group emitkit-sandbox | cut -d: -f3   # the value for SANDBOX_GID (the example's 10010 is a sample)
    ```
 
-   Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID` and `WORKER_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them. Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
+   Also fill `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the GitHub OAuth app. Set `API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID` and `BACKUP_VAULT_ROLE_ID` to `pending` for now: compose refuses an empty value, and step 6 replaces them. Compose refuses to start while any secret is empty, so a forgotten value cannot leave a stack running on an example password.
+
+   The off-host backup target is a bucket on another service: fill `BACKUP_S3_ACCESS_KEY` and `BACKUP_S3_SECRET_KEY` (a key for that bucket only), and check the other `BACKUP_S3_*` values. Create the bucket first. It must be `https`, and the endpoint must not be empty. Backups and restores are in [restore.md](restore.md).
 
    `.env.prod`, `secrets/` and `backups/` are git-ignored. Keep them out of the repository.
 
@@ -74,15 +77,18 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
    $V write transit/keys/emitkit-secrets type=aes256-gcm96 derived=true exportable=false
    $V policy write emitkit-api - < vault/policies/emitkit-api.hcl
    $V policy write emitkit-worker - < vault/policies/emitkit-worker.hcl
+   $V policy write emitkit-backup - < vault/policies/emitkit-backup.hcl
    $V write auth/approle/role/emitkit-api token_policies=emitkit-api token_ttl=1h
    $V write auth/approle/role/emitkit-worker token_policies=emitkit-worker token_ttl=1h
+   $V write auth/approle/role/emitkit-backup token_policies=emitkit-backup token_ttl=1h
    ```
 
-6. Put the role IDs in `.env.prod` (`API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID`):
+6. Put the role IDs in `.env.prod` (`API_VAULT_ROLE_ID`, `WORKER_VAULT_ROLE_ID`, `BACKUP_VAULT_ROLE_ID`):
 
    ```sh
    $V read -field=role_id auth/approle/role/emitkit-api/role-id
    $V read -field=role_id auth/approle/role/emitkit-worker/role-id
+   $V read -field=role_id auth/approle/role/emitkit-backup/role-id
    ```
 
 7. Write the secret IDs to host files. The containers read them as Docker secrets, so the files must end up readable by uid 10001. The files are created private, then handed to uid 10001 with mode 0400. The `umask 077` is in a subshell, so it does not carry into later steps. The `chmod` runs under sudo because the files are owned by 10001 after the `chown`:
@@ -93,8 +99,11 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
      mkdir -p secrets
      $V write -f -field=secret_id auth/approle/role/emitkit-api/secret-id > secrets/api-secret-id
      $V write -f -field=secret_id auth/approle/role/emitkit-worker/secret-id > secrets/worker-secret-id
+     $V write -f -field=secret_id auth/approle/role/emitkit-backup/secret-id > secrets/backup-secret-id
      sudo chown 10001:10001 secrets/api-secret-id secrets/worker-secret-id
      sudo chmod 0400 secrets/api-secret-id secrets/worker-secret-id
+     sudo chown 10001:10001 secrets/backup-secret-id
+     sudo chmod 0400 secrets/backup-secret-id
    )
    ```
 
@@ -118,6 +127,13 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
     ```sh
     curl -s -o /dev/null -w '%{http_code}\n' https://<public host>/api/v1/me
     curl -s https://<public host>/ | grep -c '<div id="root">'
+    ```
+
+11. Run one backup by hand. The bucket must already exist (the job does not create it). Check the `last-success` files:
+
+    ```sh
+    $COMPOSE exec -T -u backup backup /usr/local/bin/backup.sh now
+    $COMPOSE exec -T -u backup backup sh -c 'ls /var/lib/backup/last-success-*'
     ```
 
 ## Unseal
@@ -192,8 +208,9 @@ Shares are typed at the prompt. They must never go on the command line, where `p
 ## Known gaps
 
 - Traffic between the app containers and Vault, Postgres, RabbitMQ, Redis and RustFS is plain text on the `app` network. Vault has `tls_disable = true`. Redis has no password.
-- `app` is `internal: true`. `api` and `worker` also join `egress` (not internal) for outbound calls such as GitHub. Nothing on `egress` publishes a port. Anything that must not reach the internet belongs on `app` only.
+- `app` is `internal: true`. `api`, `worker` and `backup` also join `egress` (not internal) for outbound calls such as GitHub and the off-host target. Nothing on `egress` publishes a port. Anything that must not reach the internet belongs on `app` only.
 - The worker's sandbox socket is root-equivalent on the host. See `docs/spikes/2026-gvisor-rootless.md`, "Security under B". Who may join the `emitkit-sandbox` group is still to be decided.
-- Vault runs as a single node, unsealed by hand. Raft snapshots every 6 h and the nightly backups are not automated here. High availability and auto-unseal are v4.
+- Vault runs as a single node, unsealed by hand. High availability and auto-unseal are v4.
+- Backups run off-host on a schedule, and restores are a manual procedure. Point-in-time recovery is not possible yet. See [restore.md](restore.md), Known gaps.
 - The worker has no health endpoint, so it has no healthcheck. `up --wait` only waits for it to start.
 - Caddy's health checks on the api replicas are passive. Caddy's active checks do not run for the Docker DNS upstreams, and Docker's healthcheck does not feed Caddy. A replica counts as failed only on a refused or failed connection, or on no response headers within 30 s (API routes only). One failure skips that replica for 30 s (`max_fails 1`, `fail_duration 30s`). Application responses, including 5xx, do not count, so a sealed Vault (503 `SECRETS_UNAVAILABLE`) does not take replicas out of rotation. Observed with one api replica paused (`docker pause`): the first request that Caddy sends to it takes about 30 s to fail, and it is then retried on the other replica and returns normally. Later requests in the 30 s window go straight to the healthy replica (about 20 ms). Once the 30 s window passes, the paused replica is tried again, so each window can cost one slow request while a replica stays hung. A request that was already sent is retried only for GET and HEAD, so a timed-out POST is not replayed (Caddy's documented default, stated in the Caddyfile). The SSE route `/api/v1/runs/*/logs/stream` has no header timeout, because a stream may send nothing before its first event.

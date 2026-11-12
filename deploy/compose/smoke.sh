@@ -61,7 +61,8 @@ touch "$SECRETS/sandbox.sock" # placeholder for the SBX-01 daemon socket; the re
 "${STACK[@]}" up -d --wait vault vault-init
 API_VAULT_ROLE_ID=$(cat "$SECRETS/api-role-id")
 WORKER_VAULT_ROLE_ID=$(cat "$SECRETS/worker-role-id")
-export API_VAULT_ROLE_ID WORKER_VAULT_ROLE_ID
+BACKUP_VAULT_ROLE_ID=$(cat "$SECRETS/backup-role-id")
+export API_VAULT_ROLE_ID WORKER_VAULT_ROLE_ID BACKUP_VAULT_ROLE_ID
 "${STACK[@]}" up -d --wait --build
 
 # The JVM services must run with their container memory limits (the defaults in .env.prod.example, 1g and 1536m).

@@ -1,0 +1,50 @@
+# Restore drill only (scripts/restore-drill.sh). Never use in production. Paths are relative to deploy/compose.
+services:
+  backup:
+    networks: !override [app, egress, offsite]
+
+  vault-init:
+    image: hashicorp/vault:2.2.1
+    depends_on:
+      vault:
+        condition: service_healthy
+    networks: [app]
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${DRILL_VAULT_ROOT_TOKEN:-}
+    user: "0:0" # init.sh writes into the host-created secrets dir as root
+    entrypoint: ["/bin/sh", "-c", "rm -f /tmp/ready && /bin/sh /init.sh && touch /tmp/ready && exec sleep infinity"]
+    volumes:
+      - ./vault/init.sh:/init.sh:ro
+      - ./vault/policies:/policies:ro
+      - ${DRILL_SECRETS_DIR:?}:/secrets
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  offhost:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: ${OFFHOST_RUSTFS_ACCESS_KEY:?}
+      RUSTFS_SECRET_KEY: ${OFFHOST_RUSTFS_SECRET_KEY:?}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - offhost-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks: [offsite]
+
+volumes:
+  offhost-data:
+
+networks:
+  offsite:
+    name: emitkit-drill-offsite
+    external: true
