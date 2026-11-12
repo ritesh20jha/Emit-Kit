@@ -15,9 +15,13 @@ import static dev.emitkit.spec.diff.ModelBuilder.op;
 import static dev.emitkit.spec.diff.ModelBuilder.ref;
 import static dev.emitkit.spec.diff.ModelBuilder.string;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import dev.emitkit.spec.diff.ModelBuilder.Op;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.Schema;
+import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -118,5 +122,50 @@ class SchemaDiffTest {
             getPet);
     assertThat(changes(before, after))
         .containsExactly(new Change(RESPONSE_PROPERTY_ADDED, "200.label", false));
+  }
+
+  @Test
+  void defaultSpecDiffer_usesSchemaRules() {
+    var before = model(Map.of("Pet", object(Map.of("id", string(), "name", string()))), getPet);
+    var after = model(Map.of("Pet", object(Map.of("id", string()))), getPet);
+    assertThat(new SpecDiffer().diff(before, after).modified())
+        .singleElement()
+        .satisfies(m ->
+            assertThat(m.changes())
+                .containsExactly(new Change(RESPONSE_PROPERTY_REMOVED, "200.name", true)));
+  }
+
+  @Test
+  void denseMutualRefs_terminatesQuickly() {
+    // S0..S7 each refer to every other schema. S3 loses its leaf, which must be reported once.
+    int count = 8;
+    var before = new LinkedHashMap<String, Schema>();
+    var after = new LinkedHashMap<String, Schema>();
+    for (int i = 0; i < count; i++) {
+      var beforeProps = new LinkedHashMap<String, Schema>();
+      var afterProps = new LinkedHashMap<String, Schema>();
+      for (int j = 0; j < count; j++) {
+        if (j != i) {
+          beforeProps.put("r" + j, ref("S" + j));
+          afterProps.put("r" + j, ref("S" + j));
+        }
+      }
+      beforeProps.put("leaf", string());
+      if (i != 3) {
+        afterProps.put("leaf", string());
+      }
+      before.put("S" + i, object(beforeProps));
+      after.put("S" + i, object(afterProps));
+    }
+    var getS = op("getS", "GET", "/s").withResponse("200", ref("S0"));
+    var beforeModel = model(before, getS);
+    var afterModel = model(after, getS);
+
+    var changes =
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> changes(beforeModel, afterModel));
+
+    // Reached first through S0.r1.r2.r3; later paths to S3 are skipped as already visited.
+    assertThat(changes)
+        .containsExactly(new Change(RESPONSE_PROPERTY_REMOVED, "200.r1.r2.r3.leaf", true));
   }
 }

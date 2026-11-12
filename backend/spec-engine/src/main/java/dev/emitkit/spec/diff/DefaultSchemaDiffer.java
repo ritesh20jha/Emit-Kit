@@ -27,9 +27,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Schema rules for request and response bodies and parameters. {@code $ref} is followed through
- * each side's own {@code schemas} map; a ref that cannot be resolved reports nothing. A pair of
- * refs already being compared on the current path is not entered again, so recursive schemas
- * terminate.
+ * each side's own {@code schemas} map; a ref that cannot be resolved reports nothing. Each pair of
+ * refs is compared at most once per top-level call, so recursive and densely shared schemas
+ * terminate in time linear in the number of ref pairs. A shared schema changed under two locations
+ * is therefore reported only at the first location reached.
  *
  * <p>Locations are property names joined by {@code "."} after the given location, e.g. {@code
  * "body.tag"} or {@code "200.owner.address.zip"}. Array items keep the location of the array.
@@ -61,7 +62,7 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
     return new Walk(before, after, false).run(beforeSchema, afterSchema, location);
   }
 
-  /** One top-level comparison. Holds the ref pairs on the current path and the side's rules. */
+  /** One top-level comparison. Holds the ref pairs already visited and the side's rules. */
   private static final class Walk {
 
     /** A (before, after) pair of named schemas. */
@@ -73,7 +74,7 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
     private final ApiModel before;
     private final ApiModel after;
     private final boolean request;
-    private final Set<RefPair> inProgress = new HashSet<>();
+    private final Set<RefPair> visited = new HashSet<>();
     private final List<Change> changes = new ArrayList<>();
 
     Walk(ApiModel before, ApiModel after, boolean request) {
@@ -100,15 +101,10 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
         compareResolved(b.schema(), a.schema(), loc);
         return;
       }
-      var pair = new RefPair(b.name(), a.name());
-      if (!inProgress.add(pair)) {
+      if (!visited.add(new RefPair(b.name(), a.name()))) {
         return;
       }
-      try {
-        compareResolved(b.schema(), a.schema(), loc);
-      } finally {
-        inProgress.remove(pair);
-      }
+      compareResolved(b.schema(), a.schema(), loc);
     }
 
     private void compareResolved(Schema b, Schema a, String location) {
