@@ -25,7 +25,8 @@ import java.util.regex.Pattern;
  * @param hasBearer whether the API declares an HTTP bearer scheme
  * @param hasBasic whether the API declares an HTTP basic scheme
  * @param apiKeyHeaders header names that receive the API key
- * @param apiKeyQueries query parameter names that receive the API key
+ * @param apiKeyQueries query parameter names that receive the API key, empty when a header apiKey
+ *     scheme exists so the key never appears in a URL
  */
 record TsClientView(
     String className,
@@ -55,7 +56,7 @@ record TsClientView(
     List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
     String baseUrl = defaultBaseUrl(model.servers());
     List<Literal> headers = apiKeyNames(schemes, "header");
-    List<Literal> queries = apiKeyNames(schemes, "query");
+    List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
     return new TsClientView(
         className,
         docText(model.info().title()),

@@ -11,8 +11,10 @@ import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.gen.core.golden.GoldenFiles;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Info;
+import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -84,6 +86,26 @@ class TypescriptSdkGeneratorTest {
   }
 
   @Test
+  void apiKeyIsSentInHeaderOnlyWhenAHeaderSchemeExists() {
+    // auth-schemes declares both a header and a query apiKey scheme.
+    String client =
+        content(
+            generate("auth-schemes", ".emitkit/", names(null, "petstore-sdk")), "src/client.ts");
+    assertThat(client)
+        .contains("this.authHeaders[\"X-API-Key\"] = opts.apiKey;")
+        .doesNotContain("api_key");
+  }
+
+  @Test
+  void apiKeyFallsBackToTheQueryParameterWithoutAHeaderScheme() {
+    var queryKey =
+        new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
+    assertThat(clientSource(Map.of("queryKey", queryKey)))
+        .contains("this.authQuery[\"api_key\"] = opts.apiKey;")
+        .doesNotContain("this.authHeaders[\"");
+  }
+
+  @Test
   void titleCannotCloseTheDocComment() {
     assertThat(clientSource("Pets */ Store", List.of()))
         .contains("/** Client for the Pets *\\/ Store API. */")
@@ -124,6 +146,14 @@ class TypescriptSdkGeneratorTest {
             base.tags(),
             base.operations(),
             base.schemas());
+    return content(generate(model, ".emitkit/", names(null, "petstore-sdk")), "src/client.ts");
+  }
+
+  private String clientSource(Map<String, SecurityScheme> schemes) {
+    ApiModel base = FixtureSpecs.load("petstore");
+    ApiModel model =
+        new ApiModel(
+            base.info(), base.servers(), schemes, base.tags(), base.operations(), base.schemas());
     return content(generate(model, ".emitkit/", names(null, "petstore-sdk")), "src/client.ts");
   }
 

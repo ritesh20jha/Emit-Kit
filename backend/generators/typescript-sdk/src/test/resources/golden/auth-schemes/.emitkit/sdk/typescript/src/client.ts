@@ -17,7 +17,7 @@ const RETRY_BASE_DELAY_MS = 500;
 
 /** Credentials for the security schemes the API declares. Each field exists only for a declared scheme. */
 export interface AuthOptions {
-  /** API key, sent in each apiKey scheme's header or query parameter. */
+  /** API key, sent as a header, or as a query parameter when the API has no header scheme. */
   apiKey?: string;
   /** Bearer token, sent as `Authorization: Bearer <token>`. */
   bearerToken?: string;
@@ -53,7 +53,6 @@ export class AuthSchemesClient {
     }
     if (opts.apiKey !== undefined) {
       this.authHeaders["X-API-Key"] = opts.apiKey;
-      this.authQuery["api_key"] = opts.apiKey;
     }
     if (opts.bearerToken !== undefined) {
       this.authHeaders["Authorization"] = `Bearer ${opts.bearerToken}`;
