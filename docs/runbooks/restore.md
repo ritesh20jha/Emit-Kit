@@ -107,10 +107,10 @@ $COMPOSE up -d --wait rustfs-init
 backup_sh 'rclone lsf "offhost:$BACKUP_S3_BUCKET/rustfs/" | head -n 20'   # what the mirror holds now
 ```
 
-After an incident, pick the newest `rustfs-deleted/<run>` from **before** it (list with `backup_sh 'rclone lsf "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/" --dirs-only | sort'`), then copy the mirror and that run over it.
+After an incident, the run that matters is the `rustfs-deleted/<run>` created at or after the incident: a sync of an emptied RustFS moved the lost objects into it. List the runs with `backup_sh 'rclone lsf "offhost:$BACKUP_S3_BUCKET/rustfs-deleted/" --dirs-only | sort'`, and list the chosen run's contents before copying. Copying a run over the mirror can overwrite newer objects, so check the listing first. Then copy the mirror, and that run over it.
 
 ```bash
-RUN=20261110T033000Z   # replace with the chosen pre-incident run name
+RUN=20261110T033000Z   # replace with the run created at or after the incident
 backup_sh 'rclone copy "offhost:$BACKUP_S3_BUCKET/rustfs/" "rustfs:$S3_BUCKET"'
 backup_sh "rclone copy \"offhost:\$BACKUP_S3_BUCKET/rustfs-deleted/$RUN\" \"rustfs:\$S3_BUCKET\""
 ```
@@ -118,7 +118,8 @@ backup_sh "rclone copy \"offhost:\$BACKUP_S3_BUCKET/rustfs-deleted/$RUN\" \"rust
 ### 4. api and worker
 
 ```bash
-$COMPOSE up -d --wait --build
+# Name the services: backup stays stopped until step 5, and a bare `up` would restart it.
+$COMPOSE up -d --wait --build caddy api worker
 PROJECT_ID=$($COMPOSE exec -T postgres sh -c 'exec psql -X -tA -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select id from projects where webhook_secret_enc is not null order by created_at limit 1"' | tr -d '[:space:]')
 if [ -n "$PROJECT_ID" ]; then
   $COMPOSE exec -T api curl -fsS "http://127.0.0.1:8081/internal/selftest/decrypt?projectId=$PROJECT_ID"   # prints ok
