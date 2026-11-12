@@ -58,6 +58,15 @@ public class OAuthAccount extends BaseEntity {
     this.scopes = scopes;
   }
 
+  /**
+   * Replaces the token after a new login. The row id stays the same, so the caller must encrypt
+   * {@code accessTokenEnc} with this entity's id.
+   */
+  public void rotateToken(String accessTokenEnc, String scopes) {
+    this.accessTokenEnc = accessTokenEnc;
+    this.scopes = scopes;
+  }
+
   public String getUserId() {
     return userId;
   }

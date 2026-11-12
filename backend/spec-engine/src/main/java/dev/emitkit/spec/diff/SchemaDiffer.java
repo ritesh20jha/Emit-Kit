@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  */
 public interface SchemaDiffer {
 
-  /** Reports no schema changes. The default until a real schema differ is supplied. */
+  /** Reports no schema changes. Pass it to {@code SpecDiffer} to skip schema rules. */
   SchemaDiffer NONE =
       new SchemaDiffer() {
         @Override

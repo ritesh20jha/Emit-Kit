@@ -1,12 +1,15 @@
 package dev.emitkit.spec.diff;
 
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.EnumSchema;
 import dev.emitkit.spec.model.Info;
+import dev.emitkit.spec.model.ObjectSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.model.RefSchema;
 import dev.emitkit.spec.model.RequestBody;
 import dev.emitkit.spec.model.Response;
 import dev.emitkit.spec.model.Schema;
@@ -15,6 +18,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /** Builds models in code for diff tests. Every {@code with*} method returns a modified copy. */
@@ -80,17 +84,38 @@ final class ModelBuilder {
   }
 
   static ApiModel model(Op... ops) {
+    return model(Map.of(), ops);
+  }
+
+  static ApiModel model(Map<String, Schema> schemas, Op... ops) {
     return new ApiModel(
         new Info("Pets", "1", null, null),
         List.of(),
         Map.of(),
         List.of(),
         Arrays.stream(ops).map(Op::toOperation).toList(),
-        Map.of());
+        schemas);
   }
 
   static Schema string() {
     return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
+  }
+
+  static Schema integer() {
+    return new PrimitiveSchema(PrimitiveType.INTEGER, null, false, null);
+  }
+
+  static Schema enumOf(String... values) {
+    return new EnumSchema(PrimitiveType.STRING, List.of(values), false, null);
+  }
+
+  static Schema ref(String name) {
+    return new RefSchema(name, false, null);
+  }
+
+  /** An object with the given properties; {@code required} names the required ones. */
+  static Schema object(Map<String, Schema> properties, String... required) {
+    return new ObjectSchema(properties, Set.of(required), null, false, null);
   }
 
   static Parameter query(String name, boolean required) {
@@ -107,5 +132,9 @@ final class ModelBuilder {
 
   static RequestBody jsonBody(boolean required) {
     return new RequestBody(required, "application/json", string());
+  }
+
+  static RequestBody jsonBody(Schema schema) {
+    return new RequestBody(true, "application/json", schema);
   }
 }

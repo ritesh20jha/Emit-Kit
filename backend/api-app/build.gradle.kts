@@ -14,6 +14,7 @@ dependencies {
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.spring.boot.starter.security)
     implementation(libs.spring.boot.starter.session.data.redis)
+    implementation(libs.spring.boot.starter.oauth2.client)
     implementation(libs.springdoc.openapi.webmvc)
 
     testImplementation(libs.spring.boot.starter.webmvc.test)
@@ -21,6 +22,7 @@ dependencies {
     testImplementation(libs.spring.boot.testcontainers)
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.wiremock.standalone)
 }
 
 // -Dopenapi.update=true (scripts/export-openapi.sh) makes OpenApiSnapshotTest rewrite the committed spec.

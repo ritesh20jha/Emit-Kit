@@ -2,14 +2,18 @@ package dev.emitkit.api;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.emitkit.api.auth.GitHubUserService;
+import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
+import dev.emitkit.domain.OrgMemberRepository;
+import dev.emitkit.domain.OrganizationRepository;
+import dev.emitkit.domain.UserRepository;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +29,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -33,7 +38,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * replaces the body, and the request DTOs validate their input. Runs with the real security chain
  * so that CSRF and authentication apply as they do in the application.
  */
-@WebMvcTest
+@WebMvcTest(properties = {GitHubTestCredentials.CLIENT_ID, GitHubTestCredentials.CLIENT_SECRET})
 @AutoConfigureMockMvc
 @EnableWebSecurity
 @Import({SecurityConfig.class, ProblemDetailsAdvice.class})
@@ -50,13 +55,12 @@ class CON01ContractTest {
 
   @Autowired private MockMvc mvc;
 
-  @Test
-  @WithMockUser
-  void meIs501UntilImplemented() throws Exception {
-    mvc.perform(get("/api/v1/me"))
-        .andExpect(status().is(501))
-        .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
-  }
+  // SecurityConfig and MeController depend on these, and this slice does not load them.
+  @MockitoBean private GitHubUserService gitHubUserService;
+  @MockitoBean private LoginSuccessHandler loginSuccessHandler;
+  @MockitoBean private UserRepository users;
+  @MockitoBean private OrgMemberRepository orgMembers;
+  @MockitoBean private OrganizationRepository organizations;
 
   @Test
   @WithMockUser
@@ -87,7 +91,6 @@ class CON01ContractTest {
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
-    "GET,/api/v1/me,",
     "GET,/api/v1/me/vcs-quota,",
     "POST,/api/v1/me/sync-orgs,",
     "GET,/api/v1/orgs,",

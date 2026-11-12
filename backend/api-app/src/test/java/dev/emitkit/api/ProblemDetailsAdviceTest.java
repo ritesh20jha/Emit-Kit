@@ -18,7 +18,14 @@ import org.springframework.test.web.servlet.MockMvc;
 
 // addFilters = false: this slice checks only the advice mapping, so the security filters are off
 // and the requests reach the controller. The real chains are covered by SecurityConfigTest.
-@WebMvcTest(TestController.class)
+// application.yml declares the GitHub registration, which this slice has no use for: the client
+// auto-configuration is switched off so that the slice does not need the client id and secret.
+@WebMvcTest(
+    value = TestController.class,
+    properties =
+        "spring.autoconfigure.exclude="
+            + "org.springframework.boot.security.oauth2.client.autoconfigure.OAuth2ClientAutoConfiguration,"
+            + "org.springframework.boot.security.oauth2.client.autoconfigure.servlet.OAuth2ClientWebSecurityAutoConfiguration")
 @AutoConfigureMockMvc(addFilters = false)
 @Import(ProblemDetailsAdvice.class)
 class ProblemDetailsAdviceTest {

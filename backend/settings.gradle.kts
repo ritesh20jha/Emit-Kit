@@ -20,6 +20,7 @@ include(
     "spec-engine",
     "generators:core",
     "generators:workflows",
+    "generators:typescript-sdk",
     "ai",
     "api-app",
     "worker-app",

@@ -8,8 +8,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.emitkit.api.auth.GitHubUserService;
+import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
+import dev.emitkit.domain.OrgMemberRepository;
+import dev.emitkit.domain.OrganizationRepository;
+import dev.emitkit.domain.UserRepository;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +30,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -33,7 +39,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * NOT_IMPLEMENTED until its feature ticket replaces the body, and the request DTOs validate their
  * input. Runs with the real security chain, as {@link CON02ContractTest} does.
  */
-@WebMvcTest
+@WebMvcTest(properties = {GitHubTestCredentials.CLIENT_ID, GitHubTestCredentials.CLIENT_SECRET})
 @AutoConfigureMockMvc
 @EnableWebSecurity
 @Import({SecurityConfig.class, ProblemDetailsAdvice.class})
@@ -49,6 +55,13 @@ class CON03ContractTest {
   }
 
   @Autowired private MockMvc mvc;
+
+  // SecurityConfig and MeController depend on these, and this slice does not load them.
+  @MockitoBean private GitHubUserService gitHubUserService;
+  @MockitoBean private LoginSuccessHandler loginSuccessHandler;
+  @MockitoBean private UserRepository users;
+  @MockitoBean private OrgMemberRepository orgMembers;
+  @MockitoBean private OrganizationRepository organizations;
 
   @Test
   @WithMockUser

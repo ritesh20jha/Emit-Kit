@@ -1,5 +1,7 @@
 package dev.emitkit.api.config;
 
+import dev.emitkit.api.auth.GitHubUserService;
+import dev.emitkit.api.auth.LoginSuccessHandler;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,7 +19,11 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
@@ -35,7 +41,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * CSRF-protected, CORS allowlisted, and answering failures as Problem Details.
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(CorsProperties.class)
+@EnableConfigurationProperties({CorsProperties.class, WebProperties.class})
 public class SecurityConfig {
 
   private static final String UNAUTHENTICATED_BODY =
@@ -81,11 +87,16 @@ public class SecurityConfig {
   @Bean
   @Order(2)
   public SecurityFilterChain appChain(
-      HttpSecurity http, @Qualifier("corsConfigurationSource") CorsConfigurationSource cors)
+      HttpSecurity http,
+      @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
+      GitHubUserService gitHubUserService,
+      OAuth2AuthorizedClientRepository authorizedClientRepository,
+      LoginSuccessHandler loginSuccessHandler)
       throws Exception {
     return http.cors(c -> c.configurationSource(cors))
         .csrf(csrfCustomizer())
         .addFilterAfter(csrfCookieFilter(), CsrfFilter.class)
+        .addFilterBefore(rememberNext(), OAuth2AuthorizationRequestRedirectFilter.class)
         // No saved request: an anonymous 401 must not create a session for a retry.
         .requestCache(cache -> cache.requestCache(new NullRequestCache()))
         .authorizeHttpRequests(auth ->
@@ -95,10 +106,32 @@ public class SecurityConfig {
                 .permitAll()
                 .anyRequest()
                 .authenticated())
+        .oauth2Login(login ->
+            login
+                .authorizedClientRepository(authorizedClientRepository)
+                .userInfoEndpoint(info -> info.userService(gitHubUserService))
+                .successHandler(loginSuccessHandler))
+        .logout(logout ->
+            logout
+                .logoutUrl("/api/v1/logout")
+                .logoutSuccessHandler(SecurityConfig::noContent)
+                .invalidateHttpSession(true)
+                .deleteCookies("SESSION"))
         .exceptionHandling(ex ->
             ex.authenticationEntryPoint(SecurityConfig::unauthenticated)
                 .accessDeniedHandler(SecurityConfig::forbidden))
         .build();
+  }
+
+  /**
+   * Stores no authorized client. Boot would otherwise keep each user's plaintext GitHub token in an
+   * in-memory store for the life of the process, and logout would not clear it. The token lives
+   * only encrypted in oauth_accounts and is decrypted on demand by DbTokenSource, so nothing is
+   * kept here. Declaring this bean also makes Boot back off its own repository.
+   */
+  @Bean
+  OAuth2AuthorizedClientRepository authorizedClientRepository() {
+    return new NoAuthorizedClientRepository();
   }
 
   /** Origins from emitkit.cors.allowed-origins; credentials allowed, no wildcard origins. */
@@ -132,6 +165,25 @@ public class SecurityConfig {
     };
   }
 
+  /** Keeps {@code next} from /oauth2/authorization/{id}?next=... for LoginSuccessHandler. */
+  private static Filter rememberNext() {
+    return (request, response, chain) -> {
+      HttpServletRequest http = (HttpServletRequest) request;
+      if (http.getRequestURI().startsWith("/oauth2/authorization/")) {
+        // Storing null also clears a value left by an earlier attempt that had no next.
+        http.getSession()
+            .setAttribute(LoginSuccessHandler.NEXT_ATTRIBUTE, http.getParameter("next"));
+      }
+      chain.doFilter(request, response);
+    };
+  }
+
+  /** Logout answers 204 and leaves the browser on the SPA, which owns the navigation. */
+  private static void noContent(
+      HttpServletRequest request, HttpServletResponse response, Authentication authentication) {
+    response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+  }
+
   private static void unauthenticated(
       HttpServletRequest request, HttpServletResponse response, AuthenticationException ex)
       throws IOException {
@@ -142,6 +194,31 @@ public class SecurityConfig {
       HttpServletRequest request, HttpServletResponse response, AccessDeniedException ex)
       throws IOException {
     writeProblem(response, 403, FORBIDDEN_BODY);
+  }
+
+  /** Answers "no client" to every lookup and drops every save and removal. */
+  private static final class NoAuthorizedClientRepository
+      implements OAuth2AuthorizedClientRepository {
+
+    @Override
+    public <T extends OAuth2AuthorizedClient> T loadAuthorizedClient(
+        String clientRegistrationId, Authentication principal, HttpServletRequest request) {
+      return null;
+    }
+
+    @Override
+    public void saveAuthorizedClient(
+        OAuth2AuthorizedClient authorizedClient,
+        Authentication principal,
+        HttpServletRequest request,
+        HttpServletResponse response) {}
+
+    @Override
+    public void removeAuthorizedClient(
+        String clientRegistrationId,
+        Authentication principal,
+        HttpServletRequest request,
+        HttpServletResponse response) {}
   }
 
   private static void writeProblem(HttpServletResponse response, int status, String body)

@@ -19,9 +19,9 @@ public final class SpecDiffer {
 
   private final SchemaDiffer schemaDiffer;
 
-  /** Operation and parameter rules only; schema comparisons report nothing. */
+  /** Operation, parameter and schema rules. */
   public SpecDiffer() {
-    this(SchemaDiffer.NONE);
+    this(new DefaultSchemaDiffer());
   }
 
   public SpecDiffer(SchemaDiffer schemaDiffer) {

@@ -19,6 +19,8 @@ Run all commands from `backend/`:
 
 Gradle needs JDK 21 for the toolchain. If it is missing, Gradle provisions it through the foojay resolver.
 
+Local `bootRun` needs the GitHub OAuth app's credentials in `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID` and `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET`; startup fails without them.
+
 ## Layout
 
 - `build-logic/`: convention plugins `emitkit.java-conventions` (Java 21, JUnit 5, AssertJ, Spotless) and `emitkit.spring-app` (Spring Boot).

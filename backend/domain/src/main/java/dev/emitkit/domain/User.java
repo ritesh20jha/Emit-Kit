@@ -53,6 +53,14 @@ public class User extends BaseEntity {
     this.avatarUrl = avatarUrl;
   }
 
+  /** Replaces the profile fields with the ones from a fresh GitHub login. */
+  public void updateProfile(String login, String name, String email, String avatarUrl) {
+    this.login = login;
+    this.name = name;
+    this.email = email;
+    this.avatarUrl = avatarUrl;
+  }
+
   public long getGithubId() {
     return githubId;
   }
