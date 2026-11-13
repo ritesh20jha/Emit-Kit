@@ -1,5 +1,6 @@
 import { useRouter, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
+import { AppError } from "@/lib/api/appError";
 import { useMe } from "@/lib/auth/session";
 import { type FeedbackError, ErrorState, Skeleton, useMediaQuery } from "@/ui";
 import { defaultOrgId, lastOrg } from "./lastOrg";
@@ -27,8 +28,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { data: me } = useMe();
   const routeOrgId = useRouteOrgId();
   const isMobile = useMediaQuery(MOBILE_QUERY);
-  if (!me) return <ShellSkeleton />;
+  const orgs = me?.orgs;
 
+  // Visiting an org page makes it the one that `/` opens next time.
+  useEffect(() => {
+    if (routeOrgId !== undefined && orgs?.some((org) => org.orgId === routeOrgId)) lastOrg.set(routeOrgId);
+  }, [routeOrgId, orgs]);
+
+  if (!me) return <ShellSkeleton />;
   const nav = { orgs: me.orgs, currentOrgId: routeOrgId ?? defaultOrgId(me.orgs, lastOrg.get()) };
   return (
     <div className="flex min-h-dvh">
@@ -66,8 +73,8 @@ export function ShellSkeleton() {
 /** The shell could not load the session. Retry runs the route's loaders again. */
 export function ShellError({ error }: { error: unknown }) {
   const router = useRouter();
-  // An AppError keeps its code for ErrorState to show; anything else gets a generic message.
-  const feedback: FeedbackError = error instanceof Error ? error : { message: "EmitKit could not load this page." };
+  // Only an API error keeps its own message and code; anything else (a network failure) gets a plain one.
+  const feedback: FeedbackError = error instanceof AppError ? error : { message: "EmitKit could not load this page." };
   return (
     <div className="flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-md">

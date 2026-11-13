@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { AppError } from "@/lib/api/appError";
+import { ThemeProvider, Toaster } from "@/ui";
 
 /**
  * The app's QueryClient. Client errors (4xx) are not retried: a 401 must reach the login redirect at once,
@@ -16,7 +17,14 @@ export function createQueryClient() {
   });
 }
 
-/** Wraps the app in global providers. The router gets the same client through its context. */
+/** Wraps the app in global providers: query client, theme, and the toaster. The router gets the same client through its context. */
 export function AppProviders({ queryClient, children }: { queryClient: QueryClient; children: ReactNode }) {
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        {children}
+        <Toaster />
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
 }

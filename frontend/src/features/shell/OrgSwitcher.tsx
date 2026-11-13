@@ -11,23 +11,13 @@ type OrgMembership = components["schemas"]["OrgMembership"];
 const SEARCH_THRESHOLD = 7;
 
 /** Switches the current org: the URL changes and the choice is remembered for the next visit. */
-export function OrgSwitcher({
-  orgs,
-  currentOrgId,
-  onNavigate,
-}: {
-  orgs: OrgMembership[];
-  currentOrgId?: string;
-  /** Runs after an org is picked, so a drawer around the switcher can close. */
-  onNavigate?: () => void;
-}) {
+export function OrgSwitcher({ orgs, currentOrgId, onNavigate }: { orgs: OrgMembership[]; currentOrgId?: string; onNavigate?: () => void }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const current = orgs.find((org) => org.orgId === currentOrgId);
-
-  const needle = query.trim().toLowerCase();
-  const matches = orgs.filter((org) => org.name.toLowerCase().includes(needle));
+  const term = query.trim();
+  const matches = orgs.filter((org) => org.name.toLowerCase().includes(term.toLowerCase()));
 
   function select(orgId: string) {
     lastOrg.set(orgId);
@@ -52,31 +42,16 @@ export function OrgSwitcher({
       {orgs.length > SEARCH_THRESHOLD && (
         <div className="relative">
           <Search aria-hidden="true" className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-subtle" />
-          <Input
-            type="search"
-            aria-label="Search organizations"
-            placeholder="Search organizations"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="pl-8"
-          />
+          <Input type="search" aria-label="Search organizations" placeholder="Search organizations" value={query} onChange={(event) => setQuery(event.target.value)} className="pl-8" />
         </div>
       )}
       {matches.length === 0 ? (
-        <EmptyState
-          icon={Building}
-          title={needle ? `No organizations match "${query.trim()}"` : "No organizations yet"}
-        />
+        <EmptyState icon={Building} title={term ? `No organizations match "${term}"` : "No organizations yet"} />
       ) : (
         <ul className="flex flex-col gap-0.5">
           {matches.map((org) => (
             <li key={org.orgId}>
-              <Button
-                variant="ghost"
-                className="w-full justify-start"
-                aria-current={org.orgId === currentOrgId ? "true" : undefined}
-                onClick={() => select(org.orgId)}
-              >
+              <Button variant="ghost" className="w-full justify-start" aria-current={org.orgId === currentOrgId ? "true" : undefined} onClick={() => select(org.orgId)}>
                 {org.name}
               </Button>
             </li>

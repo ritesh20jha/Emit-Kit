@@ -11,3 +11,8 @@ export const defaultMe: components["schemas"]["MeResponse"] = {
 };
 
 export const meHandler = http.get("/api/v1/me", () => HttpResponse.json(defaultMe));
+
+/** A healthy GitHub quota, so the top bar renders quietly in tests that do not care about it. */
+export const vcsQuotaHandler = http.get("/api/v1/me/vcs-quota", () =>
+  HttpResponse.json({ limit: 5000, remaining: 4800, resetAt: "2026-11-13T15:30:00Z" }),
+);
