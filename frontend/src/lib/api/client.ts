@@ -5,7 +5,7 @@ import type { paths } from "./generated/schema";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Reads a cookie by name. Returns undefined when it is absent. */
-function readCookie(name: string): string | undefined {
+export function readCookie(name: string): string | undefined {
   const prefix = `${name}=`;
   const match = document.cookie.split("; ").find((cookie) => cookie.startsWith(prefix));
   return match === undefined ? undefined : decodeURIComponent(match.slice(prefix.length));
