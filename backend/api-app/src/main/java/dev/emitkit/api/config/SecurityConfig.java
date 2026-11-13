@@ -69,8 +69,8 @@ public class SecurityConfig {
    * appChain, whose catch-all would otherwise answer 401 on the management port. The main port has
    * no handler for {@code /internal/**}, so it answers 404 there.
    *
-   * <p>Warning: {@code /internal/**} is permitAll on BOTH ports. Register handlers under it only through
-   * {@code @ManagementContextConfiguration}, never in the main context.
+   * <p>Warning: {@code /internal/**} is permitAll on BOTH ports. Register handlers under it only
+   * through {@code @ManagementContextConfiguration}, never in the main context.
    */
   @Bean
   @Order(0)
