@@ -11,7 +11,16 @@ type OrgMembership = components["schemas"]["OrgMembership"];
 const SEARCH_THRESHOLD = 7;
 
 /** Switches the current org: the URL changes and the choice is remembered for the next visit. */
-export function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgMembership[]; currentOrgId?: string }) {
+export function OrgSwitcher({
+  orgs,
+  currentOrgId,
+  onNavigate,
+}: {
+  orgs: OrgMembership[];
+  currentOrgId?: string;
+  /** Runs after an org is picked, so a drawer around the switcher can close. */
+  onNavigate?: () => void;
+}) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -25,6 +34,7 @@ export function OrgSwitcher({ orgs, currentOrgId }: { orgs: OrgMembership[]; cur
     setOpen(false);
     setQuery("");
     void navigate({ href: `/orgs/${orgId}` });
+    onNavigate?.();
   }
 
   return (

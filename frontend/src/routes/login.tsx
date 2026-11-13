@@ -1,9 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/ui";
 
-/** Only same-site paths are returned to after sign-in. Anything else goes to the home page. */
+/**
+ * Only same-site paths are returned to after sign-in. Anything else goes to the home page. Browsers read a
+ * backslash as a slash, so `/\evil.com` is as dangerous as `//evil.com` and is refused too.
+ */
 function safeNext(next: string | undefined): string {
-  return next !== undefined && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const same = next !== undefined && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\");
+  return same ? next : "/";
 }
 
 export const Route = createFileRoute("/login")({

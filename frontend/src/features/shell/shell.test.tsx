@@ -14,6 +14,7 @@ import { renderWithProviders } from "@/test/render";
 import { AppShell } from "./AppShell";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { QuotaIndicator } from "./QuotaIndicator";
+import { Sidebar } from "./Sidebar";
 import { LAST_ORG_KEY } from "./lastOrg";
 
 const personalMe: Me = {
@@ -166,4 +167,44 @@ test("mobile drawer at 360px opens and traps focus", async () => {
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
   expect(screen.getByRole("button", { name: "Open navigation" })).toHaveFocus();
+});
+
+test("picking an org inside the mobile drawer closes it", async () => {
+  stubViewport(360);
+  localStorage.setItem(LAST_ORG_KEY, "org1");
+  const user = userEvent.setup();
+  renderWithProviders(
+    <AppShell>
+      <Where />
+    </AppShell>,
+    { route: "/orgs/org1", me: personalMe },
+  );
+
+  await user.click(await screen.findByRole("button", { name: "Open navigation" }));
+  const drawer = await screen.findByRole("dialog", { name: "Navigation" });
+  await user.click(within(drawer).getByRole("button", { name: "Acme" }));
+  await user.click(await screen.findByRole("button", { name: "Globex" }));
+
+  await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/orgs/org2"));
+  expect(localStorage.getItem(LAST_ORG_KEY)).toBe("org2");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).not.toBeInTheDocument());
+});
+
+test("org section links are current only on their own page", async () => {
+  renderWithProviders(<Sidebar orgs={personalMe.orgs} currentOrgId="org1" />, {
+    route: "/orgs/org1/members",
+    me: personalMe,
+  });
+
+  expect(await screen.findByRole("link", { name: "Members" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Projects" })).not.toHaveAttribute("aria-current");
+});
+
+test.each(["/\\evil.com", "//evil.com"])("login returns only to same-site paths, not %s", async (next) => {
+  const path = `/login?next=${encodeURIComponent(next)}`;
+  const location = stubLocationAt(path);
+  renderApp(path);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Sign in with GitHub" }));
+  expect(location.href).toBe("/oauth2/authorization/github?next=%2F");
 });
