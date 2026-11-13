@@ -23,6 +23,7 @@ public final class PetstoreClient {
   private static final int DEFAULT_MAX_RETRIES = 2;
   private static final long RETRY_BASE_DELAY_MILLIS = 500;
   private static final int MAX_BACKOFF_SHIFT = 10;
+  private static final long MAX_DELAY_MILLIS = 30_000;
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final ClientConfig config;
@@ -57,7 +58,8 @@ public final class PetstoreClient {
       if (!isRetryable(status) || attempt >= config.maxRetries()) {
         throw toApiException(status, response.body());
       }
-      sleep(RETRY_BASE_DELAY_MILLIS * (1L << Math.min(attempt, MAX_BACKOFF_SHIFT)));
+      long delay = RETRY_BASE_DELAY_MILLIS << Math.min(attempt, MAX_BACKOFF_SHIFT);
+      sleep(Math.min(delay, MAX_DELAY_MILLIS));
     }
   }
 
@@ -163,7 +165,7 @@ public final class PetstoreClient {
       return this;
     }
 
-    /** HTTP client for requests. Defaults to a client that follows redirects. */
+    /** HTTP client for requests. Defaults to one that does not follow redirects. */
     public Builder httpClient(java.net.http.HttpClient httpClient) {
       this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
       return this;
@@ -181,12 +183,9 @@ public final class PetstoreClient {
       }
       Map<String, String> headers = new LinkedHashMap<>();
       Map<String, String> query = new LinkedHashMap<>();
+      // Redirects are intentionally not followed, so credentials never leave the configured host.
       java.net.http.HttpClient client =
-          httpClient != null
-              ? httpClient
-              : java.net.http.HttpClient.newBuilder()
-                  .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
-                  .build();
+          httpClient == null ? java.net.http.HttpClient.newHttpClient() : httpClient;
       return new PetstoreClient(
           new ClientConfig(resolvedBaseUrl, maxRetries, client, headers, query));
     }
