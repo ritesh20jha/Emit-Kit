@@ -2,6 +2,7 @@ package dev.emitkit.api.me;
 
 import dev.emitkit.api.auth.CurrentUser;
 import dev.emitkit.api.auth.EmitKitUser;
+import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.OrgMember;
@@ -11,10 +12,13 @@ import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,15 +32,28 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Me", description = "The signed-in user, their organizations and VCS quota.")
 public class MeController {
 
+  /** How long a manual org sync blocks the next one for the same user. */
+  private static final Duration SYNC_INTERVAL = Duration.ofSeconds(60);
+
+  private static final String SYNC_THROTTLE_PREFIX = "orgsync:throttle:";
+
   private final UserRepository users;
   private final OrgMemberRepository orgMembers;
   private final OrganizationRepository organizations;
+  private final OrgSyncService orgSync;
+  private final StringRedisTemplate redis;
 
   public MeController(
-      UserRepository users, OrgMemberRepository orgMembers, OrganizationRepository organizations) {
+      UserRepository users,
+      OrgMemberRepository orgMembers,
+      OrganizationRepository organizations,
+      OrgSyncService orgSync,
+      StringRedisTemplate redis) {
     this.users = users;
     this.orgMembers = orgMembers;
     this.organizations = organizations;
+    this.orgSync = orgSync;
+    this.redis = redis;
   }
 
   @GetMapping
@@ -71,10 +88,26 @@ public class MeController {
     throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
   }
 
+  /**
+   * Runs an org sync on demand. The first call in each minute claims a Redis key with SET NX EX and
+   * syncs; a call while the key lives is refused. A sync that fails releases the key, so the user
+   * can retry at once. The login-triggered sync does not check this key, so a login always syncs.
+   */
   @PostMapping("/sync-orgs")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   @Operation(summary = "Re-sync the signed-in user's organizations from the VCS provider")
-  public void syncOrgs() {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+  @ApiResponse(responseCode = "429", description = "A sync ran less than a minute ago")
+  public void syncOrgs(@CurrentUser EmitKitUser principal) {
+    String key = SYNC_THROTTLE_PREFIX + principal.userId();
+    Boolean claimed = redis.opsForValue().setIfAbsent(key, "1", SYNC_INTERVAL);
+    if (!Boolean.TRUE.equals(claimed)) {
+      throw new AppException(ErrorCode.RATE_LIMITED, "Sync ran less than a minute ago");
+    }
+    try {
+      orgSync.sync(principal.userId());
+    } catch (RuntimeException e) {
+      redis.delete(key);
+      throw e;
+    }
   }
 }

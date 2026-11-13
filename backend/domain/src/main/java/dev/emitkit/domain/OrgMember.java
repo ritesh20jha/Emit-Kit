@@ -88,6 +88,11 @@ public class OrgMember implements Persistable<OrgMemberId> {
     return role;
   }
 
+  /** Changes the role. The caller decides the source; this does not change {@code roleSource}. */
+  public void setRole(Role role) {
+    this.role = role;
+  }
+
   public RoleSource getRoleSource() {
     return roleSource;
   }

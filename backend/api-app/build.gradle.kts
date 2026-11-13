@@ -23,6 +23,7 @@ dependencies {
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.wiremock.standalone)
+    testImplementation(testFixtures(project(":vcs")))
 }
 
 // -Dopenapi.update=true (scripts/export-openapi.sh) makes OpenApiSnapshotTest rewrite the committed spec.

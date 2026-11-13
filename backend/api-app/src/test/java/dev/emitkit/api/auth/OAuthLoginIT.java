@@ -94,6 +94,9 @@ class OAuthLoginIT {
 
   @DynamicPropertySource
   static void gitHubEndpoints(DynamicPropertyRegistry registry) {
+    // The org sync that each login starts calls the REST API. Pointing it at WireMock keeps it off
+    // the network; its /user/memberships/orgs call is unstubbed, so the sync fails before writing.
+    registry.add("emitkit.github.api-url", GITHUB::baseUrl);
     registry.add(
         "spring.security.oauth2.client.provider.github.authorization-uri",
         () -> GITHUB.baseUrl() + "/login/oauth/authorize");

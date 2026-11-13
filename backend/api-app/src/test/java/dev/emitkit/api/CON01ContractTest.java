@@ -12,6 +12,7 @@ import dev.emitkit.api.auth.GitHubUserService;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
+import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
@@ -25,6 +26,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomiz
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -62,6 +64,8 @@ class CON01ContractTest {
   @MockitoBean private OrgMemberRepository orgMembers;
   @MockitoBean private OrganizationRepository organizations;
   @MockitoBean private OrgAccessService orgAccess;
+  @MockitoBean private OrgSyncService orgSync;
+  @MockitoBean private StringRedisTemplate redis;
 
   @Test
   @WithMockUser
@@ -90,9 +94,20 @@ class CON01ContractTest {
 
   @ParameterizedTest
   @WithMockUser
-  @CsvSource({"GET,/api/v1/me/vcs-quota", "POST,/api/v1/me/sync-orgs"})
-  void contractEndpointIs501(String method, String path) throws Exception {
-    mvc.perform(request(HttpMethod.valueOf(method), path).with(csrf()))
+  @CsvSource({
+    "GET,/api/v1/me/vcs-quota,",
+    "GET,/api/v1/orgs,",
+    "POST,/api/v1/me/sync-orgs,
+    "GET,/api/v1/orgs/org1,",
+    "GET,/api/v1/orgs/org1/members,",
+    "PATCH,/api/v1/orgs/org1/members/user1,{\"role\":\"EDITOR\"}"
+  })
+  void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
+    MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());
+    if (body != null) {
+      request.contentType(MediaType.APPLICATION_JSON).content(body);
+    }
+    mvc.perform(request)
         .andExpect(status().is(501))
         .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
   }
