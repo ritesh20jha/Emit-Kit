@@ -75,6 +75,15 @@ public class OrgMember implements Persistable<OrgMemberId> {
     return userId;
   }
 
+  /**
+   * Changes the member's role and records where the new role came from. The row is updated in
+   * place: the entity stays managed, so a caller in a transaction only has to call this.
+   */
+  public void assignRole(Role role, RoleSource roleSource) {
+    this.role = role;
+    this.roleSource = roleSource;
+  }
+
   public Role getRole() {
     return role;
   }

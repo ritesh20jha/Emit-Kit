@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.emitkit.api.access.OrgAccessService;
 import dev.emitkit.api.auth.GitHubUserService;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
@@ -65,12 +66,13 @@ class CON02ContractTest {
 
   @Autowired private MockMvc mvc;
 
-  // SecurityConfig and MeController depend on these, and this slice does not load them.
+  // SecurityConfig and the controllers depend on these, and this slice does not load them.
   @MockitoBean private GitHubUserService gitHubUserService;
   @MockitoBean private LoginSuccessHandler loginSuccessHandler;
   @MockitoBean private UserRepository users;
   @MockitoBean private OrgMemberRepository orgMembers;
   @MockitoBean private OrganizationRepository organizations;
+  @MockitoBean private OrgAccessService orgAccess;
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
 

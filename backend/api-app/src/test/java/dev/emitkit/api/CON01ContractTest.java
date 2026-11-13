@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.emitkit.api.access.OrgAccessService;
 import dev.emitkit.api.auth.GitHubUserService;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
@@ -15,7 +16,6 @@ import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -33,12 +33,12 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * The contract ticket's endpoints: every one answers 501 NOT_IMPLEMENTED until its feature ticket
- * replaces the body, and the request DTOs validate their input. Runs with the real security chain
- * so that CSRF and authentication apply as they do in the application.
+ * The contract ticket's endpoints: the /me endpoints answer 501 NOT_IMPLEMENTED until their feature
+ * ticket replaces the body, and the member PATCH request validates its input. The org and member
+ * endpoints are covered by their own ITs. Runs with the real security chain so that CSRF and
+ * authentication apply as they do in the application.
  */
 @WebMvcTest(properties = {GitHubTestCredentials.CLIENT_ID, GitHubTestCredentials.CLIENT_SECRET})
 @AutoConfigureMockMvc
@@ -57,12 +57,13 @@ class CON01ContractTest {
 
   @Autowired private MockMvc mvc;
 
-  // SecurityConfig and MeController depend on these, and this slice does not load them.
+  // SecurityConfig and the controllers depend on these, and this slice does not load them.
   @MockitoBean private GitHubUserService gitHubUserService;
   @MockitoBean private LoginSuccessHandler loginSuccessHandler;
   @MockitoBean private UserRepository users;
   @MockitoBean private OrgMemberRepository orgMembers;
   @MockitoBean private OrganizationRepository organizations;
+  @MockitoBean private OrgAccessService orgAccess;
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
 
@@ -91,12 +92,12 @@ class CON01ContractTest {
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
   }
 
-  /** The body column is empty for requests that carry none; only PATCH reads a body. */
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
     "GET,/api/v1/me/vcs-quota,",
     "GET,/api/v1/orgs,",
+    "POST,/api/v1/me/sync-orgs,
     "GET,/api/v1/orgs/org1,",
     "GET,/api/v1/orgs/org1/members,",
     "PATCH,/api/v1/orgs/org1/members/user1,{\"role\":\"EDITOR\"}"
