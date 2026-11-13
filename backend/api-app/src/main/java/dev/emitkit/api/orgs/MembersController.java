@@ -68,11 +68,12 @@ public class MembersController {
       @PathVariable("orgId") String orgId,
       @PathVariable("userId") String userId,
       @Valid @RequestBody UpdateRoleRequest request) {
-    orgAccess.require(orgId, Permission.MEMBER_ROLE_EDIT);
-    // Lock the org first: two admins demoting each other must not both pass the last-admin check.
+    // Lock the org before authorizing: the requester's row and the admin count are then read
+    // under the lock, so a concurrent change cannot leave them stale.
     organizations
         .findByIdForUpdate(orgId)
         .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "organization not found"));
+    orgAccess.require(orgId, Permission.MEMBER_ROLE_EDIT);
     OrgMember target =
         orgMembers
             .findById(new OrgMemberId(orgId, userId))

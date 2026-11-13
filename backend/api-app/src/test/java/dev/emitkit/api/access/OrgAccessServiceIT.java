@@ -5,6 +5,7 @@ import static dev.emitkit.domain.Role.EDITOR;
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -190,6 +191,28 @@ class OrgAccessServiceIT {
     Project found = projectAccess.require(widgets.getId(), Permission.PROJECT_VIEW);
     assertThat(found.getId()).isEqualTo(widgets.getId());
     assertThat(found.getOrgId()).isEqualTo(acme.getId());
+  }
+
+  @Test
+  void projectAccess_nonMember_isNotFoundWithSameMessageAsMissingProject() {
+    Organization acme = org("acme");
+    User owner = user(1, "owner", null);
+    member(acme, owner, ADMIN);
+    Project widgets = project(acme, owner);
+    User stranger = user(2, "stranger", null);
+
+    signIn(stranger);
+    AppException missing =
+        catchThrowableOfType(
+            () -> projectAccess.require("01MISSINGPROJECT0000000000", Permission.PROJECT_VIEW),
+            AppException.class);
+    AppException nonMember =
+        catchThrowableOfType(
+            () -> projectAccess.require(widgets.getId(), Permission.PROJECT_VIEW),
+            AppException.class);
+
+    assertThat(nonMember.code()).isEqualTo(ErrorCode.NOT_FOUND);
+    assertThat(nonMember.getMessage()).isEqualTo(missing.getMessage());
   }
 
   private ResultActions signedInGet(String path, User user) throws Exception {

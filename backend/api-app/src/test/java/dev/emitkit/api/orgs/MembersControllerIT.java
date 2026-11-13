@@ -155,6 +155,33 @@ class MembersControllerIT {
   }
 
   @Test
+  void patchNonMember_gets404AndOtherOrgUnchanged() throws Exception {
+    Organization acme = org("acme");
+    User admin = user(1, "admin", null);
+    member(acme, admin, ADMIN, RoleSource.SYNC);
+    Organization beta = org("beta");
+    User elsewhere = user(2, "elsewhere", null);
+    member(beta, elsewhere, VIEWER, RoleSource.SYNC);
+
+    for (String userId : List.of("01UNKNOWNUSER000000000000000", elsewhere.getId())) {
+      mvc.perform(
+              patch(MEMBERS + "/{userId}", acme.getId(), userId)
+                  .with(csrf())
+                  .with(signedInAs(admin))
+                  .contentType("application/json")
+                  .content("{\"role\":\"EDITOR\"}"))
+          .andExpect(status().isNotFound())
+          .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    assertThat(orgMembers.findById(new OrgMemberId(acme.getId(), elsewhere.getId()))).isEmpty();
+    OrgMember betaMember =
+        orgMembers.findById(new OrgMemberId(beta.getId(), elsewhere.getId())).orElseThrow();
+    assertThat(betaMember.getRole()).isEqualTo(VIEWER);
+    assertThat(betaMember.getRoleSource()).isEqualTo(RoleSource.SYNC);
+  }
+
+  @Test
   void roleChange_waitsForOrgLock() throws Exception {
     Organization acme = org("acme");
     User admin = user(1, "admin", null);
@@ -174,7 +201,7 @@ class MembersControllerIT {
                     locked.countDown();
                     awaitQuietly(release);
                   }));
-      locked.await();
+      assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
       Future<Integer> change = pool.submit(() -> patchRole(acme, target, admin, "EDITOR"));
 
       // While the lock is held the change cannot finish: this is what the lock guarantees.
