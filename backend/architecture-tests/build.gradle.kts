@@ -10,6 +10,7 @@ dependencies {
     testImplementation(project(":generators:core"))
     testImplementation(project(":generators:workflows"))
     testImplementation(project(":generators:typescript-sdk"))
+    testImplementation(project(":generators:cli"))
     testImplementation(project(":ai"))
     testImplementation(project(":api-app"))
     testImplementation(project(":worker-app"))
