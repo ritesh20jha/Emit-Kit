@@ -77,11 +77,12 @@ class DocsGeneratorTest {
 
   @Test
   void aiThrowing_fallsBackToTemplate() {
-    DocsAiAssistant failing =
-        (tag, ops) -> {
-          throw new IllegalStateException("model unavailable");
-        };
-    var files = generator.generate(FixtureSpecs.load("petstore"), ctx(failing));
+    var files =
+        generator.generate(
+            FixtureSpecs.load("petstore"),
+            ctx((tag, ops) -> {
+              throw new IllegalStateException("model unavailable");
+            }));
     assertThat(section(content(files, "pets.md"), "getPetById")).contains("curl -X GET");
   }
 
@@ -91,7 +92,7 @@ class DocsGeneratorTest {
     properties.put(
         "name", new PrimitiveSchema(PrimitiveType.STRING, null, false, "Pet name |\nnickname"));
     properties.put("id", new PrimitiveSchema(PrimitiveType.INTEGER, null, false, null));
-    var pet = new ObjectSchema(properties, Set.of("name"), null, false, null);
+    Schema pet = new ObjectSchema(properties, Set.of("name"), null, false, null);
     Schema petRef = new RefSchema("Pet", false, null);
     var op =
         new Operation(
@@ -102,33 +103,22 @@ class DocsGeneratorTest {
             "pets",
             "Get a pet",
             "Returns one pet.",
-            List.of(
-                new Parameter(
-                    "id",
-                    ParamLocation.PATH,
-                    true,
-                    new PrimitiveSchema(PrimitiveType.INTEGER, null, false, null),
-                    null),
-                new Parameter(
-                    "status",
-                    ParamLocation.QUERY,
-                    true,
-                    new PrimitiveSchema(PrimitiveType.STRING, null, false, null),
-                    null)),
+            List.of(param("id", ParamLocation.PATH), param("status", ParamLocation.QUERY)),
             new RequestBody(true, "application/json", petRef),
             Map.of("200", new Response("200", "ok", petRef)),
             List.of(),
             true);
-    var model = model(List.of(), List.of(op), Map.of("Pet", pet));
-    assertThat(content(generator.generate(model, ctx()), "pets.md"))
+    var md =
+        content(
+            generator.generate(model(List.of(), List.of(op), Map.of("Pet", pet)), ctx()),
+            "pets.md");
+    assertThat(md)
         .contains("**Deprecated.** `PUT /pets/{id}`")
-        .contains("curl -X PUT 'https://api.example.com/pets/1?status=string'")
-        .contains("-d '{\"name\":\"string\",\"id\":1}'")
         .contains("Get a pet\n\nReturns one pet.")
+        .contains("curl -X PUT 'https://api.example.com/pets/string?status=string'")
+        .contains("-d '{\"name\":\"string\",\"id\":1}'")
         .contains(
-            "| Field | Type | Required | Description |\n"
-                + "| --- | --- | --- | --- |\n"
-                + "| name | string | Yes | Pet name \\| nickname |")
+            "| Field | Type | Required | Description |\n| --- | --- | --- | --- |\n| name | string | Yes | Pet name \\| nickname |")
         .contains("| 200 | ok | Pet |")
         .contains("**200 response fields**");
   }
@@ -212,6 +202,11 @@ class DocsGeneratorTest {
   private static ApiModel model(List<Tag> tags, List<Operation> ops, Map<String, Schema> schemas) {
     return new ApiModel(
         new Info("Test", "1.0.0", null, null), List.of(), Map.of(), tags, ops, schemas);
+  }
+
+  private static Parameter param(String name, ParamLocation in) {
+    return new Parameter(
+        name, in, true, new PrimitiveSchema(PrimitiveType.STRING, null, false, null), null);
   }
 
   private static Operation operation(

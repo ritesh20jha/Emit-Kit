@@ -4,9 +4,7 @@ import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.SecurityScheme;
 import java.util.List;
 
-/**
- * Values rendered by {@code index.md.mustache}. Servers are pre-formatted lines; cells are escaped.
- */
+/** Values rendered by {@code index.md.mustache}. */
 record IndexView(
     String title,
     String version,

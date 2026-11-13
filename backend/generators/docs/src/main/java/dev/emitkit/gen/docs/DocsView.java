@@ -13,16 +13,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 
-/**
- * Values rendered by {@code tag.md.mustache}: one tag page. Table cells and headings are already
- * escaped, so the template only interpolates.
- *
- * @param apiTitle one-line API title, linking back to the index
- * @param title one-line tag name
- * @param hasDescription whether {@code description} is shown
- * @param description the tag's description, if it has one
- * @param ops the tag's operations in model order
- */
+/** Values rendered by {@code tag.md.mustache}; cells and headings are already escaped. */
 record DocsView(
     String apiTitle, String title, boolean hasDescription, String description, List<Op> ops) {
 
@@ -60,10 +51,8 @@ record DocsView(
 
   record Param(String name, String in, String type, String required, String description) {}
 
-  /** A response row: its status, description and schema label. */
   record Result(String status, String description, String schema) {}
 
-  /** The property table of one response schema, shown only when it has properties. */
   record FieldTable(String status, List<Schemas.Field> fields) {}
 
   static DocsView of(ApiModel model, DocsGenerator.TagGroup group, Map<String, DocsExamples> ai) {
@@ -126,9 +115,7 @@ record DocsView(
         notes);
   }
 
-  /**
-   * An AI snippet without the code fence wrapped around it, so it cannot close the page's fence.
-   */
+  /** An AI snippet minus a fence wrapped around it, so it cannot close the page's fence. */
   private static String unfence(String text) {
     String[] lines = text.replace("\r\n", "\n").strip().split("\n");
     boolean fenced =

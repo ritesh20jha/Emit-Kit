@@ -22,10 +22,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Emits Markdown API docs under {@code {outputDir}docs/v{version}/}: an {@code index.md} and one
- * page per tag. Each operation has its parameters, request body, responses and code examples.
- *
- * <p>Output is byte-stable: tags keep model order and no timestamps are written. An AI assistant,
- * when supplied, is asked once per tag; if it fails, the template examples are used.
+ * page per tag. Output is byte-stable; an AI assistant, when supplied, is asked once per tag.
  */
 public final class DocsGenerator implements Generator {
 
@@ -34,7 +31,7 @@ public final class DocsGenerator implements Generator {
   /** Page file stems are kebab-case. */
   private static final NameStrategy STEMS = NameStrategy.forLanguage(Language.TYPESCRIPT);
 
-  /** One tag page: its tag, file name and operations in model order. */
+  /** One tag page. */
   record TagGroup(Tag tag, String file, List<Operation> ops) {}
 
   @Override
@@ -55,10 +52,7 @@ public final class DocsGenerator implements Generator {
     return List.copyOf(files);
   }
 
-  /**
-   * Operations grouped by their tag: declared tags with operations first, in declaration order,
-   * then undeclared tags in first-seen order.
-   */
+  /** Operations grouped by tag: declared tags first, then undeclared tags in first-seen order. */
   static List<TagGroup> groups(ApiModel model) {
     Map<String, Tag> declared = new LinkedHashMap<>();
     for (Tag tag : model.tags()) {
@@ -90,10 +84,7 @@ public final class DocsGenerator implements Generator {
     return stem;
   }
 
-  /**
-   * Examples the AI assistant wrote for this tag, keyed by operationId. Empty when there is no
-   * assistant, or when it throws: the templates then supply every example.
-   */
+  /** AI examples by operationId; empty without an assistant or when it throws. */
   private static Map<String, DocsExamples> aiExamples(GeneratorContext ctx, TagGroup group) {
     if (ctx.ai().isEmpty()) {
       return Map.of();

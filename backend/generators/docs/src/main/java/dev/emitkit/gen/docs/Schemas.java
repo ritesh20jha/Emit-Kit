@@ -40,11 +40,7 @@ final class Schemas {
     };
   }
 
-  /**
-   * The properties of {@code schema} as table rows, in declaration order. References are resolved
-   * through {@code schemas}, array items and all-of parts contribute their fields, and any other
-   * schema has no rows. A reference already being resolved contributes none.
-   */
+  /** The properties of {@code schema} as table rows, resolving references and array items. */
   static List<Field> fields(Schema schema, Map<String, Schema> schemas) {
     return fields(schema, schemas, new HashSet<>());
   }
@@ -78,10 +74,7 @@ final class Schemas {
     };
   }
 
-  /**
-   * A sample JSON value for {@code schema}: object properties in declaration order, first enum or
-   * option values. A reference that is already being expanded becomes an empty object.
-   */
+  /** A sample JSON value for {@code schema}; a reference already being expanded is {}. */
   static Object sample(Schema schema, Map<String, Schema> schemas) {
     return sample(schema, schemas, new HashSet<>());
   }
@@ -133,13 +126,7 @@ final class Schemas {
     return switch (type) {
       case STRING -> text;
       case BOOLEAN -> Boolean.parseBoolean(text);
-      case INTEGER, NUMBER -> {
-        try {
-          yield new BigDecimal(text);
-        } catch (NumberFormatException e) {
-          yield text;
-        }
-      }
+      case INTEGER, NUMBER -> text.matches("-?\\d+(\\.\\d+)?") ? new BigDecimal(text) : text;
     };
   }
 

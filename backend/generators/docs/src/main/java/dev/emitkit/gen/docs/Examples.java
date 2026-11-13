@@ -21,7 +21,7 @@ final class Examples {
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^}]+)}");
   private static final ObjectMapper JSON = new ObjectMapper();
 
-  /** Values the templates interpolate. Each literal is quoted for the language that uses it. */
+  /** Values the templates interpolate, each literal quoted for its language. */
   record Request(
       String method,
       String contentType,
