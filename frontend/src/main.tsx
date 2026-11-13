@@ -1,7 +1,7 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { AppProviders } from "@/app/providers";
+import { AppProviders, createQueryClient } from "@/app/providers";
 import { createAppRouter } from "@/app/router";
 import "./styles/app.css";
 
@@ -10,11 +10,12 @@ if (!rootElement) {
   throw new Error("Root element #root not found in index.html");
 }
 
-const router = createAppRouter();
+const queryClient = createQueryClient();
+const router = createAppRouter(queryClient);
 
 createRoot(rootElement).render(
   <StrictMode>
-    <AppProviders>
+    <AppProviders queryClient={queryClient}>
       <RouterProvider router={router} />
     </AppProviders>
   </StrictMode>,

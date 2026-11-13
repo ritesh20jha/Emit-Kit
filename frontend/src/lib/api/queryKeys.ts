@@ -1,6 +1,7 @@
 /** Query-key factory. Mutations invalidate these exact keys, so every key comes from here. */
 export const qk = {
   me: ["me"],
+  vcsQuota: ["me", "vcs-quota"],
   orgs: {
     all: ["orgs"],
     one: (id: string) => ["orgs", id],
