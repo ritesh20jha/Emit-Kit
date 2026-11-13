@@ -12,6 +12,7 @@ import dev.emitkit.api.auth.GitHubUserService;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
+import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
@@ -26,6 +27,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomiz
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -62,6 +64,8 @@ class CON03ContractTest {
   @MockitoBean private UserRepository users;
   @MockitoBean private OrgMemberRepository orgMembers;
   @MockitoBean private OrganizationRepository organizations;
+  @MockitoBean private OrgSyncService orgSync;
+  @MockitoBean private StringRedisTemplate redis;
 
   @Test
   @WithMockUser
