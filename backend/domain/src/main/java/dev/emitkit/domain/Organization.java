@@ -65,6 +65,12 @@ public class Organization extends BaseEntity {
     this.ownerUserId = ownerUserId;
   }
 
+  /** Takes the organization's current login and display name from its VCS provider. */
+  public void rename(String slug, String name) {
+    this.slug = slug;
+    this.name = name;
+  }
+
   public String getVcsProvider() {
     return vcsProvider;
   }

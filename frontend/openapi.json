@@ -1564,6 +1564,9 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "429": {
+            "description": "A sync ran less than a minute ago"
           }
         },
         "summary": "Re-sync the signed-in user's organizations from the VCS provider",

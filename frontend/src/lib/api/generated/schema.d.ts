@@ -914,6 +914,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description A sync ran less than a minute ago */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     vcsQuota: {
