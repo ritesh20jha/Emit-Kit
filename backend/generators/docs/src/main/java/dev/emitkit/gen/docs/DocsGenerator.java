@@ -101,7 +101,7 @@ public final class DocsGenerator implements Generator {
     try {
       @Nullable Map<String, DocsExamples> found = ctx.ai().get().examples(group.tag(), group.ops());
       return found == null ? Map.of() : found;
-    } catch (RuntimeException e) {
+    } catch (Exception e) {
       return Map.of();
     }
   }

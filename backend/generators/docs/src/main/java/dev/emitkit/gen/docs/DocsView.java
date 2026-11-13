@@ -6,6 +6,7 @@ import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.RequestBody;
 import dev.emitkit.spec.model.Response;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -77,7 +78,15 @@ record DocsView(
   }
 
   private static Op op(ApiModel model, Operation op, DocsExamples override) {
-    DocsExamples examples = override != null ? override : Examples.render(model, op);
+    DocsExamples examples =
+        override == null
+            ? Examples.render(model, op)
+            : new DocsExamples(
+                unfence(override.curl()),
+                unfence(override.typescript()),
+                unfence(override.python()),
+                unfence(override.java()),
+                override.notes());
     String notes = override == null ? "" : override.notes().strip();
     String prose =
         Stream.of(op.summary(), op.description())
@@ -115,6 +124,19 @@ record DocsView(
         examples.java(),
         !notes.isEmpty(),
         notes);
+  }
+
+  /**
+   * An AI snippet without the code fence wrapped around it, so it cannot close the page's fence.
+   */
+  private static String unfence(String text) {
+    String[] lines = text.replace("\r\n", "\n").strip().split("\n");
+    boolean fenced =
+        lines.length > 1
+            && lines[0].startsWith("```")
+            && lines[lines.length - 1].strip().equals("```");
+    return String.join("\n", fenced ? Arrays.copyOfRange(lines, 1, lines.length - 1) : lines)
+        .strip();
   }
 
   private static Param param(Parameter p) {

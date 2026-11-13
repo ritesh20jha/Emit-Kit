@@ -1,6 +1,6 @@
 # Petstore
 
-Version: 1.0.0
+API version: 1.0.0
 
 ## Servers
 
