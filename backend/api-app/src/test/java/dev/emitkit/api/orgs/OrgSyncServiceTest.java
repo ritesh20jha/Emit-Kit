@@ -35,6 +35,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -51,6 +53,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @SpringBootTest(
     properties = {
@@ -77,6 +81,7 @@ class OrgSyncServiceTest {
   @Autowired private OrgSyncService sync;
   @Autowired private OrgSyncListener listener;
   @Autowired private ApplicationEventPublisher events;
+  @Autowired private ApplicationContext context;
   @Autowired private MockMvc mvc;
   @Autowired private StringRedisTemplate redis;
   @Autowired private UserRepository users;
@@ -213,12 +218,7 @@ class OrgSyncServiceTest {
   @Test
   void syncEndpoint_throttled() throws Exception {
     vcs.orgs(org("acme", VcsRole.OWNER));
-    var caller =
-        authentication(
-            new UsernamePasswordAuthenticationToken(
-                new EmitKitUser(user.getId(), user.getLogin()),
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+    var caller = signedIn();
 
     mvc.perform(post("/api/v1/me/sync-orgs").with(csrf()).with(caller))
         .andExpect(status().isNoContent());
@@ -237,6 +237,51 @@ class OrgSyncServiceTest {
         .containsEntry("acme", Role.ADMIN);
   }
 
+  @Test
+  void failedSync_doesNotThrottleNextCall() throws Exception {
+    vcs.failNext("listOrgs", new VcsServerException("GitHub is down"));
+    RequestPostProcessor caller = signedIn();
+
+    mvc.perform(post("/api/v1/me/sync-orgs").with(csrf()).with(caller))
+        .andExpect(status().is5xxServerError());
+    assertThat(redis.hasKey("orgsync:throttle:" + user.getId()))
+        .as("the claim is released when the sync fails")
+        .isFalse();
+
+    vcs.orgs(org("acme", VcsRole.OWNER));
+    mvc.perform(post("/api/v1/me/sync-orgs").with(csrf()).with(caller))
+        .andExpect(status().isNoContent());
+    assertThat(roles(user.getId())).containsEntry("acme", Role.ADMIN);
+
+    mvc.perform(post("/api/v1/me/sync-orgs").with(csrf()).with(caller))
+        .andExpect(status().isTooManyRequests());
+  }
+
+  @Test
+  void gitHubCallRunsOutsideTransaction() {
+    vcs.orgs(org("acme", VcsRole.OWNER));
+    AtomicBoolean inTransaction = new AtomicBoolean(true);
+    when(vcsProvider.forProject(anyString(), any(RateLimitPolicy.class)))
+        .thenAnswer(call -> {
+          inTransaction.set(TransactionSynchronizationManager.isActualTransactionActive());
+          return vcs;
+        });
+
+    sync.sync(user.getId());
+
+    assertThat(inTransaction.get())
+        .as("GitHub is called before any transaction opens, so no connection is held across it")
+        .isFalse();
+    assertThat(roles(user.getId())).containsEntry("acme", Role.ADMIN);
+  }
+
+  @Test
+  void defaultTaskExecutorStillAvailable() {
+    assertThat(context.containsBean("applicationTaskExecutor"))
+        .as("the orgSyncExecutor bean does not suppress Boot's default executor")
+        .isTrue();
+  }
+
   private static VcsOrg org(String login, VcsRole role) {
     return new VcsOrg("id-" + login, login, null, false, role);
   }
@@ -247,6 +292,15 @@ class OrgSyncServiceTest {
         organizations.save(
             new Organization(null, "github", "id-" + login, login, login, false, null));
     orgMembers.save(new OrgMember(org.getId(), user.getId(), role, source));
+  }
+
+  /** A request as the signed-in test user. */
+  private RequestPostProcessor signedIn() {
+    return authentication(
+        new UsernamePasswordAuthenticationToken(
+            new EmitKitUser(user.getId(), user.getLogin()),
+            null,
+            List.of(new SimpleGrantedAuthority("ROLE_USER"))));
   }
 
   /** The user's roles keyed by organization slug, which is the GitHub login for synced orgs. */

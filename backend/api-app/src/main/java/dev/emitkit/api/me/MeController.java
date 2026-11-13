@@ -90,21 +90,24 @@ public class MeController {
 
   /**
    * Runs an org sync on demand. The first call in each minute claims a Redis key with SET NX EX and
-   * syncs; a call while the key lives is refused. The login-triggered sync does not check this key,
-   * so a login always syncs.
+   * syncs; a call while the key lives is refused. A sync that fails releases the key, so the user
+   * can retry at once. The login-triggered sync does not check this key, so a login always syncs.
    */
   @PostMapping("/sync-orgs")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   @Operation(summary = "Re-sync the signed-in user's organizations from the VCS provider")
   @ApiResponse(responseCode = "429", description = "A sync ran less than a minute ago")
   public void syncOrgs(@CurrentUser EmitKitUser principal) {
-    Boolean claimed =
-        redis
-            .opsForValue()
-            .setIfAbsent(SYNC_THROTTLE_PREFIX + principal.userId(), "1", SYNC_INTERVAL);
+    String key = SYNC_THROTTLE_PREFIX + principal.userId();
+    Boolean claimed = redis.opsForValue().setIfAbsent(key, "1", SYNC_INTERVAL);
     if (!Boolean.TRUE.equals(claimed)) {
       throw new AppException(ErrorCode.RATE_LIMITED, "Sync ran less than a minute ago");
     }
-    orgSync.sync(principal.userId());
+    try {
+      orgSync.sync(principal.userId());
+    } catch (RuntimeException e) {
+      redis.delete(key);
+      throw e;
+    }
   }
 }

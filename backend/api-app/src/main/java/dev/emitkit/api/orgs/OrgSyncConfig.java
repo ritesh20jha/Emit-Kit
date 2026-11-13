@@ -10,8 +10,9 @@ import org.springframework.scheduling.annotation.EnableAsync;
 /**
  * Enables {@code @Async} and gives the organization sync its own executor, which runs each task on
  * a virtual thread so a slow GitHub call holds no platform thread. Declaring an {@link
- * java.util.concurrent.Executor} bean makes Boot skip its default {@code applicationTaskExecutor};
- * nothing else in this application uses that default.
+ * java.util.concurrent.Executor} bean makes Boot skip its default {@code applicationTaskExecutor}
+ * unless {@code spring.task.execution.mode} is {@code force}, which {@code application.yml} sets,
+ * so the default stays available alongside this one.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableAsync

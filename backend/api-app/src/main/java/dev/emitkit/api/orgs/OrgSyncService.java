@@ -15,8 +15,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Mirrors a user's GitHub organizations and roles into EmitKit. One sync upserts every organization
@@ -34,25 +37,38 @@ public class OrgSyncService {
   private final VcsProvider vcsProvider;
   private final OrganizationRepository organizations;
   private final OrgMemberRepository orgMembers;
+  private final TransactionTemplate transactions;
 
   public OrgSyncService(
       VcsProvider vcsProvider,
       OrganizationRepository organizations,
-      OrgMemberRepository orgMembers) {
+      OrgMemberRepository orgMembers,
+      PlatformTransactionManager transactionManager) {
     this.vcsProvider = vcsProvider;
     this.organizations = organizations;
     this.orgMembers = orgMembers;
+    this.transactions = new TransactionTemplate(transactionManager);
   }
 
   /**
    * Syncs the organizations of {@code userId} with what GitHub returns for the user's token. The
-   * call is idempotent. A VCS failure propagates before any row is written, so the sync leaves the
-   * database as it was.
+   * call is idempotent. GitHub is called first, with no transaction open, so no database connection
+   * is held across the network call. The rows are then written in one transaction. A VCS failure
+   * propagates before any row is written, so the sync leaves the database as it was. A write
+   * conflict with a concurrent sync of the same user (a duplicate insert or a stale row) rolls back
+   * the transaction; the rows are then re-read and written once more, with the same GitHub result.
    */
-  @Transactional
   public void sync(String userId) {
     List<VcsOrg> remote = vcsProvider.forProject(userId, RateLimitPolicy.INTERACTIVE).listOrgs();
+    try {
+      transactions.executeWithoutResult(status -> apply(userId, remote));
+    } catch (DataIntegrityViolationException | ObjectOptimisticLockingFailureException conflict) {
+      transactions.executeWithoutResult(status -> apply(userId, remote));
+    }
+  }
 
+  /** Applies the sync rules to the rows of {@code userId}. Runs inside the transaction. */
+  private void apply(String userId, List<VcsOrg> remote) {
     Map<String, OrgMember> current = new HashMap<>();
     for (OrgMember membership : orgMembers.findByUserId(userId)) {
       current.put(membership.getOrgId(), membership);

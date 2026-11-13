@@ -1,4 +1,8 @@
 spring:
+  task:
+    execution:
+      # Keep Boot's applicationTaskExecutor even though OrgSyncConfig declares its own Executor bean.
+      mode: force
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/emitkit}
     username: ${SPRING_DATASOURCE_USERNAME:emitkit}
