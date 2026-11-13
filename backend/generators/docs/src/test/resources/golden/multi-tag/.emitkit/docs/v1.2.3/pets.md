@@ -8,15 +8,15 @@ Part of [Multi Tag](index.md).
 
 ### Parameters
 
-| Name | In | Required | Type | Description |
+| Name | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
-| id | path | Yes | integer |  |
+| id | path | integer | Yes |  |
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 

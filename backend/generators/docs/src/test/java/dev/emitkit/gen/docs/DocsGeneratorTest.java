@@ -12,15 +12,21 @@ import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.gen.core.golden.GoldenFiles;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Info;
+import dev.emitkit.spec.model.ObjectSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.model.RefSchema;
+import dev.emitkit.spec.model.RequestBody;
+import dev.emitkit.spec.model.Response;
+import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.Tag;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -53,7 +59,7 @@ class DocsGeneratorTest {
             Map.of(
                 "listPets", new DocsExamples("curl AI", "ts AI", "py AI", "java AI", "AI note")));
     var md = content(generator.generate(FixtureSpecs.load("petstore"), ctx(ai)), "pets.md");
-    assertThat(md).contains("curl AI").contains("AI note");
+    assertThat(section(md, "listPets")).contains("curl AI").contains("### Notes\n\nAI note");
     assertThat(section(md, "getPetById")).doesNotContain("AI").contains("curl -X GET");
   }
 
@@ -84,7 +90,49 @@ class DocsGeneratorTest {
             List.of(new Tag("pets", null)),
             List.of(operation("searchPets", "pets", "/pets/search", List.of(param))));
     assertThat(content(generator.generate(model, ctx()), "pets.md"))
-        .contains("| q | query | No | string | one \\| two three |");
+        .contains("| q | query | string | No | one \\| two three |");
+  }
+
+  @Test
+  void rendersDeprecatedProseAndSchemaTables() {
+    var pet =
+        new ObjectSchema(
+            Map.of(
+                "name",
+                new PrimitiveSchema(PrimitiveType.STRING, null, false, "Pet name | nickname")),
+            Set.of("name"),
+            null,
+            false,
+            null);
+    Schema petRef = new RefSchema("Pet", false, null);
+    var op =
+        new Operation(
+            "getPet",
+            false,
+            "GET",
+            "/pets/{id}",
+            "pets",
+            "Get a pet",
+            "Returns one pet.",
+            List.of(),
+            new RequestBody(true, "application/json", petRef),
+            Map.of("200", new Response("200", "ok", petRef)),
+            List.of(),
+            true);
+    var md =
+        content(
+            generator.generate(model(List.of(), List.of(op), Map.of("Pet", pet)), ctx()),
+            "pets.md");
+    assertThat(md)
+        .contains("**Deprecated.** `GET /pets/{id}`")
+        .contains("Get a pet\n\nReturns one pet.")
+        .contains(
+            "| Field | Type | Required | Description |\n"
+                + "| --- | --- | --- | --- |\n"
+                + "| name | string | Yes | Pet name \\| nickname |")
+        .contains("| Status | Description | Schema |")
+        .contains("| 200 | ok | Pet |")
+        .contains("**200 response fields**");
   }
 
   @Test
@@ -164,8 +212,13 @@ class DocsGeneratorTest {
   }
 
   private static ApiModel model(List<Tag> tags, List<Operation> operations) {
+    return model(tags, operations, Map.of());
+  }
+
+  private static ApiModel model(
+      List<Tag> tags, List<Operation> operations, Map<String, Schema> schemas) {
     return new ApiModel(
-        new Info("Test", "1.0.0", null, null), List.of(), Map.of(), tags, operations, Map.of());
+        new Info("Test", "1.0.0", null, null), List.of(), Map.of(), tags, operations, schemas);
   }
 
   private static Operation operation(

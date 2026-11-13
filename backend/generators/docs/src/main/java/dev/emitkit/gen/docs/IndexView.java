@@ -5,23 +5,32 @@ import dev.emitkit.spec.model.SecurityScheme;
 import java.util.List;
 
 /**
- * Values rendered by {@code index.md.mustache}: the API title and description, links to the tag
- * pages, and the declared security schemes.
+ * Values rendered by {@code index.md.mustache}: the API title, version and description, the
+ * declared servers, a table of tag pages, and the declared security schemes.
  *
  * @param title one-line API title
+ * @param version one-line API version
  * @param hasDescription whether {@code description} is shown
  * @param description the API description, if it has one
- * @param tags one link per tag page
+ * @param hasServers whether any server is declared
+ * @param servers one line per declared server
+ * @param tags one row per tag page
  * @param hasSchemes whether any security scheme is declared
  * @param schemes the declared security schemes
  */
 record IndexView(
     String title,
+    String version,
     boolean hasDescription,
     String description,
+    boolean hasServers,
+    List<Line> servers,
     List<Link> tags,
     boolean hasSchemes,
     List<Scheme> schemes) {
+
+  /** A pre-formatted line, such as a server. */
+  record Line(String text) {}
 
   record Link(String name, String file, String operations) {}
 
@@ -30,12 +39,26 @@ record IndexView(
   static IndexView of(ApiModel model, List<DocsGenerator.TagGroup> groups) {
     String description = model.info().description();
     boolean hasDescription = description != null && !description.isBlank();
+    var servers =
+        model.servers().stream()
+            .map(s ->
+                new Line(
+                    "`"
+                        + s.url()
+                        + "`"
+                        + (s.description() == null || s.description().isBlank()
+                            ? ""
+                            : ": " + Markdown.cell(s.description()))))
+            .toList();
     List<Scheme> schemes =
         model.securitySchemes().values().stream().map(IndexView::scheme).toList();
     return new IndexView(
         Markdown.cell(model.info().title()),
+        Markdown.cell(model.info().version()),
         hasDescription,
         hasDescription ? description.strip() : "",
+        !servers.isEmpty(),
+        servers,
         groups.stream()
             .map(g ->
                 new Link(

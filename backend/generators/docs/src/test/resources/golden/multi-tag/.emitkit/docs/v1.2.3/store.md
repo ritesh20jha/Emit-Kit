@@ -8,9 +8,9 @@ Part of [Multi Tag](index.md).
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 

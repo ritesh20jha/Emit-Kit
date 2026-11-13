@@ -17,8 +17,8 @@ import java.util.stream.Stream;
  *
  * @param apiTitle one-line API title, linking back to the index
  * @param title one-line tag name
- * @param description the tag's description, if it has one
  * @param hasDescription whether {@code description} is shown
+ * @param description the tag's description, if it has one
  * @param ops the tag's operations in model order
  */
 record DocsView(
@@ -39,8 +39,11 @@ record DocsView(
       String contentType,
       String bodyRequired,
       String bodyType,
+      boolean hasBodyFields,
+      List<Schemas.Field> bodyFields,
       boolean hasResponses,
       List<Result> responses,
+      List<FieldTable> fieldTables,
       String curl,
       String typescript,
       String python,
@@ -48,9 +51,13 @@ record DocsView(
       boolean hasNotes,
       String notes) {}
 
-  record Param(String name, String in, String required, String type, String description) {}
+  record Param(String name, String in, String type, String required, String description) {}
 
-  record Result(String status, String description) {}
+  /** A response row: its status, description and schema label. */
+  record Result(String status, String description, String schema) {}
+
+  /** The property table of one response schema, shown only when it has properties. */
+  record FieldTable(String status, List<Schemas.Field> fields) {}
 
   static DocsView of(ApiModel model, DocsGenerator.TagGroup group, Map<String, DocsExamples> ai) {
     String description = group.tag().description();
@@ -64,11 +71,7 @@ record DocsView(
   }
 
   private static Op op(ApiModel model, Operation op, DocsExamples override) {
-    Examples.Snippets snippets =
-        override == null
-            ? Examples.render(model, op)
-            : new Examples.Snippets(
-                override.curl(), override.typescript(), override.python(), override.java());
+    DocsExamples examples = override != null ? override : Examples.render(model, op);
     String notes = override == null ? "" : override.notes().strip();
     String prose =
         Stream.of(op.summary(), op.description())
@@ -78,6 +81,8 @@ record DocsView(
             .collect(Collectors.joining("\n\n"));
     List<String> security = op.security();
     RequestBody body = op.requestBody();
+    List<Schemas.Field> bodyFields =
+        body == null ? List.of() : Schemas.fields(body.schema(), model.schemas());
     return new Op(
         op.operationId(),
         op.method(),
@@ -91,14 +96,17 @@ record DocsView(
         op.parameters().stream().map(DocsView::param).toList(),
         body != null,
         body == null ? "" : body.contentType(),
-        body == null ? "" : yesNo(body.required()),
+        body == null ? "" : Schemas.yesNo(body.required()),
         body == null ? "" : Schemas.typeText(body.schema()),
+        !bodyFields.isEmpty(),
+        bodyFields,
         !op.responses().isEmpty(),
         op.responses().values().stream().map(DocsView::result).toList(),
-        snippets.curl(),
-        snippets.typescript(),
-        snippets.python(),
-        snippets.java(),
+        fieldTables(model, op),
+        examples.curl(),
+        examples.typescript(),
+        examples.python(),
+        examples.java(),
         !notes.isEmpty(),
         notes);
   }
@@ -107,16 +115,24 @@ record DocsView(
     return new Param(
         Markdown.cell(p.name()),
         Schemas.lower(p.in().name()),
-        yesNo(p.required()),
         Markdown.cell(Schemas.typeText(p.schema())),
+        Schemas.yesNo(p.required()),
         Markdown.cell(p.description()));
   }
 
   private static Result result(Response r) {
-    return new Result(Markdown.cell(r.status()), Markdown.cell(r.description()));
+    return new Result(
+        Markdown.cell(r.status()),
+        Markdown.cell(r.description()),
+        r.schema() == null ? "" : Markdown.cell(Schemas.typeText(r.schema())));
   }
 
-  private static String yesNo(boolean value) {
-    return value ? "Yes" : "No";
+  private static List<FieldTable> fieldTables(ApiModel model, Operation op) {
+    return op.responses().values().stream()
+        .filter(r -> r.schema() != null)
+        .map(r ->
+            new FieldTable(Markdown.cell(r.status()), Schemas.fields(r.schema(), model.schemas())))
+        .filter(table -> !table.fields().isEmpty())
+        .toList();
   }
 }

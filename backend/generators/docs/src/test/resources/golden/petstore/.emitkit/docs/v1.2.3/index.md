@@ -1,5 +1,13 @@
 # Petstore
 
+Version: 1.0.0
+
+## Servers
+
+- `/`
+
 ## Tags
 
-- [pets](pets.md): 3 operations
+| Tag | Operations |
+| --- | --- |
+| [pets](pets.md) | 3 operations |

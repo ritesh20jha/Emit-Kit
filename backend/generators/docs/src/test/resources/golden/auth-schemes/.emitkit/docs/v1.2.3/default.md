@@ -10,9 +10,9 @@ Authentication: `headerKey`
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 
@@ -62,9 +62,9 @@ Authentication: `queryKey`
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 
@@ -114,9 +114,9 @@ Authentication: `basicAuth`
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 
@@ -166,9 +166,9 @@ Authentication: `oauth`
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 
@@ -216,9 +216,9 @@ System.out.println(response.statusCode() + " " + response.body());
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 
@@ -268,9 +268,9 @@ Authentication: `bearerAuth`
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok |  |
 
 ### Examples
 

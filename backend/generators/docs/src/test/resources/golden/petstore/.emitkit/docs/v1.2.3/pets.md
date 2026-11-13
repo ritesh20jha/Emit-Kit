@@ -8,15 +8,23 @@ Part of [Petstore](index.md).
 
 ### Parameters
 
-| Name | In | Required | Type | Description |
+| Name | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
-| limit | query | No | integer (int32) |  |
+| limit | query | integer (int32) | No |  |
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok | array of Pet |
+
+**200 response fields**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| id | integer (int64) | Yes |  |
+| name | string | Yes |  |
+| tag | string | No |  |
 
 ### Examples
 
@@ -66,11 +74,17 @@ System.out.println(response.statusCode() + " " + response.body());
 
 Content type `application/json`. Required: Yes. Schema: Pet.
 
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| id | integer (int64) | Yes |  |
+| name | string | Yes |  |
+| tag | string | No |  |
+
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 201 | created |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 201 | created |  |
 
 ### Examples
 
@@ -125,16 +139,24 @@ System.out.println(response.statusCode() + " " + response.body());
 
 ### Parameters
 
-| Name | In | Required | Type | Description |
+| Name | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
-| petId | path | Yes | integer (int64) |  |
+| petId | path | integer (int64) | Yes |  |
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
-| 200 | ok |
-| 404 | not found |
+| Status | Description | Schema |
+| --- | --- | --- |
+| 200 | ok | Pet |
+| 404 | not found |  |
+
+**200 response fields**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| id | integer (int64) | Yes |  |
+| name | string | Yes |  |
+| tag | string | No |  |
 
 ### Examples
 

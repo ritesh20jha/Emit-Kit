@@ -1,13 +1,25 @@
 # {{title}}
+
+Version: {{version}}
 {{#hasDescription}}
 
 {{description}}
 {{/hasDescription}}
+{{#hasServers}}
+
+## Servers
+
+{{#servers}}
+- {{text}}
+{{/servers}}
+{{/hasServers}}
 
 ## Tags
 
+| Tag | Operations |
+| --- | --- |
 {{#tags}}
-- [{{name}}]({{file}}): {{operations}}
+| [{{name}}]({{file}}) | {{operations}} |
 {{/tags}}
 {{#hasSchemes}}
 

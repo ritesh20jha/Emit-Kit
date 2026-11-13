@@ -1,7 +1,15 @@
 # Multi Tag
 
+Version: 1.0.0
+
+## Servers
+
+- `/`
+
 ## Tags
 
-- [pets](pets.md): 1 operation
-- [store](store.md): 1 operation
-- [admin](admin.md): 1 operation
+| Tag | Operations |
+| --- | --- |
+| [pets](pets.md) | 1 operation |
+| [store](store.md) | 1 operation |
+| [admin](admin.md) | 1 operation |

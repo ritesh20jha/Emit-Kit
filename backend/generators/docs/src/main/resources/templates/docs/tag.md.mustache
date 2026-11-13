@@ -22,10 +22,10 @@ Authentication: {{security}}
 
 ### Parameters
 
-| Name | In | Required | Type | Description |
+| Name | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 {{#params}}
-| {{name}} | {{in}} | {{required}} | {{type}} | {{description}} |
+| {{name}} | {{in}} | {{type}} | {{required}} | {{description}} |
 {{/params}}
 {{/hasParams}}
 {{#hasBody}}
@@ -33,16 +33,34 @@ Authentication: {{security}}
 ### Request body
 
 Content type `{{contentType}}`. Required: {{bodyRequired}}. Schema: {{bodyType}}.
+{{#hasBodyFields}}
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+{{#bodyFields}}
+| {{name}} | {{type}} | {{required}} | {{description}} |
+{{/bodyFields}}
+{{/hasBodyFields}}
 {{/hasBody}}
 {{#hasResponses}}
 
 ### Responses
 
-| Status | Description |
-| --- | --- |
+| Status | Description | Schema |
+| --- | --- | --- |
 {{#responses}}
-| {{status}} | {{description}} |
+| {{status}} | {{description}} | {{schema}} |
 {{/responses}}
+{{#fieldTables}}
+
+**{{status}} response fields**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+{{#fields}}
+| {{name}} | {{type}} | {{required}} | {{description}} |
+{{/fields}}
+{{/fieldTables}}
 {{/hasResponses}}
 
 ### Examples

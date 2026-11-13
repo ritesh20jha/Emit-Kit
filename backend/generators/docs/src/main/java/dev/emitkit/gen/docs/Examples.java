@@ -1,5 +1,6 @@
 package dev.emitkit.gen.docs;
 
+import dev.emitkit.gen.core.DocsExamples;
 import dev.emitkit.gen.core.Templates;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Operation;
@@ -23,9 +24,6 @@ final class Examples {
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^}]+)}");
   private static final ObjectMapper JSON = new ObjectMapper();
 
-  /** Rendered snippets, without code fences. */
-  record Snippets(String curl, String typescript, String python, String java) {}
-
   /**
    * Values the example templates interpolate. Each literal is quoted for its language: {@code
    * *Shell} for a single-quoted shell word, {@code *Js} for a single-quoted string literal (used by
@@ -44,7 +42,7 @@ final class Examples {
 
   private Examples() {}
 
-  static Snippets render(ApiModel model, Operation op) {
+  static DocsExamples render(ApiModel model, Operation op) {
     String url = baseUrl(model) + path(model, op);
     RequestBody body = op.requestBody();
     String json =
@@ -60,11 +58,12 @@ final class Examples {
             shell(json),
             js(json),
             java(json));
-    return new Snippets(
+    return new DocsExamples(
         snippet("curl", request),
         snippet("typescript", request),
         snippet("python", request),
-        snippet("java", request));
+        snippet("java", request),
+        "");
   }
 
   private static String snippet(String name, Request request) {

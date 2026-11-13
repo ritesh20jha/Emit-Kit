@@ -1,8 +1,16 @@
 # Auth Schemes
 
+Version: 1.0.0
+
+## Servers
+
+- `/`
+
 ## Tags
 
-- [default](default.md): 6 operations
+| Tag | Operations |
+| --- | --- |
+| [default](default.md) | 6 operations |
 
 ## Authentication
 
