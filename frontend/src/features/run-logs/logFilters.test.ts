@@ -9,9 +9,13 @@ const lines: LogLine[] = [
 
 describe("parseFilters", () => {
   test("keeps known values and ignores the rest", () => {
-    expect(parseFilters({ step: "PARSE_SPEC", level: "WARN", q: "x" })).toEqual({ step: "PARSE_SPEC", level: "WARN", q: "x" });
-    expect(parseFilters({ step: "NOT_A_STEP", level: "DEBUG", q: 3 })).toEqual({ step: "", level: "", q: "" });
-    expect(parseFilters({})).toEqual({ step: "", level: "", q: "" });
+    expect(parseFilters(new URLSearchParams("step=PARSE_SPEC&level=WARN&q=x"))).toEqual({ step: "PARSE_SPEC", level: "WARN", q: "x" });
+    expect(parseFilters(new URLSearchParams("step=NOT_A_STEP&level=DEBUG"))).toEqual({ step: "", level: "", q: "" });
+    expect(parseFilters(new URLSearchParams(""))).toEqual({ step: "", level: "", q: "" });
+  });
+
+  test("reads q as text, so a number-like search is kept", () => {
+    expect(parseFilters(new URLSearchParams("q=404")).q).toBe("404");
   });
 });
 

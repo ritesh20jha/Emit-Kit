@@ -1,7 +1,7 @@
-import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { useEventStream } from "@/lib/sse/useEventStream";
-import { type LogFilters, type LogLine, parseFilters } from "./logFilters";
+import { FILTER_PARAMS, type LogFilters, type LogLine, parseFilters } from "./logFilters";
 
 /**
  * The live log of a run. The stream replays from the first line, so no separate list request is needed.
@@ -11,21 +11,23 @@ import { type LogFilters, type LogLine, parseFilters } from "./logFilters";
 export function useRunLogs(runId: string | null) {
   const stream = useEventStream<LogLine>(runId === null ? null : `/api/v1/runs/${encodeURIComponent(runId)}/logs/stream`);
 
-  const search = useSearch({ strict: false });
-  const filters = useMemo(() => parseFilters(search), [search]);
-  const navigate = useNavigate();
+  // The raw query string, not the parsed search object: the router turns `?q=404` into a number.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // The run route owns its search schema, so the filters are written as a plain query string here.
+  const searchStr = useRouterState({ select: (state) => state.location.searchStr });
+  const filters = useMemo(() => parseFilters(new URLSearchParams(searchStr)), [searchStr]);
+  const navigate = useNavigate();
+  // The run route owns its search schema, so the filters are written as a plain query string. Other params are kept.
   const setFilters = useCallback(
     (next: LogFilters) => {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams(searchStr);
+      for (const key of FILTER_PARAMS) params.delete(key);
       if (next.step) params.set("step", next.step);
       if (next.level) params.set("level", next.level);
       if (next.q) params.set("q", next.q);
       const query = params.toString();
       void navigate({ href: query ? `${pathname}?${query}` : pathname, replace: true });
     },
-    [navigate, pathname],
+    [navigate, pathname, searchStr],
   );
 
   return { lines: stream.items, status: stream.status, retry: stream.reconnect, filters, setFilters };

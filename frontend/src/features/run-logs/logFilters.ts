@@ -38,12 +38,20 @@ export function isLogLevel(value: string): value is LogLevel {
   return (LEVELS as readonly string[]).includes(value);
 }
 
-/** Reads the filters from URL search params. Unknown values are ignored, so a stale link never breaks the view. */
-export function parseFilters(search: Record<string, unknown>): LogFilters {
+/** The URL search params that hold the filters. Other params on the page are left alone. */
+export const FILTER_PARAMS = ["step", "level", "q"] as const;
+
+/**
+ * Reads the filters from the raw query string. Values are read as text, so `?q=404` is the search "404", not a number.
+ * Unknown step or level values are ignored, so a stale link never breaks the view.
+ */
+export function parseFilters(params: URLSearchParams): LogFilters {
+  const step = params.get("step") ?? "";
+  const level = params.get("level") ?? "";
   return {
-    step: typeof search.step === "string" && isStepName(search.step) ? search.step : "",
-    level: typeof search.level === "string" && isLogLevel(search.level) ? search.level : "",
-    q: typeof search.q === "string" ? search.q : "",
+    step: isStepName(step) ? step : "",
+    level: isLogLevel(level) ? level : "",
+    q: params.get("q") ?? "",
   };
 }
 
