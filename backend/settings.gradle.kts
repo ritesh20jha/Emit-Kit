@@ -23,6 +23,7 @@ include(
     "generators:typescript-sdk",
     "generators:python-sdk",
     "generators:mcp",
+    "generators:docs",
     "generators:cli",
     "ai",
     "api-app",

@@ -1,0 +1,21 @@
+# {{title}}
+{{#hasDescription}}
+
+{{description}}
+{{/hasDescription}}
+
+## Tags
+
+{{#tags}}
+- [{{name}}]({{file}}): {{operations}}
+{{/tags}}
+{{#hasSchemes}}
+
+## Authentication
+
+| Scheme | Type | Details |
+| --- | --- | --- |
+{{#schemes}}
+| {{name}} | {{type}} | {{details}} |
+{{/schemes}}
+{{/hasSchemes}}

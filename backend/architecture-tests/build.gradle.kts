@@ -12,6 +12,7 @@ dependencies {
     testImplementation(project(":generators:typescript-sdk"))
     testImplementation(project(":generators:python-sdk"))
     testImplementation(project(":generators:mcp"))
+    testImplementation(project(":generators:docs"))
     testImplementation(project(":generators:cli"))
     testImplementation(project(":ai"))
     testImplementation(project(":api-app"))

@@ -1,0 +1,9 @@
+import requests
+
+response = requests.request(
+    "{{method}}",
+    {{urlJs}},{{#hasBody}}
+    headers={"Content-Type": "{{contentType}}"},
+    data={{bodyJs}},{{/hasBody}}
+)
+print(response.status_code, response.text)

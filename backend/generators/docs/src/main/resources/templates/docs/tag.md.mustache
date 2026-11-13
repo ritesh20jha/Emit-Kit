@@ -1,0 +1,79 @@
+# {{title}}
+{{#hasDescription}}
+
+{{description}}
+{{/hasDescription}}
+
+Part of [{{apiTitle}}](index.md).
+{{#ops}}
+
+## {{operationId}}
+
+{{#deprecated}}**Deprecated.** {{/deprecated}}`{{method}} {{path}}`
+{{#hasProse}}
+
+{{prose}}
+{{/hasProse}}
+{{#hasSecurity}}
+
+Authentication: {{security}}
+{{/hasSecurity}}
+{{#hasParams}}
+
+### Parameters
+
+| Name | In | Required | Type | Description |
+| --- | --- | --- | --- | --- |
+{{#params}}
+| {{name}} | {{in}} | {{required}} | {{type}} | {{description}} |
+{{/params}}
+{{/hasParams}}
+{{#hasBody}}
+
+### Request body
+
+Content type `{{contentType}}`. Required: {{bodyRequired}}. Schema: {{bodyType}}.
+{{/hasBody}}
+{{#hasResponses}}
+
+### Responses
+
+| Status | Description |
+| --- | --- |
+{{#responses}}
+| {{status}} | {{description}} |
+{{/responses}}
+{{/hasResponses}}
+
+### Examples
+
+#### curl
+
+```sh
+{{curl}}
+```
+
+#### TypeScript
+
+```ts
+{{typescript}}
+```
+
+#### Python
+
+```python
+{{python}}
+```
+
+#### Java
+
+```java
+{{java}}
+```
+{{#hasNotes}}
+
+### Notes
+
+{{notes}}
+{{/hasNotes}}
+{{/ops}}
