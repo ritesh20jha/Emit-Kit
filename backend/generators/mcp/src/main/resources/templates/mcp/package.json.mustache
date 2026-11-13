@@ -2,6 +2,10 @@
   "name": {{{packageNameLiteral}}},
   "version": {{{versionLiteral}}},
   "type": "module",
+  "bin": {
+    {{{packageNameLiteral}}}: "dist/server.js"
+  },
+  "files": ["dist"],
   "engines": {
     "node": ">=18"
   },

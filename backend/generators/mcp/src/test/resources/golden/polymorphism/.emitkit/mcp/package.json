@@ -2,6 +2,10 @@
   "name": "@acme/petstore-mcp",
   "version": "1.2.3",
   "type": "module",
+  "bin": {
+    "@acme/petstore-mcp": "dist/server.js"
+  },
+  "files": ["dist"],
   "engines": {
     "node": ">=18"
   },

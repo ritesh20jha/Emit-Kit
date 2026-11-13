@@ -20,6 +20,14 @@ if (!baseUrl) {
 
 type Args = Record<string, unknown>;
 
+/** Text for one argument value: arrays are comma-joined and objects are JSON. */
+function toText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(toText).join(",");
+  }
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
 /** Calls the API for one tool. A non-2xx response is returned with isError set. */
 async function callApi(tool: ApiTool, args: Args): Promise<{ text: string; isError: boolean }> {
   const headers: Record<string, string> = {};
@@ -27,22 +35,29 @@ async function callApi(tool: ApiTool, args: Args): Promise<{ text: string; isErr
   const cookies: string[] = [];
   const path = tool.path.replace(/\{([^}]+)\}/g, (_, name: string) => {
     const value = args[name];
-    if (value === undefined) {
+    if (value === undefined || value === null) {
       throw new Error(`missing path parameter: ${name}`);
     }
-    return encodeURIComponent(String(value));
+    const text = toText(value);
+    if (text === "" || text === "." || text === "..") {
+      throw new Error(`invalid path parameter: ${name}`);
+    }
+    return encodeURIComponent(text);
   });
   for (const param of tool.params) {
     const value = args[param.name];
-    if (value === undefined || param.in === "path") {
+    if (value === undefined || value === null || param.in === "path") {
       continue;
     }
     if (param.in === "query") {
-      query.append(param.name, String(value));
+      // Form style with explode: each array item is a separate query parameter.
+      for (const item of Array.isArray(value) ? value : [value]) {
+        query.append(param.name, toText(item));
+      }
     } else if (param.in === "header") {
-      headers[param.name] = String(value);
+      headers[param.name] = toText(value);
     } else {
-      cookies.push(`${param.name}=${encodeURIComponent(String(value))}`);
+      cookies.push(`${param.name}=${encodeURIComponent(toText(value))}`);
     }
   }
   if (cookies.length > 0) {

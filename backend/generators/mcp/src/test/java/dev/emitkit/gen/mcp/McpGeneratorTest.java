@@ -1,9 +1,11 @@
 package dev.emitkit.gen.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 
+import com.networknt.schema.InputFormat;
 import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SchemaId;
+import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SpecVersion;
 import dev.emitkit.gen.core.GeneratorContext;
 import dev.emitkit.gen.core.GeneratorId;
@@ -53,8 +55,16 @@ class McpGeneratorTest {
   @Test
   void everyInputSchemaIsValidJsonSchema() {
     var factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
-    for (var tool : McpGenerator.tools(FixtureSpecs.load("polymorphism")))
-      assertThatCode(() -> factory.getSchema(tool.inputSchemaJson())).doesNotThrowAnyException();
+    var metaSchema = factory.getSchema(SchemaLocation.of(SchemaId.V202012));
+    // The metaschema must reject a broken schema, or the check below proves nothing.
+    assertThat(metaSchema.validate("{\"type\": \"nope\"}", InputFormat.JSON)).isNotEmpty();
+    for (String fixture : FixtureSpecs.ALL) {
+      for (var tool : McpGenerator.tools(FixtureSpecs.load(fixture))) {
+        assertThat(metaSchema.validate(tool.inputSchemaJson(), InputFormat.JSON))
+            .as("%s: %s", fixture, tool.name())
+            .isEmpty();
+      }
+    }
   }
 
   @Test
