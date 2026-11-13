@@ -5,18 +5,7 @@ import dev.emitkit.spec.model.SecurityScheme;
 import java.util.List;
 
 /**
- * Values rendered by {@code index.md.mustache}: the API title, version and description, the
- * declared servers, a table of tag pages, and the declared security schemes.
- *
- * @param title one-line API title
- * @param version one-line API version
- * @param hasDescription whether {@code description} is shown
- * @param description the API description, if it has one
- * @param hasServers whether any server is declared
- * @param servers one line per declared server
- * @param tags one row per tag page
- * @param hasSchemes whether any security scheme is declared
- * @param schemes the declared security schemes
+ * Values rendered by {@code index.md.mustache}. Servers are pre-formatted lines; cells are escaped.
  */
 record IndexView(
     String title,
@@ -24,13 +13,10 @@ record IndexView(
     boolean hasDescription,
     String description,
     boolean hasServers,
-    List<Line> servers,
+    List<String> servers,
     List<Link> tags,
     boolean hasSchemes,
     List<Scheme> schemes) {
-
-  /** A pre-formatted line, such as a server. */
-  record Line(String text) {}
 
   record Link(String name, String file, String operations) {}
 
@@ -40,21 +26,12 @@ record IndexView(
     String description = model.info().description();
     boolean hasDescription = description != null && !description.isBlank();
     var servers =
-        model.servers().stream()
-            .map(s ->
-                new Line(
-                    "`"
-                        + s.url()
-                        + "`"
-                        + (s.description() == null || s.description().isBlank()
-                            ? ""
-                            : ": " + Markdown.cell(s.description()))))
-            .toList();
+        model.servers().stream().map(s -> "`" + s.url() + "`" + suffix(s.description())).toList();
     List<Scheme> schemes =
         model.securitySchemes().values().stream().map(IndexView::scheme).toList();
     return new IndexView(
-        Markdown.cell(model.info().title()),
-        Markdown.cell(model.info().version()),
+        DocsView.cell(model.info().title()),
+        DocsView.cell(model.info().version()),
         hasDescription,
         hasDescription ? description.strip() : "",
         !servers.isEmpty(),
@@ -62,7 +39,7 @@ record IndexView(
         groups.stream()
             .map(g ->
                 new Link(
-                    Markdown.cell(g.tag().name()),
+                    DocsView.cell(g.tag().name()),
                     g.file(),
                     g.ops().size() + (g.ops().size() == 1 ? " operation" : " operations")))
             .toList(),
@@ -70,8 +47,12 @@ record IndexView(
         schemes);
   }
 
+  private static String suffix(String description) {
+    return description == null || description.isBlank() ? "" : ": " + DocsView.cell(description);
+  }
+
   private static Scheme scheme(SecurityScheme s) {
-    return new Scheme(Markdown.cell(s.name()), Markdown.cell(type(s)), Markdown.cell(details(s)));
+    return new Scheme(DocsView.cell(s.name()), DocsView.cell(type(s)), DocsView.cell(details(s)));
   }
 
   private static String type(SecurityScheme s) {

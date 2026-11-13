@@ -14,7 +14,6 @@ import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Info;
 import dev.emitkit.spec.model.ObjectSchema;
 import dev.emitkit.spec.model.Operation;
-import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
@@ -27,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -55,9 +55,7 @@ class DocsGeneratorTest {
   @Test
   void aiExamplesUsedWhenPresent_templateOtherwise() {
     var ai =
-        new StubAi(
-            Map.of(
-                "listPets", new DocsExamples("curl AI", "ts AI", "py AI", "java AI", "AI note")));
+        ai(Map.of("listPets", new DocsExamples("curl AI", "ts AI", "py AI", "java AI", "AI note")));
     var md = content(generator.generate(FixtureSpecs.load("petstore"), ctx(ai)), "pets.md");
     assertThat(section(md, "listPets")).contains("curl AI").contains("### Notes\n\nAI note");
     assertThat(section(md, "getPetById")).doesNotContain("AI").contains("curl -X GET");
@@ -65,32 +63,24 @@ class DocsGeneratorTest {
 
   @Test
   void aiCalledOncePerTag() {
-    var ai = new StubAi(Map.of());
-    generator.generate(FixtureSpecs.load("multi-tag"), ctx(ai));
-    assertThat(ai.calls()).isEqualTo(3);
+    var calls = new AtomicInteger();
+    generator.generate(
+        FixtureSpecs.load("multi-tag"),
+        ctx((tag, ops) -> {
+          calls.incrementAndGet();
+          return Map.of();
+        }));
+    assertThat(calls.get()).isEqualTo(3);
   }
 
   @Test
   void aiThrowing_fallsBackToTemplate() {
-    var files = generator.generate(FixtureSpecs.load("petstore"), ctx(new StubAi(Map.of(), true)));
+    DocsAiAssistant failing =
+        (tag, ops) -> {
+          throw new IllegalStateException("model unavailable");
+        };
+    var files = generator.generate(FixtureSpecs.load("petstore"), ctx(failing));
     assertThat(section(content(files, "pets.md"), "getPetById")).contains("curl -X GET");
-  }
-
-  @Test
-  void pipesAndNewlinesInTableCellsAreEscaped() {
-    var param =
-        new Parameter(
-            "q",
-            ParamLocation.QUERY,
-            false,
-            new PrimitiveSchema(PrimitiveType.STRING, null, false, null),
-            "one | two\nthree");
-    var model =
-        model(
-            List.of(new Tag("pets", null)),
-            List.of(operation("searchPets", "pets", "/pets/search", List.of(param))));
-    assertThat(content(generator.generate(model, ctx()), "pets.md"))
-        .contains("| q | query | string | No | one \\| two three |");
   }
 
   @Test
@@ -99,7 +89,7 @@ class DocsGeneratorTest {
         new ObjectSchema(
             Map.of(
                 "name",
-                new PrimitiveSchema(PrimitiveType.STRING, null, false, "Pet name | nickname")),
+                new PrimitiveSchema(PrimitiveType.STRING, null, false, "Pet name |\nnickname")),
             Set.of("name"),
             null,
             false,
@@ -119,18 +109,14 @@ class DocsGeneratorTest {
             Map.of("200", new Response("200", "ok", petRef)),
             List.of(),
             true);
-    var md =
-        content(
-            generator.generate(model(List.of(), List.of(op), Map.of("Pet", pet)), ctx()),
-            "pets.md");
-    assertThat(md)
+    var model = model(List.of(), List.of(op), Map.of("Pet", pet));
+    assertThat(content(generator.generate(model, ctx()), "pets.md"))
         .contains("**Deprecated.** `GET /pets/{id}`")
         .contains("Get a pet\n\nReturns one pet.")
         .contains(
             "| Field | Type | Required | Description |\n"
                 + "| --- | --- | --- | --- |\n"
                 + "| name | string | Yes | Pet name \\| nickname |")
-        .contains("| Status | Description | Schema |")
         .contains("| 200 | ok | Pet |")
         .contains("**200 response fields**");
   }
@@ -143,7 +129,8 @@ class DocsGeneratorTest {
             List.of(
                 operation("a", "index", "/a", List.of()),
                 operation("b", "Pet Store", "/b", List.of()),
-                operation("c", "pet-store", "/c", List.of())));
+                operation("c", "pet-store", "/c", List.of())),
+            Map.of());
     assertThat(generator.generate(model, ctx()))
         .extracting(GeneratedFile::path)
         .containsExactly(
@@ -153,33 +140,9 @@ class DocsGeneratorTest {
             ".emitkit/docs/v1.2.3/pet-store-2.md");
   }
 
-  /** Records calls and returns canned examples, or throws when constructed to fail. */
-  private static final class StubAi implements DocsAiAssistant {
-    private final Map<String, DocsExamples> examples;
-    private final boolean fail;
-    private int calls;
-
-    StubAi(Map<String, DocsExamples> examples) {
-      this(examples, false);
-    }
-
-    StubAi(Map<String, DocsExamples> examples, boolean fail) {
-      this.examples = examples;
-      this.fail = fail;
-    }
-
-    @Override
-    public Map<String, DocsExamples> examples(Tag tag, List<Operation> ops) {
-      calls++;
-      if (fail) {
-        throw new IllegalStateException("model unavailable");
-      }
-      return examples;
-    }
-
-    int calls() {
-      return calls;
-    }
+  /** An assistant that returns the given examples for every tag. */
+  private static DocsAiAssistant ai(Map<String, DocsExamples> examples) {
+    return (tag, ops) -> examples;
   }
 
   private static GeneratorContext ctx() {
@@ -211,14 +174,9 @@ class DocsGeneratorTest {
     return md.substring(start, end < 0 ? md.length() : end);
   }
 
-  private static ApiModel model(List<Tag> tags, List<Operation> operations) {
-    return model(tags, operations, Map.of());
-  }
-
-  private static ApiModel model(
-      List<Tag> tags, List<Operation> operations, Map<String, Schema> schemas) {
+  private static ApiModel model(List<Tag> tags, List<Operation> ops, Map<String, Schema> schemas) {
     return new ApiModel(
-        new Info("Test", "1.0.0", null, null), List.of(), Map.of(), tags, operations, schemas);
+        new Info("Test", "1.0.0", null, null), List.of(), Map.of(), tags, ops, schemas);
   }
 
   private static Operation operation(

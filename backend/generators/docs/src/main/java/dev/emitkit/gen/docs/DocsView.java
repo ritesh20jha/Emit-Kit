@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Values rendered by {@code tag.md.mustache}: one tag page. Table cells and headings are already
@@ -23,6 +24,11 @@ import java.util.stream.Stream;
  */
 record DocsView(
     String apiTitle, String title, boolean hasDescription, String description, List<Op> ops) {
+
+  /** Text for a table cell or heading: one line, with pipes escaped. Null becomes empty. */
+  static String cell(@Nullable String text) {
+    return text == null ? "" : text.replaceAll("\\s+", " ").strip().replace("|", "\\|");
+  }
 
   record Op(
       String operationId,
@@ -63,8 +69,8 @@ record DocsView(
     String description = group.tag().description();
     boolean hasDescription = description != null && !description.isBlank();
     return new DocsView(
-        Markdown.cell(model.info().title()),
-        Markdown.cell(group.tag().name()),
+        DocsView.cell(model.info().title()),
+        DocsView.cell(group.tag().name()),
         hasDescription,
         hasDescription ? description.strip() : "",
         group.ops().stream().map(op -> op(model, op, ai.get(op.operationId()))).toList());
@@ -113,25 +119,25 @@ record DocsView(
 
   private static Param param(Parameter p) {
     return new Param(
-        Markdown.cell(p.name()),
+        DocsView.cell(p.name()),
         Schemas.lower(p.in().name()),
-        Markdown.cell(Schemas.typeText(p.schema())),
+        DocsView.cell(Schemas.typeText(p.schema())),
         Schemas.yesNo(p.required()),
-        Markdown.cell(p.description()));
+        DocsView.cell(p.description()));
   }
 
   private static Result result(Response r) {
     return new Result(
-        Markdown.cell(r.status()),
-        Markdown.cell(r.description()),
-        r.schema() == null ? "" : Markdown.cell(Schemas.typeText(r.schema())));
+        DocsView.cell(r.status()),
+        DocsView.cell(r.description()),
+        r.schema() == null ? "" : DocsView.cell(Schemas.typeText(r.schema())));
   }
 
   private static List<FieldTable> fieldTables(ApiModel model, Operation op) {
     return op.responses().values().stream()
         .filter(r -> r.schema() != null)
         .map(r ->
-            new FieldTable(Markdown.cell(r.status()), Schemas.fields(r.schema(), model.schemas())))
+            new FieldTable(DocsView.cell(r.status()), Schemas.fields(r.schema(), model.schemas())))
         .filter(table -> !table.fields().isEmpty())
         .toList();
   }

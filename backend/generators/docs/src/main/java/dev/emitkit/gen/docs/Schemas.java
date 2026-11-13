@@ -55,10 +55,10 @@ final class Schemas {
           o.properties().entrySet().stream()
               .map(e ->
                   new Field(
-                      Markdown.cell(e.getKey()),
-                      Markdown.cell(typeText(e.getValue())),
+                      DocsView.cell(e.getKey()),
+                      DocsView.cell(typeText(e.getValue())),
                       yesNo(o.required().contains(e.getKey())),
-                      Markdown.cell(e.getValue().description())))
+                      DocsView.cell(e.getValue().description())))
               .toList();
       case ArraySchema a -> fields(a.items(), schemas, seen);
       case AllOfSchema a ->
@@ -88,7 +88,13 @@ final class Schemas {
 
   private static Object sample(Schema schema, Map<String, Schema> schemas, Set<String> expanding) {
     return switch (schema) {
-      case PrimitiveSchema p -> primitive(p.type());
+      case PrimitiveSchema p ->
+          switch (p.type()) {
+            case STRING -> "string";
+            case INTEGER -> 1;
+            case NUMBER -> 1.0;
+            case BOOLEAN -> true;
+          };
       case EnumSchema e -> e.values().isEmpty() ? null : value(e.type(), e.values().getFirst());
       case ObjectSchema o -> {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -121,15 +127,6 @@ final class Schemas {
     } finally {
       expanding.remove(name);
     }
-  }
-
-  private static Object primitive(PrimitiveType type) {
-    return switch (type) {
-      case STRING -> "string";
-      case INTEGER -> 1;
-      case NUMBER -> 1.0;
-      case BOOLEAN -> true;
-    };
   }
 
   private static Object value(PrimitiveType type, String text) {

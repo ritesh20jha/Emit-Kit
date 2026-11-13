@@ -5,30 +5,23 @@ import dev.emitkit.gen.core.Templates;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
-import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.RequestBody;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * Template code examples for one operation: curl, TypeScript, Python and Java. Each snippet calls
- * the operation with sample values, and a request body is a sample built from its schema.
- */
+/** Template code examples for one operation: curl, TypeScript, Python and Java. */
 final class Examples {
 
-  /** The base URL used when the spec declares no server. */
+  /** The base URL used when the spec declares no absolute server. */
   static final String DEFAULT_BASE_URL = "https://api.example.com";
 
   private static final Templates TEMPLATES = Templates.forGenerator("docs");
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^}]+)}");
   private static final ObjectMapper JSON = new ObjectMapper();
 
-  /**
-   * Values the example templates interpolate. Each literal is quoted for its language: {@code
-   * *Shell} for a single-quoted shell word, {@code *Js} for a single-quoted string literal (used by
-   * TypeScript and Python), {@code *Java} for a double-quoted Java string.
-   */
+  /** Values the templates interpolate. Each literal is quoted for the language that uses it. */
   record Request(
       String method,
       String contentType,
@@ -53,11 +46,11 @@ final class Examples {
             body == null ? "" : body.contentType(),
             body != null,
             shell(url),
-            js(url),
-            java(url),
+            literal(url, '\''),
+            literal(url, '"'),
             shell(json),
-            js(json),
-            java(json));
+            literal(json, '\''),
+            literal(json, '"'));
     return new DocsExamples(
         snippet("curl", request),
         snippet("typescript", request),
@@ -70,10 +63,7 @@ final class Examples {
     return TEMPLATES.render("examples/" + name, request).stripTrailing();
   }
 
-  /**
-   * The first server without a trailing slash. A relative server, such as the {@code /} the parser
-   * gives an operation with no servers, is appended to the placeholder host.
-   */
+  /** The first server without a trailing slash; a relative one is appended to the placeholder. */
   private static String baseUrl(ApiModel model) {
     String url =
         model.servers().isEmpty() ? "" : model.servers().getFirst().url().replaceAll("/+$", "");
@@ -83,20 +73,18 @@ final class Examples {
   /** The path with each {@code {name}} replaced by a sample, then the required query string. */
   private static String path(ApiModel model, Operation op) {
     Matcher matcher = PLACEHOLDER.matcher(op.path());
-    var path = new StringBuffer();
+    var out = new StringBuffer();
     while (matcher.find()) {
       String value = sampleText(op, model, ParamLocation.PATH, matcher.group(1));
-      matcher.appendReplacement(path, Matcher.quoteReplacement(value));
+      matcher.appendReplacement(out, Matcher.quoteReplacement(value));
     }
-    matcher.appendTail(path);
-    var query = new StringBuilder();
-    for (Parameter p : op.parameters()) {
-      if (p.in() == ParamLocation.QUERY && p.required()) {
-        query.append(query.isEmpty() ? '?' : '&');
-        query.append(p.name()).append('=').append(sampleText(op, model, p.in(), p.name()));
-      }
-    }
-    return path + query.toString();
+    matcher.appendTail(out);
+    String query =
+        op.parameters().stream()
+            .filter(p -> p.in() == ParamLocation.QUERY && p.required())
+            .map(p -> p.name() + "=" + sampleText(op, model, p.in(), p.name()))
+            .collect(Collectors.joining("&"));
+    return out + (query.isEmpty() ? "" : "?" + query);
   }
 
   /** A sample value for the named parameter, or the name itself when the operation lacks it. */
@@ -109,17 +97,12 @@ final class Examples {
   }
 
   /** A single-quoted shell word. */
-  static String shell(String text) {
+  private static String shell(String text) {
     return "'" + text.replace("'", "'\\''") + "'";
   }
 
-  /** A single-quoted TypeScript or Python string literal. */
-  static String js(String text) {
-    return "'" + text.replace("\\", "\\\\").replace("'", "\\'") + "'";
-  }
-
-  /** A double-quoted Java string literal. */
-  static String java(String text) {
-    return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+  /** A string literal delimited by {@code quote}: single quotes for TypeScript and Python. */
+  private static String literal(String text, char quote) {
+    return quote + text.replace("\\", "\\\\").replace(String.valueOf(quote), "\\" + quote) + quote;
   }
 }
