@@ -10,5 +10,7 @@ public interface OrgMemberRepository extends JpaRepository<OrgMember, OrgMemberI
 
   List<OrgMember> findByOrgId(String orgId);
 
+  long countByOrgId(String orgId);
+
   long countByOrgIdAndRole(String orgId, Role role);
 }
