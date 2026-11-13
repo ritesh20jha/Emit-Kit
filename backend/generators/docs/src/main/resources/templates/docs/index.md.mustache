@@ -1,0 +1,33 @@
+# {{title}}
+
+API version: {{version}}
+{{#hasDescription}}
+
+{{description}}
+{{/hasDescription}}
+{{#hasServers}}
+
+## Servers
+
+{{#servers}}
+- {{.}}
+{{/servers}}
+{{/hasServers}}
+
+## Tags
+
+| Tag | Operations |
+| --- | --- |
+{{#tags}}
+| [{{name}}]({{file}}) | {{operations}} |
+{{/tags}}
+{{#hasSchemes}}
+
+## Authentication
+
+| Scheme | Type | Details |
+| --- | --- | --- |
+{{#schemes}}
+| {{name}} | {{type}} | {{details}} |
+{{/schemes}}
+{{/hasSchemes}}

@@ -1,0 +1,12 @@
+HttpRequest request = HttpRequest.newBuilder(URI.create({{urlJava}}))
+{{#hasBody}}
+    .header("Content-Type", "{{contentType}}")
+    .method("{{method}}", HttpRequest.BodyPublishers.ofString({{bodyJava}}))
+{{/hasBody}}
+{{^hasBody}}
+    .method("{{method}}", HttpRequest.BodyPublishers.noBody())
+{{/hasBody}}
+    .build();
+HttpResponse<String> response =
+    HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+System.out.println(response.statusCode() + " " + response.body());
