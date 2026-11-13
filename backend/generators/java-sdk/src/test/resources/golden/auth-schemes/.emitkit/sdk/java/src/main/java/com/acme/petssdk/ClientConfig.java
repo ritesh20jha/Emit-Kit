@@ -2,6 +2,7 @@
 package com.acme.petssdk;
 
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -12,6 +13,7 @@ record ClientConfig(
     String baseUrl,
     int maxRetries,
     HttpClient httpClient,
+    Duration timeout,
     Map<String, String> authHeaders,
     Map<String, String> authQuery) {
 
@@ -20,5 +22,13 @@ record ClientConfig(
     httpClient = Objects.requireNonNull(httpClient, "httpClient");
     authHeaders = Collections.unmodifiableMap(new LinkedHashMap<>(authHeaders));
     authQuery = Collections.unmodifiableMap(new LinkedHashMap<>(authQuery));
+  }
+
+  // Credential values are never printed, only the names of the auth headers and query parameters.
+  @Override
+  public String toString() {
+    return "ClientConfig[baseUrl=" + baseUrl + ", maxRetries=" + maxRetries
+        + ", timeout=" + timeout + ", authHeaders=" + authHeaders.keySet()
+        + ", authQuery=" + authQuery.keySet() + "]";
   }
 }

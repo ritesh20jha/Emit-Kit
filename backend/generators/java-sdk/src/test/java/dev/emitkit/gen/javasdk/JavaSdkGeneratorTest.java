@@ -159,25 +159,17 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
-  void quoteEscapesQuotesBackslashesControlCharactersAndNonAscii() {
+  void quoteEscapesAndNeverEmitsAUnicodeEscapeJavacWouldTranslate() {
     assertThat(JavaClientView.quote("a\"b\\c\nd\t\r\u2028\u0001\u00e9"))
         .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u2028\\001\\u00E9\"");
-  }
-
-  @Test
-  void quoteNeverEmitsAUnicodeEscapeThatJavacWouldTranslate() {
     // javac rewrites \\uXXXX before lexing; a doubled backslash must stay literal.
     assertThat(JavaClientView.quote("\\u000a")).isEqualTo("\"\\\\u000a\"");
   }
 
   @Test
-  void docTextCollapsesWhitespaceAndNeutralisesCommentClose() {
+  void docTextCollapsesWhitespaceAndNeutralisesCommentCloseAndUnicodeEscapes() {
     assertThat(JavaClientView.docText("  Pets */ \n  Store\tAPI "))
         .isEqualTo("Pets *&#47; Store API");
-  }
-
-  @Test
-  void docTextNeutralisesUnicodeEscapesThatJavacWouldTranslate() {
     // \\u002a is '*' after javac's unicode translation, so the backslash must go.
     assertThat(JavaClientView.docText("\\u002a/")).isEqualTo("&#92;u002a/");
   }
@@ -191,8 +183,7 @@ class JavaSdkGeneratorTest {
 
   @Test
   void clientNamedAfterAnImportedTypeDoesNotClash() {
-    // "HttpClient" already ends in Client, so the name is not suffixed. The client must not also
-    // import java.net.http.HttpClient, which would be a duplicate declaration.
+    // A name ending in Client is not suffixed, so it must not also import java.net.http.HttpClient.
     assertThat(clientSource("Http Client", List.of()))
         .contains("public final class HttpClient {")
         .doesNotContain("import java.net.http.HttpClient;")
@@ -204,6 +195,26 @@ class JavaSdkGeneratorTest {
     assertThatThrownBy(() -> generate("petstore", ".emitkit/", names("com.acme", "pets sdk")))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("artifactId");
+  }
+
+  @Test
+  void requestsHaveATimeoutThatCallersCanSet() {
+    assertThat(clientSource("Petstore", List.of()))
+        .contains("public Builder timeout(Duration timeout)")
+        .contains("builder.timeout(config.timeout());");
+  }
+
+  @Test
+  void configToStringNamesCredentialsButNeverPrintsThem() {
+    assertThat(
+            content(
+                generate("auth-schemes", ".emitkit/", names("com.acme", "pets-sdk")),
+                SRC + "ClientConfig.java"))
+        .contains("public String toString()")
+        .contains("authHeaders.keySet()")
+        .contains("authQuery.keySet()")
+        .doesNotContain("+ authHeaders +")
+        .doesNotContain("+ authQuery +");
   }
 
   private static String missingBaseUrl(String advice) {

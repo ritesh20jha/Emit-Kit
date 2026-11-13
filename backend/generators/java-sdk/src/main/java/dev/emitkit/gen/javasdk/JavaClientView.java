@@ -15,9 +15,8 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Values rendered by the Java SDK templates. {@code *Literal} fields are Java string literals. The
- * coordinates are validated to characters that are safe inside Kotlin and Markdown, so the
- * templates place them between plain quotes.
+ * Values rendered by the Java SDK templates. {@code *Literal} fields are Java string literals.
+ * Coordinates are validated to Kotlin-safe characters, so templates place them raw.
  */
 record JavaClientView(
     String packageName,
@@ -90,11 +89,7 @@ record JavaClientView(
     return value;
   }
 
-  /**
-   * The group id followed by the artifact id with every non-alphanumeric removed, lower-cased.
-   * Fails when the result is not a legal Java package name, since the package line is written
-   * verbatim.
-   */
+  /** Group id plus artifact id with non-alphanumerics removed. Fails when not a legal package. */
   static String basePackage(String groupId, String artifactId) {
     NameStrategy java = NameStrategy.forLanguage(Language.JAVA);
     String segment = java.member(artifactId).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
@@ -118,11 +113,7 @@ record JavaClientView(
     };
   }
 
-  /**
-   * The first server when it is an absolute http(s) URL without template variables, else empty. The
-   * parser fills in a relative {@code /} server when the document declares none, and a relative URL
-   * cannot be the base of an SDK request, so only absolute URLs become the default.
-   */
+  /** The first server when it is an absolute http(s) URL without template variables, else empty. */
   static String defaultBaseUrl(List<Server> servers) {
     if (servers.isEmpty() || !ABSOLUTE_HTTP_URL.matcher(servers.get(0).url()).matches()) {
       return "";
@@ -130,10 +121,7 @@ record JavaClientView(
     return servers.get(0).url();
   }
 
-  /**
-   * What the caller must pass when there is no default base URL. A relative or templated first
-   * server is named in the sentence, with an example of a full URL.
-   */
+  /** What the caller must pass when there is no default base URL. */
   static String baseUrlAdvice(List<Server> servers) {
     if (!defaultBaseUrl(servers).isEmpty()) {
       return "Pass a non-empty base URL.";
@@ -160,21 +148,12 @@ record JavaClientView(
     return typeName.endsWith("Client") ? typeName : typeName + "Client";
   }
 
-  /**
-   * Collapses whitespace and neutralises text that would end a block comment. {@code *}{@code /}
-   * becomes {@code *&#47;}. Backslashes become {@code &#92;}, because javac translates {@code
-   * \\uXXXX} before it lexes comments, so {@code \\u002a/} would otherwise close the comment.
-   */
+  /** Collapses whitespace and neutralises comment closers and unicode escapes. */
   static String docText(String text) {
     return text.replaceAll("\\s+", " ").replace("\\", "&#92;").replace("*/", "*&#47;").strip();
   }
 
-  /**
-   * Renders {@code value} as a double-quoted Java string literal. Quotes, backslashes and line
-   * breaks are escaped. Control characters become octal escapes and non-ASCII becomes {@code
-   * \\uXXXX}, because javac translates unicode escapes before lexing, so a {@code \\u000a} could
-   * break the literal. Escaped text never contains a bare quote or backslash.
-   */
+  /** Renders {@code value} as a Java string literal, escaping for javac's unicode translation. */
   static String quote(String value) {
     StringBuilder out = new StringBuilder("\"");
     for (char c : value.toCharArray()) {

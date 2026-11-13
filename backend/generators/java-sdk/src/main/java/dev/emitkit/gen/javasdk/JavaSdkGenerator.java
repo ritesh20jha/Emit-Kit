@@ -10,12 +10,7 @@ import dev.emitkit.spec.model.ApiModel;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Emits a Java SDK under {@code {outputDir}sdk/java/}: a Gradle build, the client with auth and
- * retries, the exception hierarchy, and a user-owned custom stub.
- *
- * <p>Output is byte-stable: collections keep model order and no timestamps are written.
- */
+/** Emits a Java SDK under {@code {outputDir}sdk/java/}. Output is byte-stable. */
 public final class JavaSdkGenerator implements Generator {
 
   private static final Templates TEMPLATES = Templates.forGenerator("java-sdk");
@@ -26,12 +21,8 @@ public final class JavaSdkGenerator implements Generator {
           new ExceptionClass("UnauthorizedException", "401 Unauthorized, or 403 Forbidden."),
           new ExceptionClass("NotFoundException", "404 Not Found."),
           new ExceptionClass("ConflictException", "409 Conflict."),
-          new ExceptionClass(
-              "RateLimitException",
-              "429 Too Many Requests. Raised only after the client's retries are exhausted."),
-          new ExceptionClass(
-              "ServerException",
-              "5xx Server Error. Raised only after the client's retries are exhausted."));
+          new ExceptionClass("RateLimitException", "429 Too Many Requests, after retries."),
+          new ExceptionClass("ServerException", "5xx Server Error, after retries."));
 
   /** Name and javadoc summary of one exception subclass. */
   record ExceptionClass(String name, String summary) {}
@@ -83,9 +74,7 @@ public final class JavaSdkGenerator implements Generator {
     return new GeneratedFile(path, TEMPLATES.render(template, view), FileKind.GENERATED);
   }
 
-  /**
-   * {@code outputDir} with any trailing slashes normalised to exactly one, then {@code sdk/java/}.
-   */
+  /** {@code outputDir} with trailing slashes normalised to one, then {@code sdk/java/}. */
   static String sdkRoot(String outputDir) {
     String base = outputDir.replaceAll("/+$", "");
     return (base.isEmpty() ? "" : base + "/") + "sdk/java/";

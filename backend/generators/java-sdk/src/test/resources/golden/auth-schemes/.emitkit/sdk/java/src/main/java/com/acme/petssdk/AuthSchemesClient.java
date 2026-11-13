@@ -10,6 +10,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -39,13 +40,12 @@ public final class AuthSchemesClient {
   }
 
   /**
-   * Sends a request with the configured credentials. 429 and 5xx responses are retried with
-   * exponential backoff. Other non-2xx statuses throw an {@link ApiException} subclass.
+   * Sends a request with the configured credentials, retrying 429 and 5xx responses with backoff.
+   * Other non-2xx statuses throw an {@link ApiException}.
    *
-   * <p>{@code path} must start with {@code /} and must already be percent-encoded, so the caller
-   * escapes path parameters. Query names and values are encoded here. Entries with a null name or
-   * value are skipped, and a null {@code query} is treated as empty. A null {@code body} sends no
-   * body.
+   * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
+   * encoded here, and entries with a null name or value are skipped. A null query is empty, and a
+   * null body sends none.
    */
   public HttpResponse<String> request(
       String method, String path, Map<String, String> query, Object body) {
@@ -78,6 +78,7 @@ public final class AuthSchemesClient {
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
     config.authHeaders().forEach(builder::header);
+    builder.timeout(config.timeout());
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());
     } else {
@@ -151,6 +152,7 @@ public final class AuthSchemesClient {
     private String baseUrl;
     private int maxRetries = DEFAULT_MAX_RETRIES;
     private java.net.http.HttpClient httpClient;
+    private Duration timeout = Duration.ofSeconds(60);
     private String apiKey;
     private String bearerToken;
     private String basicUsername;
@@ -173,6 +175,15 @@ public final class AuthSchemesClient {
     /** HTTP client for requests. Defaults to one that does not follow redirects. */
     public Builder httpClient(java.net.http.HttpClient httpClient) {
       this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
+      return this;
+    }
+
+    /** Per-request timeout. Defaults to 60 seconds. Must be positive. */
+    public Builder timeout(Duration timeout) {
+      if (timeout == null || timeout.isNegative() || timeout.isZero()) {
+        throw new IllegalArgumentException("timeout must be a positive duration");
+      }
+      this.timeout = timeout;
       return this;
     }
 
@@ -221,7 +232,7 @@ public final class AuthSchemesClient {
       java.net.http.HttpClient client =
           httpClient == null ? java.net.http.HttpClient.newHttpClient() : httpClient;
       return new AuthSchemesClient(
-          new ClientConfig(resolvedBaseUrl, maxRetries, client, headers, query));
+          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, headers, query));
     }
 
     private static String basicCredentials(String username, String password) {

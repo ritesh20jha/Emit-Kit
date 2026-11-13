@@ -36,10 +36,8 @@ schemes, and `basic` for HTTP basic. Other schemes, such as cookie API keys, are
 
 ## Errors
 
-Non-2xx responses throw an `ApiException` subclass: `UnauthorizedException` (401 and 403),
-`NotFoundException` (404), `ConflictException` (409), `RateLimitException` (429) or
-`ServerException` (5xx). Other statuses throw a plain `ApiException`. Each exception carries
-`status()` and `body()`. A failed connection throws `UncheckedIOException`.
-
-429 and 5xx responses are retried with exponential backoff, twice by default. Set `maxRetries` on
-the builder to change that.
+Non-2xx responses throw an `ApiException` subclass chosen by status: `UnauthorizedException` (401
+and 403), `NotFoundException` (404), `ConflictException` (409), `RateLimitException` (429) or
+`ServerException` (5xx). Other statuses throw a plain `ApiException`. A failed connection throws
+`UncheckedIOException`. 429 and 5xx responses are retried twice by default, and requests time out
+after 60 seconds. Set `maxRetries` or `timeout` on the builder to change these.

@@ -10,6 +10,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -38,13 +39,12 @@ public final class PetstoreClient {
   }
 
   /**
-   * Sends a request with the configured credentials. 429 and 5xx responses are retried with
-   * exponential backoff. Other non-2xx statuses throw an {@link ApiException} subclass.
+   * Sends a request with the configured credentials, retrying 429 and 5xx responses with backoff.
+   * Other non-2xx statuses throw an {@link ApiException}.
    *
-   * <p>{@code path} must start with {@code /} and must already be percent-encoded, so the caller
-   * escapes path parameters. Query names and values are encoded here. Entries with a null name or
-   * value are skipped, and a null {@code query} is treated as empty. A null {@code body} sends no
-   * body.
+   * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
+   * encoded here, and entries with a null name or value are skipped. A null query is empty, and a
+   * null body sends none.
    */
   public HttpResponse<String> request(
       String method, String path, Map<String, String> query, Object body) {
@@ -77,6 +77,7 @@ public final class PetstoreClient {
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
     config.authHeaders().forEach(builder::header);
+    builder.timeout(config.timeout());
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());
     } else {
@@ -150,6 +151,7 @@ public final class PetstoreClient {
     private String baseUrl;
     private int maxRetries = DEFAULT_MAX_RETRIES;
     private java.net.http.HttpClient httpClient;
+    private Duration timeout = Duration.ofSeconds(60);
 
     private Builder() {}
 
@@ -171,6 +173,15 @@ public final class PetstoreClient {
       return this;
     }
 
+    /** Per-request timeout. Defaults to 60 seconds. Must be positive. */
+    public Builder timeout(Duration timeout) {
+      if (timeout == null || timeout.isNegative() || timeout.isZero()) {
+        throw new IllegalArgumentException("timeout must be a positive duration");
+      }
+      this.timeout = timeout;
+      return this;
+    }
+
     /** Builds the client. Fails when no base URL is available or maxRetries is negative. */
     public PetstoreClient build() {
       String resolvedBaseUrl = baseUrl == null ? DEFAULT_BASE_URL : baseUrl;
@@ -187,7 +198,7 @@ public final class PetstoreClient {
       java.net.http.HttpClient client =
           httpClient == null ? java.net.http.HttpClient.newHttpClient() : httpClient;
       return new PetstoreClient(
-          new ClientConfig(resolvedBaseUrl, maxRetries, client, headers, query));
+          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, headers, query));
     }
   }
 }
