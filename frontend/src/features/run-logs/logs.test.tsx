@@ -51,7 +51,7 @@ describe("LogView", () => {
   test("scrolling up pauses auto-scroll and shows Jump to latest", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<LogView lines={make(500)} />);
-    const grid = screen.getByRole("grid");
+    const grid = screen.getByRole("table");
     stubScrollMetrics(grid, 20_000, 500);
 
     // The reader scrolls up, away from the bottom of the log.
@@ -67,6 +67,7 @@ describe("LogView", () => {
     // Jump to latest moves to the bottom and resumes following.
     await user.click(screen.getByRole("button", { name: /jump to latest/i }));
     expect(grid.scrollTop).toBe(20_000);
+    expect(grid).toHaveFocus();
     expect(screen.queryByRole("button", { name: /jump to latest/i })).not.toBeInTheDocument();
   });
 
@@ -82,7 +83,7 @@ describe("LogView", () => {
       />,
     );
 
-    expect(screen.getByRole("grid")).toHaveAttribute("aria-rowcount", "1");
+    expect(screen.getByRole("table")).toHaveAttribute("aria-rowcount", "1");
     expect(screen.getAllByRole("row")).toHaveLength(1);
 
     await user.type(screen.getByRole("searchbox", { name: /search/i }), "x");

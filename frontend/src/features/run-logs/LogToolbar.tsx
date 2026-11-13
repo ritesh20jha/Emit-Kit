@@ -20,7 +20,7 @@ export interface LogToolbarProps {
 
 export function LogToolbar({ filters, onChange, onDownload }: LogToolbarProps) {
   return (
-    <div role="toolbar" aria-label="Log filters" className="flex flex-wrap items-center gap-2">
+    <div role="group" aria-label="Log filters" className="flex flex-wrap items-center gap-2">
       <Select
         aria-label="Step"
         options={STEP_OPTIONS}

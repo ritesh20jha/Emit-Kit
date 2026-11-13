@@ -89,7 +89,7 @@ export function LogView({ lines, status, filters, onFiltersChange, onRetry }: Lo
           <div className="relative">
             <div
               ref={scrollRef}
-              role="grid"
+              role="table"
               aria-label="Log lines"
               aria-rowcount={visible.length}
               tabIndex={0}
@@ -117,7 +117,11 @@ export function LogView({ lines, status, filters, onFiltersChange, onRetry }: Lo
                 variant="secondary"
                 size="sm"
                 className="absolute right-3 bottom-3 shadow-overlay"
-                onClick={() => setFollowing(true)}
+                onClick={() => {
+                  setFollowing(true);
+                  // The button unmounts once following resumes, so focus moves to the log instead of being lost.
+                  scrollRef.current?.focus();
+                }}
               >
                 <ArrowDown aria-hidden="true" className="size-3.5" />
                 Jump to latest
@@ -149,20 +153,21 @@ function LogRow({ line, rowIndex, start, query }: { line: LogLine; rowIndex: num
       className="absolute top-0 left-0 flex w-full items-center gap-3 px-3 whitespace-pre"
       style={{ height: ROW_HEIGHT, transform: `translateY(${start}px)` }}
     >
-      <span role="gridcell" className="shrink-0 tabular-nums text-fg-subtle">
+      <span role="cell" className="shrink-0 tabular-nums text-fg-subtle">
         {line.ts.slice(11, 23)}
       </span>
-      <span role="gridcell" className={cn("w-12 shrink-0 font-medium", LEVEL_CLASS[line.level])}>
+      <span role="cell" className={cn("w-12 shrink-0 font-medium", LEVEL_CLASS[line.level])}>
         {line.level}
       </span>
-      <span role="gridcell" className="w-40 shrink-0 truncate text-fg-muted">
+      {/* Hidden below sm: the message needs the width on a phone. */}
+      <span role="cell" className="hidden w-40 shrink-0 truncate text-fg-muted sm:block">
         {line.step ? STEP_LABELS[line.step] : ""}
       </span>
-      <span role="gridcell" className="min-w-0 flex-1 truncate text-fg">
+      <span role="cell" title={line.message} className="min-w-0 flex-1 truncate text-fg">
         {highlight(line.message, query)}
       </span>
-      <span role="gridcell" className="shrink-0">
-        <IconButton label={`Copy line ${line.seq}`} size="sm" onClick={() => copyLine(line)}>
+      <span role="cell" className="shrink-0">
+        <IconButton label={`Copy line ${line.seq}`} size="sm" className="size-6" onClick={() => copyLine(line)}>
           <Copy aria-hidden="true" className="size-3.5" />
         </IconButton>
       </span>
