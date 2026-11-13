@@ -7,6 +7,7 @@ import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.OrgMember;
 import dev.emitkit.domain.OrgMemberId;
 import dev.emitkit.domain.OrgMemberRepository;
+import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.Role;
 import dev.emitkit.domain.RoleSource;
 import dev.emitkit.domain.User;
@@ -33,12 +34,17 @@ public class MembersController {
 
   private final OrgAccessService orgAccess;
   private final OrgMemberRepository orgMembers;
+  private final OrganizationRepository organizations;
   private final UserRepository users;
 
   public MembersController(
-      OrgAccessService orgAccess, OrgMemberRepository orgMembers, UserRepository users) {
+      OrgAccessService orgAccess,
+      OrgMemberRepository orgMembers,
+      OrganizationRepository organizations,
+      UserRepository users) {
     this.orgAccess = orgAccess;
     this.orgMembers = orgMembers;
+    this.organizations = organizations;
     this.users = users;
   }
 
@@ -63,6 +69,10 @@ public class MembersController {
       @PathVariable("userId") String userId,
       @Valid @RequestBody UpdateRoleRequest request) {
     orgAccess.require(orgId, Permission.MEMBER_ROLE_EDIT);
+    // Lock the org first: two admins demoting each other must not both pass the last-admin check.
+    organizations
+        .findByIdForUpdate(orgId)
+        .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "organization not found"));
     OrgMember target =
         orgMembers
             .findById(new OrgMemberId(orgId, userId))

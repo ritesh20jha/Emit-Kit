@@ -3,6 +3,7 @@ package dev.emitkit.api.orgs;
 import static dev.emitkit.domain.Role.ADMIN;
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -26,6 +27,13 @@ import dev.emitkit.domain.RoleSource;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +46,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** The members endpoints: listing with user profile fields, and changing a role as an admin. */
 @SpringBootTest(
@@ -66,6 +76,7 @@ class MembersControllerIT {
   @Autowired private OrganizationRepository organizations;
   @Autowired private OrgMemberRepository orgMembers;
   @Autowired private OAuthAccountRepository oauth;
+  @Autowired private PlatformTransactionManager transactions;
 
   @BeforeEach
   void resetData() {
@@ -141,6 +152,97 @@ class MembersControllerIT {
         orgMembers.findById(new OrgMemberId(acme.getId(), admin.getId())).orElseThrow();
     assertThat(saved.getRole()).isEqualTo(ADMIN);
     assertThat(saved.getRoleSource()).isEqualTo(RoleSource.SYNC);
+  }
+
+  @Test
+  void roleChange_waitsForOrgLock() throws Exception {
+    Organization acme = org("acme");
+    User admin = user(1, "admin", null);
+    member(acme, admin, ADMIN, RoleSource.SYNC);
+    User target = user(2, "target", null);
+    member(acme, target, VIEWER, RoleSource.SYNC);
+    CountDownLatch locked = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      // Another transaction holds the org lock, as a concurrent role change would.
+      Future<?> holder =
+          pool.submit(() ->
+              new TransactionTemplate(transactions)
+                  .executeWithoutResult(status -> {
+                    organizations.findByIdForUpdate(acme.getId());
+                    locked.countDown();
+                    awaitQuietly(release);
+                  }));
+      locked.await();
+      Future<Integer> change = pool.submit(() -> patchRole(acme, target, admin, "EDITOR"));
+
+      // While the lock is held the change cannot finish: this is what the lock guarantees.
+      assertThatThrownBy(() -> change.get(1, TimeUnit.SECONDS))
+          .isInstanceOf(TimeoutException.class);
+      release.countDown();
+      holder.get(10, TimeUnit.SECONDS);
+      assertThat(change.get(10, TimeUnit.SECONDS)).isEqualTo(200);
+    } finally {
+      release.countDown();
+      pool.shutdownNow();
+    }
+  }
+
+  @Test
+  void concurrentDemotions_keepOneAdmin() throws Exception {
+    Organization acme = org("acme");
+    User a = user(1, "a", null);
+    member(acme, a, ADMIN, RoleSource.SYNC);
+    User b = user(2, "b", null);
+    member(acme, b, ADMIN, RoleSource.SYNC);
+    CyclicBarrier start = new CyclicBarrier(2);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      // Each admin demotes the other at the same moment.
+      Future<Integer> aDemotesB =
+          pool.submit(() -> {
+            start.await();
+            return patchRole(acme, b, a, "VIEWER");
+          });
+      Future<Integer> bDemotesA =
+          pool.submit(() -> {
+            start.await();
+            return patchRole(acme, a, b, "VIEWER");
+          });
+      List<Integer> statuses =
+          List.of(aDemotesB.get(30, TimeUnit.SECONDS), bDemotesA.get(30, TimeUnit.SECONDS));
+
+      assertThat(statuses).filteredOn(status -> status == 200).hasSize(1);
+      assertThat(statuses)
+          .filteredOn(status -> status != 200)
+          .allMatch(status -> status == 400 || status == 403);
+      assertThat(orgMembers.countByOrgIdAndRole(acme.getId(), ADMIN)).isEqualTo(1);
+    } finally {
+      pool.shutdownNow();
+    }
+  }
+
+  private int patchRole(Organization org, User target, User requester, String role)
+      throws Exception {
+    return mvc.perform(
+            patch(MEMBERS + "/{userId}", org.getId(), target.getId())
+                .with(csrf())
+                .with(signedInAs(requester))
+                .contentType("application/json")
+                .content("{\"role\":\"" + role + "\"}"))
+        .andReturn()
+        .getResponse()
+        .getStatus();
+  }
+
+  private static void awaitQuietly(CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
   }
 
   private static RequestPostProcessor signedInAs(User user) {
