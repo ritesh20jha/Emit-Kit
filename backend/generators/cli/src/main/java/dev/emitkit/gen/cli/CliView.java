@@ -39,7 +39,7 @@ record CliView(
     PackageNames names = ctx.names();
     String scope = names.npmScope();
     String packageName =
-        scope == null || scope.isEmpty() ? names.npmName() : "@" + scope + "/" + names.npmName();
+        (scope == null || scope.isEmpty() ? "" : "@" + scope + "/") + names.npmName() + "-cli";
     String defaultUrl = defaultBaseUrl(model.servers());
     List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
     List<String> headers = apiKeyNames(schemes, "header");

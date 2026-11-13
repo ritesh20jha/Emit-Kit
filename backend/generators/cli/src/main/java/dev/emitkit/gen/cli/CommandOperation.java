@@ -62,7 +62,7 @@ record CommandOperation(
   private static CommandOperation build(String name, Operation op) {
     List<Parameter> params = op.parameters();
     List<String> flags =
-        Names.unique(params.stream().map(p -> Names.kebab(p.name())).toList(), RESERVED_FLAGS);
+        Names.unique(params.stream().map(p -> flagBase(p.name())).toList(), RESERVED_FLAGS);
     List<Flag> flagList = new ArrayList<>();
     List<Entry> query = new ArrayList<>();
     List<Entry> headers = new ArrayList<>();
@@ -141,6 +141,14 @@ record CommandOperation(
     if (!text.isEmpty()) {
       parts.add(quote(text));
     }
+  }
+
+  /**
+   * Commander reads {@code --no-X} as a negated {@code X}, so a leading {@code no-} gets a prefix.
+   */
+  private static String flagBase(String name) {
+    String kebab = Names.kebab(name);
+    return kebab.startsWith("no-") ? "param-" + kebab : kebab;
   }
 
   private static String describe(Parameter p) {

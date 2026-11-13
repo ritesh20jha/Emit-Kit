@@ -31,7 +31,7 @@ class CliGeneratorTest {
   private final CliGenerator generator = new CliGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "multi-tag", "reserved-words"})
+  @ValueSource(strings = {"petstore", "multi-tag", "reserved-words", "auth-schemes"})
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
@@ -144,11 +144,30 @@ class CliGeneratorTest {
   }
 
   @Test
-  void binIsTheUnscopedNpmNameAndCommanderIsTheOnlyDependency() {
+  void packageNameIsScopedNpmNamePlusCliAndBinStaysUnsuffixed() {
     assertThat(source(generate("petstore"), "package.json"))
         .contains("\"name\": \"@acme/petstore-cli\",")
-        .contains("\"petstore-cli\": \"dist/index.js\"")
+        .contains("\"petstore\": \"dist/index.js\"")
         .contains("\"commander\": \"^11\"");
+    var unscoped =
+        new GeneratorContext(
+            ".emitkit/",
+            "1.2.3",
+            new PackageNames(null, "petstore", null, null, null),
+            List.of("typescript"),
+            Optional.empty());
+    assertThat(source(generator.generate(FixtureSpecs.load("petstore"), unscoped), "package.json"))
+        .contains("\"name\": \"petstore-cli\",");
+  }
+
+  @Test
+  void negatableNoPrefixedParamGetsARenamedFlag() {
+    // Commander reads --no-X as a negated X, so --no-cache would never store a value under noCache.
+    var op = operation("fetch", "Fetch", param("noCache", ParamLocation.QUERY, true));
+    assertThat(source(generate(model(op)), "src/commands/things.ts"))
+        .contains(".requiredOption(\"--param-no-cache <value>\"")
+        .contains("\"noCache\": opts[\"paramNoCache\"],")
+        .doesNotContain("--no-cache");
   }
 
   private static GeneratorContext ctx() {
@@ -156,7 +175,7 @@ class CliGeneratorTest {
   }
 
   private static GeneratorContext ctx(String outputDir) {
-    var names = new PackageNames("acme", "petstore-cli", "petstore", "dev.acme", "petstore");
+    var names = new PackageNames("acme", "petstore", "petstore", "dev.acme", "petstore");
     return new GeneratorContext(outputDir, "1.2.3", names, List.of("typescript"), Optional.empty());
   }
 

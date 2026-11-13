@@ -36,9 +36,10 @@ const API_KEY_HEADERS: string[] = ["X-API-Key"];
 const API_KEY_QUERIES: string[] = [];
 
 const program = new Command()
-  .name("petstore-cli")
+  .name("petstore")
   .description("Multi Tag")
   .version("1.2.3")
+  .configureHelp({ showGlobalOptions: true })
   .option("--base-url <url>", "Base URL of the API")
   .option("--token <token>", "Bearer token, sent as Authorization: Bearer <token>")
   .option("--api-key <key>", "API key, sent in the header or query parameter the API declares")

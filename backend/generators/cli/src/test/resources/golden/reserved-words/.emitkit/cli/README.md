@@ -12,7 +12,7 @@ npm install -g @acme/petstore-cli
 ## Usage
 
 ```sh
-petstore-cli <group> <operation> [options]
+petstore <group> <operation> [options]
 ```
 
 Global options, accepted before or after the command: `--base-url <url>`, `--token <token>` (sent
@@ -25,8 +25,8 @@ The API declares no absolute server URL, so pass `--base-url`, for example `--ba
 
 ## Commands
 
-- `petstore-cli user class`
-- `petstore-cli user get-item-in`
-- `petstore-cli default delete`
-- `petstore-cli default default`
-- `petstore-cli user-2 import`
+- `petstore user class`
+- `petstore user get-item-in`
+- `petstore default delete`
+- `petstore default default`
+- `petstore user-2 import`

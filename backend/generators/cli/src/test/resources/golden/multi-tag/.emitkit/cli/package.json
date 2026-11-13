@@ -3,7 +3,7 @@
   "version": "1.2.3",
   "type": "module",
   "bin": {
-    "petstore-cli": "dist/index.js"
+    "petstore": "dist/index.js"
   },
   "files": ["dist"],
   "engines": {
