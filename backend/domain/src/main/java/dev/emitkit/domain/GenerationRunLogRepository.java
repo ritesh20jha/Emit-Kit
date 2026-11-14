@@ -14,6 +14,16 @@ public interface GenerationRunLogRepository extends JpaRepository<GenerationRunL
   /** Lines of a run after {@code seq}, in order. Pass 0 to read from the start. */
   List<GenerationRunLog> findByRunIdAndSeqGreaterThanOrderBySeq(String runId, int seq);
 
+  /**
+   * The first and last log time of each step of a run. A step with no log lines has no entry.
+   * Run-level lines, which have no step, are left out.
+   */
+  @Query(
+      "select new dev.emitkit.domain.StepSpan(l.step, min(l.ts), max(l.ts))"
+          + " from GenerationRunLog l where l.runId = :runId and l.step is not null"
+          + " group by l.step")
+  List<StepSpan> findStepSpans(@Param("runId") String runId);
+
   /** Retention: deletes every log line written before {@code cutoff}. Returns the count. */
   @Transactional
   @Modifying

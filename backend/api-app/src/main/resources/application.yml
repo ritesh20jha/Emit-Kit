@@ -11,6 +11,9 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  rabbitmq:
+    username: ${SPRING_RABBITMQ_USERNAME:emitkit}
+    password: ${SPRING_RABBITMQ_PASSWORD:emitkit}
   session:
     data:
       redis:

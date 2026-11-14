@@ -10,11 +10,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import dev.emitkit.api.access.OrgAccessService;
 import dev.emitkit.api.auth.GitHubUserService;
+import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ProjectService;
+import dev.emitkit.api.runs.RunService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
@@ -72,6 +74,8 @@ class CON03ContractTest {
   @MockitoBean private StringRedisTemplate redis;
   @MockitoBean private ProjectService projectService;
   @MockitoBean private VcsProvider vcsProvider;
+  @MockitoBean private ProjectAccess projectAccess;
+  @MockitoBean private RunService runService;
 
   @Test
   @WithMockUser
@@ -98,9 +102,6 @@ class CON03ContractTest {
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
-    "GET,/api/v1/projects/p1/runs?cursor=c1&limit=10&status=RUNNING&trigger=MANUAL,",
-    "POST,/api/v1/projects/p1/runs,'{\"dryRun\":true}'",
-    "GET,/api/v1/runs/r1,",
     "POST,/api/v1/runs/r1/cancel,",
     "POST,/api/v1/runs/r1/rerun,",
     "POST,/api/v1/runs/r1/approval,'{\"decision\":\"APPROVED\",\"comment\":\"ship it\"}'",
