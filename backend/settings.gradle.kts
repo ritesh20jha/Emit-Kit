@@ -21,6 +21,7 @@ include(
     "generators:core",
     "generators:workflows",
     "generators:typescript-sdk",
+    "generators:java-sdk",
     "generators:python-sdk",
     "generators:mcp",
     "generators:docs",
