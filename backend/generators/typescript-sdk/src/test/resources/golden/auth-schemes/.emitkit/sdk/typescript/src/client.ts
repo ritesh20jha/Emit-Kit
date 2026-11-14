@@ -9,6 +9,7 @@ import {
   ServerError,
   UnauthorizedError,
 } from "./errors.js";
+import { DefaultResource } from "./resources/default.js";
 
 /** Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL. */
 const DEFAULT_BASE_URL = "";
@@ -25,10 +26,18 @@ export interface AuthOptions {
   basic?: { username: string; password: string };
 }
 
-/** Options for one request. Resource methods pass these to `request`. */
+/**
+ * Options for one request. Resource methods pass these to `request`. In `query`, undefined and null
+ * values are skipped and arrays are comma-joined.
+ */
 export interface RequestOptions {
-  query?: Record<string, string | number | boolean>;
+  query?: Record<string, unknown>;
   body?: unknown;
+}
+
+/** The part of the client that resource classes use. */
+export interface Requester {
+  request(method: string, path: string, options?: RequestOptions): Promise<Response>;
 }
 
 /** Client for the Auth Schemes API. */
@@ -38,6 +47,7 @@ export class AuthSchemesClient {
   private readonly maxRetries: number;
   private readonly authHeaders: Record<string, string> = {};
   private readonly authQuery: Record<string, string> = {};
+  readonly default_: DefaultResource;
 
   constructor(opts: { baseUrl?: string; fetch?: typeof fetch; maxRetries?: number } & AuthOptions) {
     const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
@@ -61,14 +71,17 @@ export class AuthSchemesClient {
     if (opts.basic !== undefined && this.authHeaders["Authorization"] === undefined) {
       this.authHeaders["Authorization"] = basicCredentials(opts.basic.username, opts.basic.password);
     }
+    this.default_ = new DefaultResource(this);
   }
 
   /**
    * Sends a request with the configured credentials. 429 and 5xx responses are retried with
    * exponential backoff, up to maxRetries times. Any other non-2xx status throws an ApiError
    * subclass. Resolves with the successful response for the caller to parse.
+   *
+   * @internal Used by the resource classes. Call the resource methods instead.
    */
-  protected async request(
+  async request(
     method: string,
     path: string,
     options: RequestOptions = {},
@@ -78,7 +91,9 @@ export class AuthSchemesClient {
       url.searchParams.set(name, value);
     }
     for (const [name, value] of Object.entries(options.query ?? {})) {
-      url.searchParams.set(name, String(value));
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(name, queryValue(value));
+      }
     }
     const headers = new Headers(this.authHeaders);
     const init: RequestInit = { method, headers };
@@ -140,6 +155,14 @@ async function readBody(response: Response): Promise<unknown> {
   } catch {
     return text;
   }
+}
+
+/** Serialises one query value: arrays are comma-joined and objects are sent as JSON. */
+function queryValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.join(",");
+  }
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 function sleep(ms: number): Promise<void> {
