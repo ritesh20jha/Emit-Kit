@@ -36,6 +36,8 @@ server:
 emitkit:
   web:
     base-url: http://localhost:5173
+  # The address GitHub reaches this API at; webhooks are registered at {public-url}/webhooks/github.
+  public-url: ${EMITKIT_PUBLIC_URL:http://localhost:8080}
 springdoc:
   default-produces-media-type: application/json
 management:

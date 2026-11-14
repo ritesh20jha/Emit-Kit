@@ -13,9 +13,11 @@ import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
+import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
+import dev.emitkit.vcs.VcsProvider;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,9 +39,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * The CON-02 endpoints: projects, config, spec and lint. Every one answers 501 NOT_IMPLEMENTED
- * until its feature ticket replaces the body, and the request DTOs validate their input. Runs with
- * the real security chain, as {@link CON01ContractTest} does.
+ * The CON-02 endpoints: projects, config, spec and lint. Each one still unimplemented answers 501
+ * NOT_IMPLEMENTED until its feature ticket replaces the body, and the request DTOs validate their
+ * input. Runs with the real security chain, as {@link CON01ContractTest} does.
  */
 @WebMvcTest(properties = {GitHubTestCredentials.CLIENT_ID, GitHubTestCredentials.CLIENT_SECRET})
 @AutoConfigureMockMvc
@@ -75,6 +77,8 @@ class CON02ContractTest {
   @MockitoBean private OrgAccessService orgAccess;
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
+  @MockitoBean private ProjectService projectService;
+  @MockitoBean private VcsProvider vcsProvider;
 
   @Test
   @WithMockUser
@@ -128,9 +132,6 @@ class CON02ContractTest {
   @WithMockUser
   @CsvSource({
     "GET,/api/v1/orgs/org1/projects?cursor=c1&limit=10&q=web&status=FAILED,",
-    "POST,/api/v1/orgs/org1/projects,'" + CREATE_PROJECT + "'",
-    "GET,/api/v1/orgs/org1/vcs-repos?q=web,",
-    "GET,/api/v1/orgs/org1/vcs-repos/acme/widgets/spec-check?path=openapi.yaml&branch=main,",
     "GET,/api/v1/projects/p1,",
     "DELETE,/api/v1/projects/p1,",
     "POST,/api/v1/projects/p1/webhook,",
