@@ -4,7 +4,9 @@ package com.acme.petssdk;
 import com.acme.petssdk.resources.AdminApi;
 import com.acme.petssdk.resources.PetsApi;
 import com.acme.petssdk.resources.StoreApi;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -28,7 +30,11 @@ public final class MultiTagClient {
   private static final long RETRY_BASE_DELAY_MILLIS = 500;
   private static final int MAX_BACKOFF_SHIFT = 10;
   private static final long MAX_DELAY_MILLIS = 30_000;
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  /** Shared by requests and the resource classes. Unknown response fields are ignored. */
+  private static final ObjectMapper MAPPER =
+      new ObjectMapper()
+          .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+          .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
   private final ClientConfig config;
 
@@ -39,6 +45,11 @@ public final class MultiTagClient {
   /** Returns a builder that configures a client. */
   public static Builder builder() {
     return new Builder();
+  }
+
+  /** The JSON mapper that reads responses into model types and omits null request fields. */
+  public ObjectMapper mapper() {
+    return MAPPER;
   }
 
   /** Operations tagged admin. */

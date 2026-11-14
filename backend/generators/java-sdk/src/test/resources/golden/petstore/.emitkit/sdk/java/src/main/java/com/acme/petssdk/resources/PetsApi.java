@@ -5,7 +5,6 @@ import com.acme.petssdk.PetstoreClient;
 import com.acme.petssdk.model.Pet;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -15,8 +14,6 @@ import java.util.Map;
 
 /** Operations tagged pets. */
 public final class PetsApi {
-
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final PetstoreClient client;
 
@@ -51,9 +48,9 @@ public final class PetsApi {
     return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
   }
 
-  private static <T> T read(HttpResponse<String> response, TypeReference<T> type) {
+  private <T> T read(HttpResponse<String> response, TypeReference<T> type) {
     try {
-      return MAPPER.readValue(response.body(), type);
+      return client.mapper().readValue(response.body(), type);
     } catch (JsonProcessingException e) {
       throw new IllegalStateException("The response body is not the expected JSON", e);
     }

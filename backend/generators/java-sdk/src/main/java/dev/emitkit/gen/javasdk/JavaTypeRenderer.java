@@ -99,6 +99,7 @@ final class JavaTypeRenderer {
   /** Every top-level type of the API, in schema order. Aliases produce no file. */
   List<TypeFile> files() {
     List<TypeFile> files = new ArrayList<>();
+    Map<String, String> rawByName = new HashMap<>();
     for (var entry : schemas.entrySet()) {
       Schema schema = entry.getValue();
       String name = java.type(entry.getKey());
@@ -115,6 +116,16 @@ final class JavaTypeRenderer {
         body = record(top, name, schema.description(), components, implementsClause);
       } else {
         continue;
+      }
+      String previous = rawByName.putIfAbsent(name, entry.getKey());
+      if (previous != null) {
+        throw new IllegalArgumentException(
+            "schemas "
+                + previous
+                + " and "
+                + entry.getKey()
+                + " both become the Java type "
+                + name);
       }
       files.add(new TypeFile(name, imports, body));
     }
@@ -184,11 +195,24 @@ final class JavaTypeRenderer {
   /** Record components, one per property, with the Jackson name when {@code json} is set. */
   private List<String> components(Props props, String ownerName, Scope scope, boolean json) {
     List<String> out = new ArrayList<>();
+    Map<String, String> rawByMember = new HashMap<>();
     for (var entry : props.properties().entrySet()) {
       String raw = entry.getKey();
       boolean required = props.required().contains(raw);
       String type = type(entry.getValue(), required, ownerName + java.type(raw), scope);
       String member = java.member(raw);
+      String previous = rawByMember.putIfAbsent(member, raw);
+      if (previous != null) {
+        throw new IllegalArgumentException(
+            "properties "
+                + previous
+                + " and "
+                + raw
+                + " of "
+                + ownerName
+                + " both become the record component "
+                + member);
+      }
       if (json) {
         scope.imports.add(JSON_PROPERTY);
         out.add("@JsonProperty(" + JavaClientView.quote(raw) + ") " + type + " " + member);
@@ -348,6 +372,8 @@ final class JavaTypeRenderer {
       RefSchema option = (RefSchema) union.options().get(i);
       String type = java.type(option.name());
       permits.add(type);
+      // TODO(spec-engine): OneOfSchema drops discriminator mapping; subtype names fall back to
+      // schema names.
       out.append(indent).append(INDENT).append("@JsonSubTypes.Type(value = ").append(type);
       out.append(".class, name = ").append(JavaClientView.quote(option.name())).append(')');
       out.append(i < union.options().size() - 1 ? ",\n" : "\n");

@@ -3,6 +3,7 @@ package dev.emitkit.gen.javasdk;
 import dev.emitkit.gen.javasdk.JavaTypeRenderer.Scope;
 import dev.emitkit.gen.javasdk.JavaTypeRenderer.TypeFile;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.ArraySchema;
 import dev.emitkit.spec.model.EnumSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
@@ -12,9 +13,11 @@ import dev.emitkit.spec.model.PrimitiveType;
 import dev.emitkit.spec.model.RefSchema;
 import dev.emitkit.spec.model.RequestBody;
 import dev.emitkit.spec.model.Response;
+import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.naming.Language;
 import dev.emitkit.spec.naming.NameStrategy;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -49,9 +52,9 @@ final class JavaResourceRenderer {
 
   private static final String READ_HELPER =
       """
-        private static <T> T read(HttpResponse<String> response, TypeReference<T> type) {
+        private <T> T read(HttpResponse<String> response, TypeReference<T> type) {
           try {
-            return MAPPER.readValue(response.body(), type);
+            return client.mapper().readValue(response.body(), type);
           } catch (JsonProcessingException e) {
             throw new IllegalStateException("The response body is not the expected JSON", e);
           }
@@ -98,8 +101,11 @@ final class JavaResourceRenderer {
     if (usesResponse) {
       imports.add("com.fasterxml.jackson.core.JsonProcessingException");
       imports.add("com.fasterxml.jackson.core.type.TypeReference");
-      imports.add("com.fasterxml.jackson.databind.ObjectMapper");
       imports.add("java.net.http.HttpResponse");
+    }
+    if (ops.stream()
+        .anyMatch(op -> op.parameters().stream().anyMatch(p -> isArray(types, p.schema())))) {
+      imports.add("java.util.stream.Collectors");
     }
     if (usesPath) {
       imports.add("java.net.URLEncoder");
@@ -120,10 +126,6 @@ final class JavaResourceRenderer {
         .append(JavaClientView.docText(String.join(", ", group.tags())))
         .append(". */\n");
     out.append("public final class ").append(group.className()).append(" {\n\n");
-    if (usesResponse) {
-      out.append(INDENT)
-          .append("private static final ObjectMapper MAPPER = new ObjectMapper();\n\n");
-    }
     out.append(INDENT).append("private final ").append(client).append(" client;\n\n");
     out.append(INDENT).append("public ").append(group.className());
     out.append('(').append(client).append(" client) {\n");
@@ -142,37 +144,48 @@ final class JavaResourceRenderer {
     return new TypeFile(group.className(), imports, out.append("}\n").toString());
   }
 
+  /** Java names the generated code declares or uses. A parameter with one of these gets a _. */
+  private static final Set<String> RESERVED_LOCALS =
+      Set.of("query", "options", "body", "response", "client", "item");
+
+  /** Helper methods this renderer declares. An operation with one of these names gets a _. */
+  private static final Set<String> RESERVED_METHODS = Set.of("segment", "read");
+
   /** One operation: its method, and the options record it takes, if any, added to {@code api}. */
   private static String method(Operation op, JavaTypeRenderer types, Scope api) {
     NameStrategy java = NameStrategy.forLanguage(Language.JAVA);
     String base = java.type(op.operationId());
+    String methodName = java.member(op.operationId());
+    if (RESERVED_METHODS.contains(methodName)) {
+      methodName = methodName + "_";
+    }
     List<String> args = new ArrayList<>();
     Map<String, String> pathValues = new LinkedHashMap<>();
+    Map<String, String> javaNames = new HashMap<>();
     StringBuilder queryLines = new StringBuilder();
     List<String> optionComps = new ArrayList<>();
     Scope options = api.nestedScope();
+    boolean arrayQuery = false;
     for (Parameter p : op.parameters()) {
       if (p.in() != ParamLocation.PATH && p.in() != ParamLocation.QUERY) {
         continue;
       }
-      String name = java.member(p.name());
+      String name = localName(java, p.name(), javaNames, op);
       boolean required = p.required() || p.in() == ParamLocation.PATH;
       if (required) {
         args.add(types.type(p.schema(), true, null, api) + " " + name);
       }
+      arrayQuery |= p.in() == ParamLocation.QUERY && isArray(types, p.schema());
       if (p.in() == ParamLocation.PATH) {
-        pathValues.put(p.name(), wire(types, p, name));
+        pathValues.put(p.name(), wire(types, p.schema(), name));
       } else if (required) {
-        queryLines.append("    query.put(").append(JavaClientView.quote(p.name()));
-        queryLines.append(", ").append(wire(types, p, name)).append(");\n");
+        queryLines.append(queryPut("    ", p.name(), wire(types, p.schema(), name)));
       } else {
         optionComps.add(types.type(p.schema(), false, null, options) + " " + name);
-        queryLines
-            .append("    if (options != null && options.")
-            .append(name)
-            .append("() != null) {\n");
-        queryLines.append("      query.put(").append(JavaClientView.quote(p.name()));
-        queryLines.append(", ").append(wire(types, p, "options." + name + "()")).append(");\n");
+        queryLines.append("    if (options != null && options.").append(name);
+        queryLines.append("() != null) {\n");
+        String value = wire(types, p.schema(), "options." + name + "()");
+        queryLines.append(queryPut("      ", p.name(), value));
         queryLines.append("    }\n");
       }
     }
@@ -196,13 +209,28 @@ final class JavaResourceRenderer {
     callArgs.add(anyQuery ? "query" : "null");
     callArgs.add(body == null ? "null" : "body");
     String summary = op.summary() != null ? op.summary() : method + " " + op.path();
+    String doc = JavaClientView.docText(summary);
 
     StringBuilder out = new StringBuilder();
-    out.append('\n').append(INDENT).append("/** ");
-    out.append(JavaClientView.docText(summary)).append(" */\n");
-    out.append(INDENT).append("public ").append(ret).append(' ');
-    out.append(java.member(op.operationId())).append('(');
-    out.append(String.join(", ", args)).append(") {\n");
+    out.append('\n');
+    if (arrayQuery) {
+      out.append(INDENT).append("/**\n");
+      out.append(INDENT).append(" * ").append(doc).append("\n");
+      out.append(INDENT).append(" *\n");
+      out.append(INDENT).append(" * <p>Array query parameters are sent comma-separated.\n");
+      out.append(INDENT).append(" */\n");
+    } else {
+      out.append(INDENT).append("/** ").append(doc).append(" */\n");
+    }
+    String signature = INDENT + "public " + ret + " " + methodName + "(";
+    String joined = String.join(", ", args);
+    if (signature.length() + joined.length() + ") {".length() <= MAX_LINE) {
+      out.append(signature).append(joined).append(") {\n");
+    } else {
+      String argLines =
+          args.stream().map(a -> INDENT + INDENT + INDENT + a).collect(Collectors.joining(",\n"));
+      out.append(signature).append('\n').append(argLines).append(") {\n");
+    }
     if (anyQuery) {
       out.append("    Map<String, String> query = new LinkedHashMap<>();\n");
       out.append(queryLines);
@@ -214,6 +242,45 @@ final class JavaResourceRenderer {
       out.append("    return read(response, new TypeReference<").append(ret).append(">() {});\n");
     }
     return out.append(INDENT).append("}\n").toString();
+  }
+
+  /** The Java name for a parameter. Reserved names get a _; two parameters may not share one. */
+  private static String localName(
+      NameStrategy java, String raw, Map<String, String> javaNames, Operation op) {
+    String name = java.member(raw);
+    if (RESERVED_LOCALS.contains(name)) {
+      name = name + "_";
+    }
+    String previous = javaNames.putIfAbsent(name, raw);
+    if (previous != null) {
+      throw new IllegalArgumentException(
+          "parameters "
+              + previous
+              + " and "
+              + raw
+              + " of "
+              + op.operationId()
+              + " both become the Java name "
+              + name);
+    }
+    return name;
+  }
+
+  /** A {@code query.put} statement, wrapped after the name when it would run past the limit. */
+  private static String queryPut(String indent, String name, String value) {
+    String key = JavaClientView.quote(name);
+    String put = "query.put(" + key + ", " + value + ");";
+    if (indent.length() + put.length() <= MAX_LINE) {
+      return indent + put + "\n";
+    }
+    return indent + "query.put(" + key + ",\n" + indent + "    " + value + ");\n";
+  }
+
+  private static boolean isArray(JavaTypeRenderer types, Schema schema) {
+    if (schema instanceof RefSchema r) {
+      return isArray(types, types.target(r.name()));
+    }
+    return schema instanceof ArraySchema;
   }
 
   /**
@@ -273,12 +340,23 @@ final class JavaResourceRenderer {
     }
   }
 
-  /** The string a parameter value is sent as: enums send their wire value, others their text. */
-  private static String wire(JavaTypeRenderer types, Parameter p, String expr) {
-    if (p.schema() instanceof RefSchema r && types.target(r.name()) instanceof EnumSchema) {
-      return "String.valueOf(" + expr + ".value())";
+  /** The string a value is sent as. Enums send their wire value and arrays join theirs by comma. */
+  private static String wire(JavaTypeRenderer types, Schema schema, String expr) {
+    if (schema instanceof RefSchema r) {
+      Schema target = types.target(r.name());
+      if (target instanceof EnumSchema) {
+        return "String.valueOf(" + expr + ".value())";
+      }
+      return wire(types, target, expr);
     }
-    if (p.schema() instanceof PrimitiveSchema s && s.type() == PrimitiveType.STRING) {
+    if (schema instanceof ArraySchema a) {
+      if (a.items() instanceof ArraySchema) {
+        throw new IllegalArgumentException("arrays of arrays cannot be sent as a parameter");
+      }
+      String item = wire(types, a.items(), "item");
+      return expr + ".stream().map(item -> " + item + ").collect(Collectors.joining(\",\"))";
+    }
+    if (schema instanceof PrimitiveSchema s && s.type() == PrimitiveType.STRING) {
       return expr;
     }
     return "String.valueOf(" + expr + ")";

@@ -8,13 +8,10 @@ import com.acme.petssdk.model.Pet;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpResponse;
 
 /** Operations tagged default. */
 public final class DefaultApi {
-
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final PolymorphismClient client;
 
@@ -45,9 +42,9 @@ public final class DefaultApi {
     return read(response, new TypeReference<Owner>() {});
   }
 
-  private static <T> T read(HttpResponse<String> response, TypeReference<T> type) {
+  private <T> T read(HttpResponse<String> response, TypeReference<T> type) {
     try {
-      return MAPPER.readValue(response.body(), type);
+      return client.mapper().readValue(response.body(), type);
     } catch (JsonProcessingException e) {
       throw new IllegalStateException("The response body is not the expected JSON", e);
     }

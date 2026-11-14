@@ -5,15 +5,12 @@ import com.acme.petssdk.ReservedWordsClient;
 import com.acme.petssdk.model.Object_;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 
 /** Operations tagged user, User. */
 public final class UserApi {
-
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final ReservedWordsClient client;
 
@@ -42,9 +39,9 @@ public final class UserApi {
     return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
   }
 
-  private static <T> T read(HttpResponse<String> response, TypeReference<T> type) {
+  private <T> T read(HttpResponse<String> response, TypeReference<T> type) {
     try {
-      return MAPPER.readValue(response.body(), type);
+      return client.mapper().readValue(response.body(), type);
     } catch (JsonProcessingException e) {
       throw new IllegalStateException("The response body is not the expected JSON", e);
     }

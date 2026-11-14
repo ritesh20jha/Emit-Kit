@@ -6,7 +6,6 @@ import com.acme.petssdk.model.Color;
 import com.acme.petssdk.model.Item;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpResponse;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,8 +13,6 @@ import java.util.Map;
 
 /** Operations tagged default. */
 public final class DefaultApi {
-
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final EnumsClient client;
 
@@ -33,9 +30,9 @@ public final class DefaultApi {
     return read(response, new TypeReference<List<Item>>() {});
   }
 
-  private static <T> T read(HttpResponse<String> response, TypeReference<T> type) {
+  private <T> T read(HttpResponse<String> response, TypeReference<T> type) {
     try {
-      return MAPPER.readValue(response.body(), type);
+      return client.mapper().readValue(response.body(), type);
     } catch (JsonProcessingException e) {
       throw new IllegalStateException("The response body is not the expected JSON", e);
     }
