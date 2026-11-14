@@ -12,7 +12,8 @@ import java.util.List;
 
 /**
  * Emits a Python SDK package under {@code {outputDir}sdk/python/}: the sync and async clients with
- * auth and retries, the error hierarchy, package metadata, and a user-owned custom stub.
+ * auth and retries, the error hierarchy, Pydantic models, one resource module per tag, package
+ * metadata, and a user-owned custom stub.
  *
  * <p>The importable package directory is the PyPI name with {@code -} replaced by {@code _}. Output
  * is byte-stable: collections keep model order and no timestamps are written.
@@ -31,28 +32,25 @@ public final class PythonSdkGenerator implements Generator {
     PyClientView view = PyClientView.of(model, ctx);
     String root = sdkRoot(ctx.outputDir());
     String pkg = root + view.packageDir() + "/";
+    PyTypeRenderer types = new PyTypeRenderer(model);
     List<GeneratedFile> files = new ArrayList<>();
     files.add(generated(root + "pyproject.toml", "pyproject.toml", view));
     files.add(generated(root + "README.md", "README.md", view));
     files.add(generated(pkg + "__init__.py", "__init__.py", view));
     files.add(generated(pkg + "client.py", "client.py", view));
     files.add(generated(pkg + "errors.py", "errors.py", view));
+    files.add(generated(pkg + "models.py", "models.py", types.modelsModule()));
     files.add(
         new GeneratedFile(
             pkg + "custom/__init__.py",
             TEMPLATES.render("custom__init__.py", view),
             FileKind.CUSTOM_STUB));
-    files.addAll(resourceFiles());
+    files.addAll(PyResources.files(model, types, view, pkg, TEMPLATES));
     return List.copyOf(files);
   }
 
-  /** Hook for per-resource and per-type files. Empty until the resource generator lands. */
-  private static List<GeneratedFile> resourceFiles() {
-    return List.of();
-  }
-
-  private static GeneratedFile generated(String path, String template, PyClientView view) {
-    return new GeneratedFile(path, TEMPLATES.render(template, view), FileKind.GENERATED);
+  private static GeneratedFile generated(String path, String template, Object context) {
+    return new GeneratedFile(path, TEMPLATES.render(template, context), FileKind.GENERATED);
   }
 
   /**

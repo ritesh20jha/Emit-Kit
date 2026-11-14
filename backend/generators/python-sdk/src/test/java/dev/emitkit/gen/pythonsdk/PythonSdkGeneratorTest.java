@@ -28,15 +28,38 @@ class PythonSdkGeneratorTest {
   private final PythonSdkGenerator generator = new PythonSdkGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "auth-schemes"})
+  @ValueSource(
+      strings = {
+        "petstore",
+        "auth-schemes",
+        "polymorphism",
+        "enums",
+        "pagination",
+        "no-operation-ids",
+        "reserved-words",
+        "deep-nesting",
+        "multi-tag"
+      })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
 
   @Test
   void outputIsByteStable() {
-    var model = FixtureSpecs.load("auth-schemes");
+    var model = FixtureSpecs.load("petstore");
     assertThat(generator.generate(model, ctx())).isEqualTo(generator.generate(model, ctx()));
+  }
+
+  @Test
+  void reservedPropertyGetsAlias() {
+    assertThat(content("reserved-words", "models.py"))
+        .contains("from_: ")
+        .contains("alias=\"from\"");
+  }
+
+  @Test
+  void recursiveModelRebuilt() {
+    assertThat(content("deep-nesting", "models.py")).contains("Node.model_rebuild()");
   }
 
   @Test
@@ -213,6 +236,11 @@ class PythonSdkGeneratorTest {
   void quoteEscapesQuotesBackslashesControlCharactersAndSeparators() {
     assertThat(PyClientView.quote("a\"b\\c\nd\t\r\u0001\u007F\u2028"))
         .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u0001\\u007F\\u2028\"");
+  }
+
+  /** A file of the {@code acme_pets} package generated from the named fixture. */
+  private String content(String fixture, String relative) {
+    return content(generate(fixture, ".emitkit/", names("acme-pets")), "acme_pets/" + relative);
   }
 
   private String pyproject(PackageNames names) {
