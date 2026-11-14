@@ -14,6 +14,8 @@ import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ProjectService;
+import dev.emitkit.api.spec.LintRateLimiter;
+import dev.emitkit.api.spec.SpecHistoryService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
@@ -79,6 +81,8 @@ class CON02ContractTest {
   @MockitoBean private StringRedisTemplate redis;
   @MockitoBean private ProjectService projectService;
   @MockitoBean private VcsProvider vcsProvider;
+  @MockitoBean private LintRateLimiter lintRateLimiter;
+  @MockitoBean private SpecHistoryService specHistory;
 
   @Test
   @WithMockUser
@@ -91,18 +95,6 @@ class CON02ContractTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
         .andExpect(jsonPath("$.errors[0].field").value("repo"));
-  }
-
-  @Test
-  @WithMockUser
-  void lintIs501UntilImplemented() throws Exception {
-    mvc.perform(
-            post("/api/v1/lint")
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"content\":\"openapi: 3.1.0\"}"))
-        .andExpect(status().is(501))
-        .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
   }
 
   @Test
@@ -138,10 +130,7 @@ class CON02ContractTest {
     "GET,/api/v1/projects/p1/config,",
     "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'",
     "GET,/api/v1/projects/p1/spec,",
-    "PUT,/api/v1/projects/p1/spec,'{\"content\":\"openapi: 3.1.0\",\"sha\":\"abc\",\"generate\":true}'",
-    "GET,/api/v1/projects/p1/spec/snapshots,",
-    "GET,/api/v1/projects/p1/spec/diff?from=s1&to=s2,",
-    "POST,/api/v1/lint,'{\"content\":\"openapi: 3.1.0\"}'"
+    "PUT,/api/v1/projects/p1/spec,'{\"content\":\"openapi: 3.1.0\",\"sha\":\"abc\",\"generate\":true}'"
   })
   void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
     MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());

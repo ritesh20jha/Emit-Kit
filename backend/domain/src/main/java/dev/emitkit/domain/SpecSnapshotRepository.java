@@ -11,4 +11,7 @@ public interface SpecSnapshotRepository extends JpaRepository<SpecSnapshot, Stri
   Optional<SpecSnapshot> findByProjectIdAndContentHash(String projectId, String contentHash);
 
   List<SpecSnapshot> findByProjectIdOrderByCreatedAtDesc(String projectId);
+
+  /** The 100 newest snapshots of a project, newest first; the id breaks ties in creation time. */
+  List<SpecSnapshot> findTop100ByProjectIdOrderByCreatedAtDescIdDesc(String projectId);
 }
