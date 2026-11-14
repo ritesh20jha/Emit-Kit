@@ -14,9 +14,11 @@ import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
+import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
+import dev.emitkit.vcs.VcsProvider;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -68,6 +70,8 @@ class CON03ContractTest {
   @MockitoBean private OrgAccessService orgAccess;
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
+  @MockitoBean private ProjectService projectService;
+  @MockitoBean private VcsProvider vcsProvider;
 
   @Test
   @WithMockUser
