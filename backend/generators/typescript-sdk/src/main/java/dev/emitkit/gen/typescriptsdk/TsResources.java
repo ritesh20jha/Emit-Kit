@@ -32,7 +32,14 @@ final class TsResources {
 
   /** Client members a resource property must not shadow. */
   private static final Set<String> CLIENT_MEMBERS =
-      Set.of("request", "baseUrl", "fetchImpl", "maxRetries", "authHeaders", "authQuery");
+      Set.of(
+          "request",
+          "constructor",
+          "baseUrl",
+          "fetchImpl",
+          "maxRetries",
+          "authHeaders",
+          "authQuery");
 
   private TsResources() {}
 

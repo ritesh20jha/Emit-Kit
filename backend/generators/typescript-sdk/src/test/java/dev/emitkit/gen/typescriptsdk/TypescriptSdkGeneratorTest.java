@@ -17,8 +17,12 @@ import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.model.RefSchema;
+import dev.emitkit.spec.model.Response;
+import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -338,6 +342,95 @@ class TypescriptSdkGeneratorTest {
     assertThat(sdkFile(model, "src/resources/pets.ts"))
         .contains("async listPets(params: { \"api-version\": string }): Promise<Pet[]> {")
         .contains("query: { \"api-version\": params[\"api-version\"] },");
+  }
+
+  @Test
+  void schemaNamesAvoidSdkExportsResourceClassesAndEachOther() {
+    var schemas = new LinkedHashMap<String, Schema>();
+    schemas.put("Pet", text());
+    schemas.put("pet", text());
+    schemas.put("PetstoreClient", text());
+    schemas.put("PetsResource", text());
+    schemas.put("ApiError", text());
+    schemas.put("AuthOptions", text());
+    schemas.put("Requester", text());
+    var model =
+        synthetic(
+            schemas, List.of(op("getPet", "pets", "/pets", new RefSchema("pet", false, null))));
+    assertThat(sdkFile(model, "src/types.ts"))
+        .contains("export type Pet = string;")
+        .contains("export type Pet2 = string;")
+        .contains("export type PetstoreClientModel = string;")
+        .contains("export type PetsResource2 = string;")
+        .contains("export type ApiErrorModel = string;")
+        .contains("export type AuthOptionsModel = string;")
+        .contains("export type RequesterModel = string;");
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("import type { Pet2 } from \"../types.js\";")
+        .contains("export class PetsResource {")
+        .contains("Promise<Pet2>");
+  }
+
+  @Test
+  void methodNamesThatShadowResourceInternalsGetASuffix() {
+    var model =
+        synthetic(
+            Map.of(),
+            List.of(
+                op("client", "pets", "/client", null), op("constructor", "pets", "/ctor", null)));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("async client_(")
+        .contains("async constructor_(");
+  }
+
+  @Test
+  void clientPropertiesThatShadowClientMembersGetASuffix() {
+    var model =
+        synthetic(
+            Map.of(),
+            List.of(
+                op("listRequests", "request", "/requests", null),
+                op("listConstructors", "constructor", "/ctors", null)));
+    assertThat(sdkFile(model, "src/client.ts"))
+        .contains("  readonly request_: RequestResource;")
+        .contains("    this.request_ = new RequestResource(this);")
+        .contains("  readonly constructor_: ConstructorResource;")
+        .contains("    this.constructor_ = new ConstructorResource(this);")
+        .doesNotContain("readonly constructor:");
+    assertThat(sdkFile(model, "src/index.ts"))
+        .contains("export * from \"./resources/constructor.js\";");
+  }
+
+  /** A string-valued schema, so the exported declaration is one short line. */
+  private static Schema text() {
+    return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
+  }
+
+  /** A GET operation on {@code path} in {@code tag} whose 200 response has {@code response}. */
+  private static Operation op(String operationId, String tag, String path, Schema response) {
+    return new Operation(
+        operationId,
+        false,
+        "GET",
+        path,
+        tag,
+        null,
+        null,
+        List.of(),
+        null,
+        Map.of("200", new Response("200", null, response)),
+        List.of(),
+        false);
+  }
+
+  private static ApiModel synthetic(Map<String, Schema> schemas, List<Operation> operations) {
+    return new ApiModel(
+        new Info("Petstore", "1.0.0", null, null),
+        List.of(),
+        Map.of(),
+        List.of(),
+        operations,
+        schemas);
   }
 
   private String packageJson(PackageNames names) {
