@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -61,20 +62,20 @@ final class TsResources {
                 Comparator.comparingInt(
                     (String t) -> order.indexOf(t) < 0 ? Integer.MAX_VALUE : order.indexOf(t)))
             .toList();
-    Map<String, List<String>> byFile = new LinkedHashMap<>();
+    Map<String, List<String>> byKey = new LinkedHashMap<>();
     for (String tag : tags) {
-      byFile.computeIfAbsent(TsNames.resourceFile(tag), f -> new ArrayList<>()).add(tag);
+      byKey.computeIfAbsent(sameResource(tag), k -> new ArrayList<>()).add(tag);
     }
     List<Group> groups = new ArrayList<>();
-    for (var entry : byFile.entrySet()) {
+    for (var entry : byKey.entrySet()) {
       String first = entry.getValue().get(0);
       List<Operation> operations =
           model.operations().stream()
-              .filter(op -> entry.getKey().equals(TsNames.resourceFile(op.tag())))
+              .filter(op -> entry.getKey().equals(sameResource(op.tag())))
               .toList();
       groups.add(
           new Group(
-              entry.getKey(),
+              TsNames.resourceFile(first),
               TsNames.resourceClass(first),
               clientMember(TsNames.resourceMember(first)),
               String.join(", ", entry.getValue()),
@@ -101,6 +102,14 @@ final class TsResources {
             "hasTypes", !imports.isEmpty(),
             "typeList", String.join(", ", imports),
             "methods", String.join("\n", methods)));
+  }
+
+  /**
+   * Tags with equal keys share one resource. The class name, lowercased, is equal whenever the file
+   * or class names are equal, so two tags that would clash in client.ts or index.ts merge instead.
+   */
+  private static String sameResource(String tag) {
+    return TsNames.resourceClass(tag).toLowerCase(Locale.ROOT);
   }
 
   /** The client property name for a resource, suffixed when it would shadow a client member. */

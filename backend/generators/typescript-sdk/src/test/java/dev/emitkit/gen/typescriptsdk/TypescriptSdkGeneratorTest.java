@@ -401,6 +401,38 @@ class TypescriptSdkGeneratorTest {
         .contains("export * from \"./resources/constructor.js\";");
   }
 
+  @Test
+  void tagsThatNameTheSameResourceShareOneClassAndFile() {
+    var model =
+        synthetic(
+            Map.of(),
+            List.of(op("listFoo", "foo-2", "/a", null), op("listFoo2", "foo2", "/b", null)));
+    var files = generate(model, ".emitkit/", names(null, "petstore-sdk"));
+    assertThat(
+            files.stream().map(GeneratedFile::path).filter(p -> p.contains("/resources/")).toList())
+        .containsExactly(".emitkit/sdk/typescript/src/resources/foo-2.ts");
+    assertThat(content(files, "src/resources/foo-2.ts"))
+        .contains("async listFoo(")
+        .contains("async listFoo2(")
+        .containsOnlyOnce("export class Foo2Resource {");
+    assertThat(content(files, "src/client.ts"))
+        .containsOnlyOnce("  readonly foo2: Foo2Resource;")
+        .containsOnlyOnce("this.foo2 = new Foo2Resource(this);");
+  }
+
+  @Test
+  void refIntoASubSchemaRendersAsUnknownWithoutAnImport() {
+    var model =
+        synthetic(
+            Map.of("Node", text()),
+            List.of(
+                op("getNodeId", "pets", "/n", new RefSchema("Node/properties/id", false, null))));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("Promise<unknown>")
+        .doesNotContain("../types.js");
+    assertThat(sdkFile(model, "src/types.ts")).doesNotContain("PropertiesId");
+  }
+
   /** A string-valued schema, so the exported declaration is one short line. */
   private static Schema text() {
     return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);

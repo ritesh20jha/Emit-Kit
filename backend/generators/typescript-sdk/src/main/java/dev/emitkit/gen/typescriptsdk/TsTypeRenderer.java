@@ -136,6 +136,9 @@ final class TsTypeRenderer {
   }
 
   private String reference(String raw) {
+    if (!names.declares(raw)) {
+      return "unknown";
+    }
     String name = names.typeName(raw);
     referenced.add(name);
     return name;

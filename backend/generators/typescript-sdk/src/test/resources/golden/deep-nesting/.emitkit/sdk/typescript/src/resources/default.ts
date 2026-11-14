@@ -2,7 +2,7 @@
 import type { Requester } from "../client.js";
 import type { Deep, Grid, Node } from "../types.js";
 
-/** Operations for tags default. */
+/** Operations for the default tag. */
 export class DefaultResource {
   private readonly client: Requester;
 

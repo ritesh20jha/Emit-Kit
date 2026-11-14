@@ -55,10 +55,14 @@ final class TsNames {
     return new TsNames(types);
   }
 
-  /** The exported type name of the schema called {@code raw}. */
+  /** Whether {@code raw} names a schema in the model. A {@code $ref} into a sub-schema does not. */
+  boolean declares(String raw) {
+    return schemaTypes.containsKey(raw);
+  }
+
+  /** The exported type name of a declared schema. */
   String typeName(String raw) {
-    String name = schemaTypes.get(raw);
-    return name != null ? name : base(raw, "");
+    return schemaTypes.get(raw);
   }
 
   /** The exported class name of the resource for {@code tag}. */

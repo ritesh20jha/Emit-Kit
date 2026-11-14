@@ -2,7 +2,7 @@
 import type { Requester } from "../client.js";
 import type { ObjectModel } from "../types.js";
 
-/** Operations for tags user, User. */
+/** Operations for the user, User tag. */
 export class UserResource {
   private readonly client: Requester;
 

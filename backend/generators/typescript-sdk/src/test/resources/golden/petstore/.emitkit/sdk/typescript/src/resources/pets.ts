@@ -2,7 +2,7 @@
 import type { Requester } from "../client.js";
 import type { Pet } from "../types.js";
 
-/** Operations for tags pets. */
+/** Operations for the pets tag. */
 export class PetsResource {
   private readonly client: Requester;
 
