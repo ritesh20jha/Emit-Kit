@@ -25,13 +25,9 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * Java types for an API's schemas, and the records, enums and sealed interfaces that model them.
- *
- * <p>An inline object or enum is a nested type of the declaration that owns it, named {@code
- * {Owner}{Property}}: {@code Order.shipping} becomes {@code OrderShipping}. A named schema that is
- * only an alias (a primitive, an array, a bare ref) gets no file; its uses are inlined. A oneOf
- * with a discriminator and only named object options is a sealed interface; any other oneOf is
- * {@code JsonNode}. Output follows document order, so it is byte-stable.
+ * Java types for an API's schemas. An inline object or enum is nested in its owner, named {@code
+ * {Owner}{Property}}. Aliases (primitives, arrays, bare refs) get no file. A discriminated oneOf of
+ * records is a sealed interface; any other oneOf is {@code JsonNode}.
  */
 final class JavaTypeRenderer {
 
@@ -51,11 +47,7 @@ final class JavaTypeRenderer {
   /** Properties of an object schema, with allOf parts merged in. */
   private record Props(Map<String, Schema> properties, Set<String> required) {}
 
-  /**
-   * Where a declaration's nested types go. {@code indent} is the owner's indentation. The imports
-   * are shared by the whole file, and {@code resource} files import model types from {@code
-   * model/}.
-   */
+  /** Nested types of one owner, at its indentation. Imports are shared by the whole file. */
   static final class Scope {
     final String indent;
     final boolean resource;
@@ -117,16 +109,7 @@ final class JavaTypeRenderer {
       } else {
         continue;
       }
-      String previous = rawByName.putIfAbsent(name, entry.getKey());
-      if (previous != null) {
-        throw new IllegalArgumentException(
-            "schemas "
-                + previous
-                + " and "
-                + entry.getKey()
-                + " both become the Java type "
-                + name);
-      }
+      claim(rawByName, name, entry.getKey(), "schemas");
       files.add(new TypeFile(name, imports, body));
     }
     return files;
@@ -201,18 +184,7 @@ final class JavaTypeRenderer {
       boolean required = props.required().contains(raw);
       String type = type(entry.getValue(), required, ownerName + java.type(raw), scope);
       String member = java.member(raw);
-      String previous = rawByMember.putIfAbsent(member, raw);
-      if (previous != null) {
-        throw new IllegalArgumentException(
-            "properties "
-                + previous
-                + " and "
-                + raw
-                + " of "
-                + ownerName
-                + " both become the record component "
-                + member);
-      }
+      claim(rawByMember, member, raw, "properties of " + ownerName);
       if (json) {
         scope.imports.add(JSON_PROPERTY);
         out.add("@JsonProperty(" + JavaClientView.quote(raw) + ") " + type + " " + member);
@@ -292,102 +264,123 @@ final class JavaTypeRenderer {
       List<String> components,
       String implementsClause) {
     String indent = scope.indent;
-    StringBuilder out = new StringBuilder();
-    doc(out, indent, description);
-    out.append(indent).append("public record ").append(name).append('(');
+    String header = indent + "public record " + name + "(";
     if (!components.isEmpty()) {
-      out.append('\n');
-      for (int i = 0; i < components.size(); i++) {
-        out.append(indent).append(INDENT).append(INDENT).append(components.get(i));
-        out.append(i < components.size() - 1 ? ",\n" : "\n");
-      }
-      out.append(indent);
+      header +=
+          "\n"
+              + String.join(
+                  ",\n", components.stream().map(c -> indent + INDENT + INDENT + c).toList())
+              + "\n"
+              + indent;
     }
-    out.append(')').append(implementsClause);
-    if (scope.nested.isEmpty()) {
-      return out.append(" {}\n").toString();
-    }
-    out.append(" {\n");
-    for (String nested : scope.nested) {
-      out.append('\n').append(nested);
-    }
-    return out.append(indent).append("}\n").toString();
+    String tail =
+        scope.nested.isEmpty()
+            ? " {}\n"
+            : " {\n"
+                + String.join("", scope.nested.stream().map(n -> "\n" + n).toList())
+                + indent
+                + "}\n";
+    return indented(doc(description), indent) + header + ")" + implementsClause + tail;
   }
 
   private String enumText(Scope scope, String name, EnumSchema e) {
-    if (e.values().isEmpty()) {
-      throw new IllegalArgumentException("enum " + name + " has no values");
-    }
     scope.imports.add(JSON_VALUE);
-    String indent = scope.indent;
-    String valueType = scalar(e.type(), null, true);
-    StringBuilder out = new StringBuilder();
-    doc(out, indent, e.description());
-    out.append(indent).append("public enum ").append(name).append(" {\n");
-    Set<String> constants = new HashSet<>();
-    for (int i = 0; i < e.values().size(); i++) {
-      String raw = e.values().get(i);
+    List<String> constants = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    for (String raw : e.values()) {
       String constant = constantName(raw);
-      if (!constants.add(constant)) {
+      if (!seen.add(constant)) {
         throw new IllegalArgumentException(
-            "enum " + name + " has values that map to the same constant " + constant);
+            "enum %s has values that map to the same constant %s".formatted(name, constant));
       }
-      out.append(indent).append(INDENT).append(constant);
-      out.append('(').append(literal(e.type(), raw)).append(')');
-      out.append(i < e.values().size() - 1 ? ",\n" : ";\n");
+      constants.add(constant + "(" + literal(e.type(), raw) + ")");
     }
-    out.append('\n');
-    out.append(indent)
-        .append(INDENT)
-        .append("private final ")
-        .append(valueType)
-        .append(" value;\n");
-    out.append('\n');
-    out.append(indent).append(INDENT).append(name);
-    out.append('(').append(valueType).append(" value) {\n");
-    out.append(indent).append(INDENT).append(INDENT).append("this.value = value;\n");
-    out.append(indent).append(INDENT).append("}\n\n");
-    out.append(indent).append(INDENT).append("@JsonValue\n");
-    out.append(indent).append(INDENT).append("public ").append(valueType).append(" value() {\n");
-    out.append(indent).append(INDENT).append(INDENT).append("return value;\n");
-    out.append(indent).append(INDENT).append("}\n");
-    return out.append(indent).append("}\n").toString();
+    String valueType = scalar(e.type(), null, true);
+    String body =
+        """
+        public enum %s {
+          %s;
+
+          private final %s value;
+
+          %s(%s value) {
+            this.value = value;
+          }
+
+          @JsonValue
+          public %s value() {
+            return value;
+          }
+        }
+        """
+            .formatted(
+                name, String.join(",\n  ", constants), valueType, name, valueType, valueType);
+    return indented(doc(e.description()) + body, scope.indent);
   }
 
   private String sealedText(Scope scope, String name, OneOfSchema union) {
     scope.imports.add(JSON_TYPE_INFO);
     scope.imports.add(JSON_SUB_TYPES);
-    String indent = scope.indent;
-    StringBuilder out = new StringBuilder();
-    doc(out, indent, union.description());
-    String args = indent + INDENT + INDENT;
-    out.append(indent).append("@JsonTypeInfo(\n");
-    out.append(args).append("use = JsonTypeInfo.Id.NAME,\n");
-    out.append(args).append("include = JsonTypeInfo.As.EXISTING_PROPERTY,\n");
-    out.append(args).append("property = ").append(JavaClientView.quote(union.discriminator()));
-    out.append(",\n").append(args).append("visible = true)\n");
-    out.append(indent).append("@JsonSubTypes({\n");
+    List<String> subtypes = new ArrayList<>();
     List<String> permits = new ArrayList<>();
-    for (int i = 0; i < union.options().size(); i++) {
-      RefSchema option = (RefSchema) union.options().get(i);
-      String type = java.type(option.name());
+    for (Schema option : union.options()) {
+      String raw = ((RefSchema) option).name();
+      String type = java.type(raw);
       permits.add(type);
       // TODO(spec-engine): OneOfSchema drops discriminator mapping; subtype names fall back to
       // schema names.
-      out.append(indent).append(INDENT).append("@JsonSubTypes.Type(value = ").append(type);
-      out.append(".class, name = ").append(JavaClientView.quote(option.name())).append(')');
-      out.append(i < union.options().size() - 1 ? ",\n" : "\n");
+      subtypes.add(
+          "@JsonSubTypes.Type(value = "
+              + type
+              + ".class, name = "
+              + JavaClientView.quote(raw)
+              + ")");
     }
-    out.append(indent).append("})\n");
-    String permitList = String.join(", ", permits);
-    out.append(indent).append("public sealed interface ").append(name);
-    return out.append(" permits ").append(permitList).append(" {}\n").toString();
+    String body =
+        """
+        @JsonTypeInfo(
+            use = JsonTypeInfo.Id.NAME,
+            include = JsonTypeInfo.As.EXISTING_PROPERTY,
+            property = %s,
+            visible = true)
+        @JsonSubTypes({
+          %s
+        })
+        public sealed interface %s permits %s {}
+        """
+            .formatted(
+                JavaClientView.quote(union.discriminator()),
+                String.join(",\n  ", subtypes),
+                name,
+                String.join(", ", permits));
+    return indented(doc(union.description()) + body, scope.indent);
   }
 
-  private static void doc(StringBuilder out, String indent, String description) {
-    if (description != null && !description.isBlank()) {
-      out.append(indent).append("/** ").append(JavaClientView.docText(description)).append(" */\n");
+  /** Claims {@code name} for {@code raw}. Fails when another original name already has it. */
+  static void claim(Map<String, String> claims, String name, String raw, String what) {
+    String previous = claims.putIfAbsent(name, raw);
+    if (previous != null) {
+      throw new IllegalArgumentException(
+          "%s %s and %s both become %s".formatted(what, previous, raw, name));
     }
+  }
+
+  /** A javadoc line for {@code description}, or nothing when there is none. */
+  private static String doc(String description) {
+    if (description == null || description.isBlank()) {
+      return "";
+    }
+    return "/** " + JavaClientView.docText(description) + " */\n";
+  }
+
+  /** Indents every non-empty line of {@code text} by {@code indent}. */
+  private static String indented(String text, String indent) {
+    if (text.isEmpty()) {
+      return "";
+    }
+    return text.lines()
+        .map(line -> line.isEmpty() ? line : indent + line)
+        .collect(Collectors.joining("\n", "", "\n"));
   }
 
   /** Java type for a scalar. Boxed unless {@code primitive}, which {@code int} and so on are. */

@@ -29,13 +29,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * One resource class per tag: {@code {Tag}Api} with a method for each operation. Tags that resolve
- * to the same class name share it, so {@code user} and {@code User} both give {@code UserApi}.
- * Untagged operations go to {@code DefaultApi}.
- *
- * <p>A method takes the required path and query parameters in document order, then the body, then
- * an {@code {Op}Options} record for the optional query parameters. Path values are percent-encoded
- * per segment. Header and cookie parameters are not sent.
+ * One {@code {Tag}Api} class per resolved tag. Methods take the required parameters, then the body,
+ * then an {@code {Op}Options} record for optional query parameters. Header and cookie parameters
+ * are not sent.
  */
 final class JavaResourceRenderer {
 
@@ -144,21 +140,19 @@ final class JavaResourceRenderer {
     return new TypeFile(group.className(), imports, out.append("}\n").toString());
   }
 
-  /** Java names the generated code declares or uses. A parameter with one of these gets a _. */
+  /** Locals the generated method bodies use. A parameter with one of these names gets a _. */
   private static final Set<String> RESERVED_LOCALS =
       Set.of("query", "options", "body", "response", "client", "item");
 
-  /** Helper methods this renderer declares. An operation with one of these names gets a _. */
+  /** Helper methods the resource classes declare. An operation with one of these gets a _. */
   private static final Set<String> RESERVED_METHODS = Set.of("segment", "read");
 
   /** One operation: its method, and the options record it takes, if any, added to {@code api}. */
   private static String method(Operation op, JavaTypeRenderer types, Scope api) {
     NameStrategy java = NameStrategy.forLanguage(Language.JAVA);
     String base = java.type(op.operationId());
-    String methodName = java.member(op.operationId());
-    if (RESERVED_METHODS.contains(methodName)) {
-      methodName = methodName + "_";
-    }
+    String member = java.member(op.operationId());
+    String methodName = RESERVED_METHODS.contains(member) ? member + "_" : member;
     List<String> args = new ArrayList<>();
     Map<String, String> pathValues = new LinkedHashMap<>();
     Map<String, String> javaNames = new HashMap<>();
@@ -170,7 +164,11 @@ final class JavaResourceRenderer {
       if (p.in() != ParamLocation.PATH && p.in() != ParamLocation.QUERY) {
         continue;
       }
-      String name = localName(java, p.name(), javaNames, op);
+      String name = java.member(p.name());
+      if (RESERVED_LOCALS.contains(name)) {
+        name = name + "_";
+      }
+      JavaTypeRenderer.claim(javaNames, name, p.name(), "parameters of " + op.operationId());
       boolean required = p.required() || p.in() == ParamLocation.PATH;
       if (required) {
         args.add(types.type(p.schema(), true, null, api) + " " + name);
@@ -179,13 +177,15 @@ final class JavaResourceRenderer {
       if (p.in() == ParamLocation.PATH) {
         pathValues.put(p.name(), wire(types, p.schema(), name));
       } else if (required) {
-        queryLines.append(queryPut("    ", p.name(), wire(types, p.schema(), name)));
+        queryLines.append("    query.put(").append(JavaClientView.quote(p.name()));
+        queryLines.append(", ").append(wire(types, p.schema(), name)).append(");\n");
       } else {
         optionComps.add(types.type(p.schema(), false, null, options) + " " + name);
         queryLines.append("    if (options != null && options.").append(name);
         queryLines.append("() != null) {\n");
         String value = wire(types, p.schema(), "options." + name + "()");
-        queryLines.append(queryPut("      ", p.name(), value));
+        queryLines.append("      query.put(").append(JavaClientView.quote(p.name()));
+        queryLines.append(", ").append(value).append(");\n");
         queryLines.append("    }\n");
       }
     }
@@ -222,15 +222,8 @@ final class JavaResourceRenderer {
     } else {
       out.append(INDENT).append("/** ").append(doc).append(" */\n");
     }
-    String signature = INDENT + "public " + ret + " " + methodName + "(";
-    String joined = String.join(", ", args);
-    if (signature.length() + joined.length() + ") {".length() <= MAX_LINE) {
-      out.append(signature).append(joined).append(") {\n");
-    } else {
-      String argLines =
-          args.stream().map(a -> INDENT + INDENT + INDENT + a).collect(Collectors.joining(",\n"));
-      out.append(signature).append('\n').append(argLines).append(") {\n");
-    }
+    out.append(INDENT).append("public ").append(ret).append(' ').append(methodName);
+    out.append('(').append(String.join(", ", args)).append(") {\n");
     if (anyQuery) {
       out.append("    Map<String, String> query = new LinkedHashMap<>();\n");
       out.append(queryLines);
@@ -242,38 +235,6 @@ final class JavaResourceRenderer {
       out.append("    return read(response, new TypeReference<").append(ret).append(">() {});\n");
     }
     return out.append(INDENT).append("}\n").toString();
-  }
-
-  /** The Java name for a parameter. Reserved names get a _; two parameters may not share one. */
-  private static String localName(
-      NameStrategy java, String raw, Map<String, String> javaNames, Operation op) {
-    String name = java.member(raw);
-    if (RESERVED_LOCALS.contains(name)) {
-      name = name + "_";
-    }
-    String previous = javaNames.putIfAbsent(name, raw);
-    if (previous != null) {
-      throw new IllegalArgumentException(
-          "parameters "
-              + previous
-              + " and "
-              + raw
-              + " of "
-              + op.operationId()
-              + " both become the Java name "
-              + name);
-    }
-    return name;
-  }
-
-  /** A {@code query.put} statement, wrapped after the name when it would run past the limit. */
-  private static String queryPut(String indent, String name, String value) {
-    String key = JavaClientView.quote(name);
-    String put = "query.put(" + key + ", " + value + ");";
-    if (indent.length() + put.length() <= MAX_LINE) {
-      return indent + put + "\n";
-    }
-    return indent + "query.put(" + key + ",\n" + indent + "    " + value + ");\n";
   }
 
   private static boolean isArray(JavaTypeRenderer types, Schema schema) {

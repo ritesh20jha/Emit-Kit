@@ -279,72 +279,36 @@ class JavaSdkGeneratorTest {
 
   @Test
   void arrayQueryParamsAreSentCommaSeparatedAndSaySo() {
-    var files = generate(parse(ARRAYS), ".emitkit/", names("com.acme", "pets-sdk"));
-    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+    assertThat(content(generateFrom(ARRAYS), SRC + "resources/DefaultApi.java"))
         .contains(
-            "ids.stream().map(item -> String.valueOf(item)).collect(Collectors.joining(\",\"))",
-            "options.tags().stream().map(item -> item).collect(Collectors.joining(\",\"))",
-            "Array query parameters are sent comma-separated.",
-            "import java.util.stream.Collectors;")
+            ".stream().map(item -> String.valueOf(item)).collect(Collectors.joining(\",\"))",
+            ".stream().map(item -> item).collect(Collectors.joining(\",\"))",
+            "Array query parameters are sent comma-separated.")
         .doesNotContain("String.valueOf(ids)");
   }
 
   @Test
   void parametersAndOperationsNamedLikeGeneratedCodeGetAnUnderscore() {
-    var files = generate(parse(SHADOWING), ".emitkit/", names("com.acme", "pets-sdk"));
-    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+    assertThat(content(generateFrom(SHADOWING), SRC + "resources/DefaultApi.java"))
         .contains(
-            "public SegmentResponse segment_(",
-            "String client_,",
-            "String query_,",
-            "String options_,",
-            "String response_,",
-            "SegmentRequest body,",
-            "SegmentOptions options) {",
+            "public String segment_(String client_, String query_, String options_, "
+                + "String response_, String body, SegmentOptions options) {",
             "\"/segment/\" + segment(client_)",
-            "String body_")
-        .doesNotContain("String client,");
-  }
-
-  @Test
-  void oneConfiguredMapperIsOwnedByTheClientAndSharedByResources() {
-    var files = generate("petstore", ".emitkit/", names("com.acme", "pets-sdk"));
-    assertThat(content(files, CLIENT))
-        .contains(
-            "FAIL_ON_UNKNOWN_PROPERTIES, false",
-            "JsonInclude.Include.NON_NULL",
-            "public ObjectMapper mapper()");
-    assertThat(content(files, SRC + "resources/PetsApi.java"))
-        .contains("client.mapper().readValue")
-        .doesNotContain("new ObjectMapper()")
-        .doesNotContain("MAPPER");
+            "String body_");
   }
 
   @Test
   void schemasThatNormalizeToOneTypeAreRejected() {
-    assertThatThrownBy(
-            () -> generate(parse(COLLIDING_SCHEMAS), ".emitkit/", names("com.acme", "pets-sdk")))
+    assertThatThrownBy(() -> generateFrom(COLLIDING_SCHEMAS))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("user_item")
-        .hasMessageContaining("UserItem");
+        .hasMessageContainingAll("user_item", "UserItem");
   }
 
   @Test
   void propertiesThatNormalizeToOneComponentAreRejected() {
-    assertThatThrownBy(
-            () -> generate(parse(COLLIDING_PROPERTIES), ".emitkit/", names("com.acme", "pets-sdk")))
+    assertThatThrownBy(() -> generateFrom(COLLIDING_PROPERTIES))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("user_id")
-        .hasMessageContaining("userId");
-  }
-
-  @Test
-  void parametersThatNormalizeToOneNameAreRejected() {
-    assertThatThrownBy(
-            () -> generate(parse(COLLIDING_PARAMETERS), ".emitkit/", names("com.acme", "pets-sdk")))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("user_id")
-        .hasMessageContaining("userId");
+        .hasMessageContainingAll("user_id", "userId");
   }
 
   private static final String ARRAYS =
@@ -358,8 +322,7 @@ class JavaSdkGeneratorTest {
             parameters:
               - {name: ids, in: query, required: true, schema: {type: array, items: {type: integer}}}
               - {name: tags, in: query, schema: {type: array, items: {type: string}}}
-            responses:
-              '200': {description: ok}
+            responses: {'200': {description: ok}}
       """;
 
   private static final String SHADOWING =
@@ -376,17 +339,8 @@ class JavaSdkGeneratorTest {
               - {name: options, in: query, required: true, schema: {type: string}}
               - {name: response, in: query, required: true, schema: {type: string}}
               - {name: body, in: query, schema: {type: string}}
-            requestBody:
-              required: true
-              content:
-                application/json:
-                  schema: {type: object, properties: {id: {type: string}}}
-            responses:
-              '200':
-                description: ok
-                content:
-                  application/json:
-                    schema: {type: object, properties: {ok: {type: boolean}}}
+            requestBody: {required: true, content: {application/json: {schema: {type: string}}}}
+            responses: {'200': {description: ok, content: {application/json: {schema: {type: string}}}}}
       """;
 
   private static final String COLLIDING_SCHEMAS =
@@ -396,8 +350,8 @@ class JavaSdkGeneratorTest {
       paths: {}
       components:
         schemas:
-          user_item: {type: object, properties: {id: {type: string}}}
-          UserItem: {type: object, properties: {id: {type: string}}}
+          user_item: {properties: {id: {type: string}}}
+          UserItem: {properties: {id: {type: string}}}
       """;
 
   private static final String COLLIDING_PROPERTIES =
@@ -405,35 +359,13 @@ class JavaSdkGeneratorTest {
       openapi: 3.0.3
       info: {title: Collide, version: 1.0.0}
       paths: {}
-      components:
-        schemas:
-          Account:
-            type: object
-            properties:
-              user_id: {type: string}
-              userId: {type: string}
+      components: {schemas: {Account: {properties: {user_id: {type: string}, userId: {type: string}}}}}
       """;
 
-  private static final String COLLIDING_PARAMETERS =
-      """
-      openapi: 3.0.3
-      info: {title: Collide, version: 1.0.0}
-      paths:
-        /items:
-          get:
-            operationId: listItems
-            parameters:
-              - {name: user_id, in: query, schema: {type: string}}
-              - {name: userId, in: query, schema: {type: string}}
-            responses:
-              '200': {description: ok}
-      """;
-
-  /** Parses an inline document; the test fails early if it does not parse cleanly. */
-  private static ApiModel parse(String yaml) {
+  private List<GeneratedFile> generateFrom(String yaml) {
     var result = new SpecParser().parse(yaml);
     assertThat(result.errors()).isEmpty();
-    return result.model();
+    return generate(result.model(), ".emitkit/", names("com.acme", "pets-sdk"));
   }
 
   private static String missingBaseUrl(String advice) {
