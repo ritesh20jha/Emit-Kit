@@ -26,7 +26,9 @@ import dev.emitkit.domain.OrgMember;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.Organization;
 import dev.emitkit.domain.OrganizationRepository;
+import dev.emitkit.domain.OutputKind;
 import dev.emitkit.domain.Project;
+import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
 import dev.emitkit.domain.ProjectRepository;
 import dev.emitkit.domain.Role;
@@ -132,10 +134,10 @@ class PRJ01CreateProjectIT {
 
     Project saved = onlyProject(acme);
     assertThat(saved.getWebhookId()).isNotNull();
-    assertThat(configs.findLatest(saved.getId()))
-        .get()
-        .extracting(c -> c.getVersion())
-        .isEqualTo(1);
+    ProjectConfig config = configs.findLatest(saved.getId()).orElseThrow();
+    assertThat(config.getVersion()).isEqualTo(1);
+    assertThat(config.getOutputs()).containsExactly(OutputKind.SDK);
+    assertThat(config.getSdkLanguages()).containsExactly("typescript");
     assertThat(vcs.webhooks("acme/api"))
         .singleElement()
         .satisfies(hook -> {

@@ -10,10 +10,8 @@ import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
 import dev.emitkit.domain.OutputMode;
 import dev.emitkit.domain.Project;
-import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
 import dev.emitkit.domain.ProjectRepository;
-import dev.emitkit.domain.VersionStrategy;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.Webhook;
@@ -34,7 +32,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ProjectService {
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectService.class);
-  private static final int FIRST_CONFIG_VERSION = 1;
   private static final String SECRET_TABLE = "projects";
   private static final String SECRET_COLUMN = "webhook_secret_enc";
 
@@ -148,9 +145,7 @@ public class ProjectService {
               userId);
       project.setOutputRepoFullName(outputRepo);
       projects.save(project);
-      configs.save(
-          new ProjectConfig(
-              null, projectId, FIRST_CONFIG_VERSION, VersionStrategy.EMITKIT_MANAGED, userId));
+      configs.save(DefaultConfig.version1(projectId, userId));
     });
   }
 
