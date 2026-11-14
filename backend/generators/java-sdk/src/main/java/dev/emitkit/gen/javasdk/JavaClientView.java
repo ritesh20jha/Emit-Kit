@@ -9,6 +9,7 @@ import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.naming.Language;
 import dev.emitkit.spec.naming.NameStrategy;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -35,7 +36,8 @@ record JavaClientView(
     boolean hasBearer,
     boolean hasBasic,
     List<Literal> apiKeyHeaders,
-    List<Literal> apiKeyQueries) {
+    List<Literal> apiKeyQueries,
+    List<Accessor> accessors) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
   private static final Pattern JAVA_SEGMENT = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
@@ -43,6 +45,9 @@ record JavaClientView(
 
   /** A quoted name rendered verbatim into the template. */
   record Literal(String text) {}
+
+  /** A client method returning one resource: its name, its class, and the tags it groups. */
+  record Accessor(String member, String resource, String tags) {}
 
   static JavaClientView of(ApiModel model, GeneratorContext ctx) {
     PackageNames names = ctx.names();
@@ -59,6 +64,11 @@ record JavaClientView(
     String advice = baseUrlAdvice(model.servers());
     List<Literal> headers = apiKeyNames(schemes, "header");
     List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
+    List<Accessor> accessors =
+        JavaResourceRenderer.groups(model).stream()
+            .map(g -> new Accessor(g.member(), g.className(), docText(String.join(", ", g.tags()))))
+            .sorted(Comparator.comparing(Accessor::resource))
+            .toList();
     return new JavaClientView(
         packageName,
         packageName.replace('.', '/'),
@@ -77,7 +87,8 @@ record JavaClientView(
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
         headers,
-        queries);
+        queries,
+        accessors);
   }
 
   /** Rejects a Maven artifact id or version that could not be written raw into a Kotlin string. */
