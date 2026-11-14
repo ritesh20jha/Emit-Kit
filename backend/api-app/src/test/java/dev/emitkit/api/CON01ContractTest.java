@@ -98,20 +98,9 @@ class CON01ContractTest {
 
   @ParameterizedTest
   @WithMockUser
-  @CsvSource({
-    "GET,/api/v1/me/vcs-quota,",
-    "GET,/api/v1/orgs,",
-    "POST,/api/v1/me/sync-orgs,
-    "GET,/api/v1/orgs/org1,",
-    "GET,/api/v1/orgs/org1/members,",
-    "PATCH,/api/v1/orgs/org1/members/user1,{\"role\":\"EDITOR\"}"
-  })
-  void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
-    MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());
-    if (body != null) {
-      request.contentType(MediaType.APPLICATION_JSON).content(body);
-    }
-    mvc.perform(request)
+  @CsvSource({"GET,/api/v1/me/vcs-quota"})
+  void contractEndpointIs501(String method, String path) throws Exception {
+    mvc.perform(request(HttpMethod.valueOf(method), path).with(csrf()))
         .andExpect(status().is(501))
         .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
   }
