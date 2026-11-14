@@ -178,7 +178,7 @@ class PythonSdkGeneratorTest {
         .contains("version = \"1.2.3\"")
         .contains("requires-python = \">=3.9\"")
         .contains("\"httpx>=0.27\"")
-        .contains("\"pydantic>=2.6\"")
+        .contains("\"pydantic>=2.8\"")
         .contains("build-backend = \"hatchling.build\"");
   }
 

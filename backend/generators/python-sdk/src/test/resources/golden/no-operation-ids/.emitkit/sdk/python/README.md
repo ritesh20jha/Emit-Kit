@@ -43,6 +43,9 @@ OpenID Connect schemes, and `basic` for HTTP basic, as a `(username, password)` 
 such as cookie API keys, are not mapped. Set them on a custom `http_client`: an `httpx.Client`, or an
 `httpx.AsyncClient` for the async client.
 
+Header and cookie parameters of an operation are not method arguments yet, so they are not sent. Set
+them on a custom `http_client`, for example `httpx.Client(headers={"X-Tenant": "acme"})`.
+
 ## Errors
 
 Non-2xx responses raise an `ApiError` subclass: `BadRequestError` (400), `UnauthorizedError` (401),
