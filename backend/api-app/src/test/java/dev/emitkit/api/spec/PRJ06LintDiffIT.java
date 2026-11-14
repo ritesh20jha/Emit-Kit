@@ -1,7 +1,8 @@
 package dev.emitkit.api.spec;
 
 import static dev.emitkit.domain.Role.VIEWER;
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -15,6 +16,7 @@ import dev.emitkit.api.GitHubTestCredentials;
 import dev.emitkit.api.PostgresTestConfig;
 import dev.emitkit.api.RedisTestConfig;
 import dev.emitkit.api.auth.EmitKitUser;
+import dev.emitkit.api.projects.LintRequest;
 import dev.emitkit.domain.OAuthAccountRepository;
 import dev.emitkit.domain.OrgMember;
 import dev.emitkit.domain.OrgMemberRepository;
@@ -28,6 +30,7 @@ import dev.emitkit.domain.SpecSnapshotRepository;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.spec.diff.SpecDiffer;
+import dev.emitkit.spec.lint.LintIssue;
 import dev.emitkit.spec.model.ApiModelJson;
 import dev.emitkit.spec.parse.SpecParser;
 import java.io.IOException;
@@ -45,6 +48,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -153,16 +157,27 @@ class PRJ06LintDiffIT {
 
   @Test
   void lint_redisDown_failsOpen() throws IOException {
+    // A port nothing listens on, so the connection is refused at once instead of timing out.
+    int closedPort;
     try (ServerSocket socket = new ServerSocket(0)) {
-      LettuceConnectionFactory down =
-          new LettuceConnectionFactory("127.0.0.1", socket.getLocalPort());
-      down.afterPropertiesSet();
-      try {
-        var limiter = new LintRateLimiter(new StringRedisTemplate(down));
-        assertThatCode(() -> limiter.acquire(LINTER.userId())).doesNotThrowAnyException();
-      } finally {
-        down.destroy();
-      }
+      closedPort = socket.getLocalPort();
+    }
+    LettuceConnectionFactory down = new LettuceConnectionFactory("127.0.0.1", closedPort);
+    down.afterPropertiesSet();
+    try {
+      StringRedisTemplate redisDown = new StringRedisTemplate(down);
+      assertThatThrownBy(() -> redisDown.opsForValue().get("probe"))
+          .isInstanceOf(DataAccessException.class);
+
+      var controller = new LintController(new LintRateLimiter(redisDown));
+      List<LintIssue> issues = controller.lint(LINTER, new LintRequest(LINE_SPEC));
+
+      assertThat(issues)
+          .filteredOn(issue -> issue.ruleId().equals("server-url-https"))
+          .singleElement()
+          .satisfies(issue -> assertThat(issue.line()).isEqualTo(7));
+    } finally {
+      down.destroy();
     }
   }
 
