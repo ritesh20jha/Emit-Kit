@@ -58,6 +58,13 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
+  void oneOfIsAPlainUnionWithoutDiscriminator() {
+    assertThat(content("polymorphism", "models.py"))
+        .contains("Pet = Union[Cat, Dog]")
+        .doesNotContain("discriminator");
+  }
+
+  @Test
   void recursiveModelRebuilt() {
     assertThat(content("deep-nesting", "models.py")).contains("Node.model_rebuild()");
   }

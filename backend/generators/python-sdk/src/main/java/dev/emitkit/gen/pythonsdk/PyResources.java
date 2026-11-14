@@ -36,7 +36,7 @@ final class PyResources {
   private static final Set<String> ARG_SHADOWS = Set.of("list", "response", "self", "str");
 
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]*)}");
-  private static final Set<String> TYPING = Set.of("Annotated", "Any", "Optional", "Union");
+  private static final Set<String> TYPING = Set.of("Any", "Optional", "Union");
   private static final Set<String> PYDANTIC = Set.of("Field", "TypeAdapter");
 
   private PyResources() {}

@@ -42,22 +42,13 @@ final class PyTypeRenderer {
 
   /** Names the generated modules import, so no definition may take one. */
   private static final Set<String> IMPORTED =
-      Set.of(
-          "Annotated",
-          "Any",
-          "BaseModel",
-          "ConfigDict",
-          "Enum",
-          "Field",
-          "Optional",
-          "TypeAdapter",
-          "Union");
+      Set.of("Any", "BaseModel", "ConfigDict", "Enum", "Field", "Optional", "TypeAdapter", "Union");
 
   /** Lower-case names used in annotations; a field of one of these would shadow it. */
   private static final Set<String> FIELD_SHADOWS =
       Set.of("bool", "dict", "float", "int", "list", "model_config", "str");
 
-  private static final Set<String> TYPING = Set.of("Annotated", "Any", "Optional", "Union");
+  private static final Set<String> TYPING = Set.of("Any", "Optional", "Union");
   private static final Set<String> PYDANTIC = Set.of("BaseModel", "ConfigDict", "Field");
   private static final Pattern INTEGER = Pattern.compile("-?(0|[1-9]\\d*)");
   private static final Pattern NUMBER =
@@ -259,23 +250,17 @@ final class PyTypeRenderer {
     return PyClientView.quote(d.name);
   }
 
+  /**
+   * A plain Union. The oneOf discriminator is intentionally not emitted as {@code
+   * Field(discriminator=...)} until OneOfSchema carries a mapping: option models type the
+   * discriminator as str, which pydantic rejects in a discriminated union.
+   */
   private String union(OneOfSchema o, String hint, Scope scope) {
     List<String> options = new ArrayList<>();
     for (int i = 0; i < o.options().size(); i++) {
       options.add(typeOf(o.options().get(i), hint + " option " + (i + 1), scope));
     }
-    String union = scope.use("Union") + "[" + String.join(", ", options) + "]";
-    if (o.discriminator() == null) {
-      return union;
-    }
-    return scope.use("Annotated")
-        + "["
-        + union
-        + ", "
-        + scope.use("Field")
-        + "(discriminator="
-        + PyClientView.quote(o.discriminator())
-        + ")]";
+    return scope.use("Union") + "[" + String.join(", ", options) + "]";
   }
 
   private String allOf(AllOfSchema all, String hint, Scope scope) {
