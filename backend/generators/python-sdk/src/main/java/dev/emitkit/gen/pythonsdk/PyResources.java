@@ -6,9 +6,11 @@ import dev.emitkit.gen.core.Templates;
 import dev.emitkit.gen.pythonsdk.PyClientView.Literal;
 import dev.emitkit.gen.pythonsdk.PyTypeRenderer.Scope;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.ArraySchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
+import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.naming.Language;
 import dev.emitkit.spec.naming.NameStrategy;
@@ -131,11 +133,15 @@ final class PyResources {
       }
       String py = PyTypeRenderer.unique(names.member(p.name()), argNames);
       String type = types.typeOf(p.schema(), PyTypeRenderer.hint(op, p.name()), scope);
-      if (p.in() == ParamLocation.PATH) {
-        pathNames.put(p.name(), py);
-        args.add(py + ": " + type);
+      boolean path = p.in() == ParamLocation.PATH;
+      boolean required = path || p.required();
+      String annotated = annotated(type, required, p.schema(), scope);
+      String value = sentValue(p.schema(), annotated, py, scope);
+      if (path) {
+        pathNames.put(p.name(), value);
+        args.add(py + ": " + annotated);
       } else {
-        query.add(PyClientView.quote(p.name()) + ": " + py);
+        query.add(PyClientView.quote(p.name()) + ": " + value);
         args.add(keywordArg(py, type, p.required(), p.schema(), scope));
       }
     }
@@ -175,11 +181,35 @@ final class PyResources {
   /** A keyword-only argument: required, or defaulting to None with an Optional type. */
   private static String keywordArg(
       String name, String type, boolean required, Schema schema, Scope scope) {
-    if (required) {
-      return name + ": " + type;
+    String annotated = annotated(type, required, schema, scope);
+    return required ? name + ": " + annotated : name + ": " + annotated + " = None";
+  }
+
+  /** The annotation of an argument: optional arguments accept None. */
+  private static String annotated(String type, boolean required, Schema schema, Scope scope) {
+    if (required || schema.nullable()) {
+      return type;
     }
-    String optional = schema.nullable() ? type : PyTypeRenderer.wrapOptional(type, scope);
-    return name + ": " + optional + " = None";
+    return PyTypeRenderer.wrapOptional(type, scope);
+  }
+
+  /**
+   * The expression that sends a path or query value. Primitives are sent as they are. Any other
+   * type, such as an enum, is dumped in JSON mode so the wire form is its value.
+   */
+  private static String sentValue(Schema schema, String annotated, String py, Scope scope) {
+    if (isPrimitive(schema)) {
+      return py;
+    }
+    return scope.use("TypeAdapter") + "(" + annotated + ").dump_python(" + py + ", mode='json')";
+  }
+
+  private static boolean isPrimitive(Schema schema) {
+    return switch (schema) {
+      case PrimitiveSchema p -> true;
+      case ArraySchema a -> isPrimitive(a.items());
+      default -> false;
+    };
   }
 
   private static Method method(Plan plan, boolean async) {
@@ -210,22 +240,23 @@ final class PyResources {
 
   /**
    * A Python expression for the request path. Placeholders become URL-encoded arguments; text is
-   * escaped for an f-string when there is an interpolation and for a plain string otherwise.
+   * escaped for an f-string when there is an interpolation and for a plain string otherwise. {@code
+   * values} maps each path parameter name to the expression that sends its value.
    */
-  static String pathExpr(String path, Map<String, String> pyNames, Scope scope) {
+  static String pathExpr(String path, Map<String, String> values, Scope scope) {
     Matcher m = PLACEHOLDER.matcher(path);
     StringBuilder fstring = new StringBuilder();
     boolean interpolated = false;
     int last = 0;
     while (m.find()) {
       fstring.append(fstringText(path.substring(last, m.start())));
-      String py = pyNames.get(m.group(1));
-      if (py == null) {
+      String value = values.get(m.group(1));
+      if (value == null) {
         fstring.append(fstringText(m.group()));
       } else {
         interpolated = true;
         scope.use("quote");
-        fstring.append("{_quote(str(").append(py).append("), safe='')}");
+        fstring.append("{_quote(str(").append(value).append("), safe='')}");
       }
       last = m.end();
     }

@@ -22,7 +22,7 @@ class DefaultResource:
         self._client = client
 
     def list_items(self, *, color: Optional[Color] = None) -> list[Item]:
-        response = self._client._request("GET", "/items", query=_drop_none({"color": color}))
+        response = self._client._request("GET", "/items", query=_drop_none({"color": TypeAdapter(Optional[Color]).dump_python(color, mode='json')}))
         return TypeAdapter(list[Item]).validate_python(response.json())
 
 
@@ -33,5 +33,5 @@ class AsyncDefaultResource:
         self._client = client
 
     async def list_items(self, *, color: Optional[Color] = None) -> list[Item]:
-        response = await self._client._request("GET", "/items", query=_drop_none({"color": color}))
+        response = await self._client._request("GET", "/items", query=_drop_none({"color": TypeAdapter(Optional[Color]).dump_python(color, mode='json')}))
         return TypeAdapter(list[Item]).validate_python(response.json())

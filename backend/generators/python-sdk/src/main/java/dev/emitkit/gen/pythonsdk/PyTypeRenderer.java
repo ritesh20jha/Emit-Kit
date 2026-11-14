@@ -46,7 +46,26 @@ final class PyTypeRenderer {
 
   /** Lower-case names used in annotations; a field of one of these would shadow it. */
   private static final Set<String> FIELD_SHADOWS =
-      Set.of("bool", "dict", "float", "int", "list", "model_config", "str");
+      Set.of(
+          "bool",
+          "construct",
+          "copy",
+          "dict",
+          "fields",
+          "float",
+          "from_orm",
+          "int",
+          "json",
+          "list",
+          "model_config",
+          "parse_file",
+          "parse_obj",
+          "parse_raw",
+          "schema",
+          "schema_json",
+          "str",
+          "update_forward_refs",
+          "validate");
 
   private static final Set<String> TYPING = Set.of("Any", "Optional", "Union");
   private static final Set<String> PYDANTIC = Set.of("BaseModel", "ConfigDict", "Field");
@@ -355,10 +374,14 @@ final class PyTypeRenderer {
       Definition owner, ObjectSchema o, String raw, Schema schema, Set<String> used, Scope scope) {
     String base = names.member(raw);
     // Pydantic treats a leading underscore as a private attribute, so such a field takes a prefix.
+    // A name that shadows a BaseModel attribute takes a suffix, and a model_ name a prefix, since
+    // pydantic reserves the model_ namespace.
     if (base.startsWith("_")) {
       base = "field" + base;
     } else if (FIELD_SHADOWS.contains(base)) {
       base += "_";
+    } else if (base.startsWith("model_")) {
+      base = "field_" + base;
     }
     String py = unique(base, used);
     boolean required = o.required().contains(raw);
