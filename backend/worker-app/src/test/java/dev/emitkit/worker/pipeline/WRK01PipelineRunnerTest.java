@@ -26,11 +26,8 @@ import dev.emitkit.domain.StepName;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.domain.VersionStrategy;
-import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
-import dev.emitkit.vcs.VcsProviderId;
-import dev.emitkit.vcs.WebhookVerifier;
-import dev.emitkit.vcs.ratelimit.RateLimitPolicy;
+import java.lang.reflect.Proxy;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,6 +38,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -228,6 +226,24 @@ class WRK01PipelineRunnerTest {
   }
 
   @Test
+  void runFinishedAfterReadIsNotOverwritten() {
+    // A duplicate delivery finishes the run after this one has read it but before it starts.
+    GenerationRunRepository racing =
+        racingAfterFirstRead(() -> {
+          GenerationRun row = reload();
+          row.setStatus(RunStatus.SUCCESS);
+          runs.saveAndFlush(row);
+        });
+
+    runnerWith(steps.all(), racing).run(runId);
+
+    GenerationRun run = reload();
+    assertThat(run.getStatus()).isEqualTo(RunStatus.SUCCESS);
+    assertThat(run.getStartedAt()).isNull();
+    assertThat(steps.order).isEmpty();
+  }
+
+  @Test
   void missingStepBean_failsStartup() {
     assertThatThrownBy(() -> runnerWith(steps.all(LINT_SPEC)))
         .isInstanceOf(IllegalStateException.class)
@@ -266,13 +282,34 @@ class WRK01PipelineRunnerTest {
     assertThat(reload().getCurrentStep()).isEqualTo(CALC_VERSION);
   }
 
+  /** A repository that runs {@code afterFirstRead} once, right after its first findById. */
+  private GenerationRunRepository racingAfterFirstRead(Runnable afterFirstRead) {
+    AtomicBoolean fired = new AtomicBoolean();
+    return (GenerationRunRepository)
+        Proxy.newProxyInstance(
+            getClass().getClassLoader(),
+            new Class<?>[] {GenerationRunRepository.class},
+            (proxy, method, args) -> {
+              Object result = method.invoke(runs, args);
+              if (method.getName().equals("findById") && fired.compareAndSet(false, true)) {
+                afterFirstRead.run();
+              }
+              return result;
+            });
+  }
+
   private PipelineRunner runner() {
     return runnerWith(steps.all());
   }
 
   private PipelineRunner runnerWith(List<PipelineStep> pipelineSteps) {
+    return runnerWith(pipelineSteps, runs);
+  }
+
+  private PipelineRunner runnerWith(
+      List<PipelineStep> pipelineSteps, GenerationRunRepository repo) {
     return new PipelineRunner(
-        pipelineSteps, runs, projects, configs, vcs, transactions, cancellation, clock);
+        pipelineSteps, repo, projects, configs, vcs.provider(), transactions, cancellation, clock);
   }
 
   private GenerationRun reload() {
@@ -321,39 +358,22 @@ class WRK01PipelineRunnerTest {
     }
   }
 
-  /** Records the project creator the runner asks for a client; hands out no real client. */
-  static final class FakeVcs implements VcsProvider {
+  /** Records the project creators the runner asks a client for. Hands out no real client. */
+  static final class FakeVcs {
     final List<String> creators = new ArrayList<>();
 
-    @Override
-    public VcsProviderId id() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public VcsClient forUser(String accessToken) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public VcsClient forProject(String creatorUserId) {
-      creators.add(creatorUserId);
-      return null;
-    }
-
-    @Override
-    public VcsClient forUser(String accessToken, String userId, RateLimitPolicy policy) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public VcsClient forProject(String creatorUserId, RateLimitPolicy policy) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public WebhookVerifier webhookVerifier() {
-      throw new UnsupportedOperationException();
+    VcsProvider provider() {
+      return (VcsProvider)
+          Proxy.newProxyInstance(
+              getClass().getClassLoader(),
+              new Class<?>[] {VcsProvider.class},
+              (proxy, method, args) -> {
+                if (!method.getName().equals("forProject") || args.length != 1) {
+                  throw new UnsupportedOperationException(method.getName());
+                }
+                creators.add((String) args[0]);
+                return null;
+              });
     }
   }
 

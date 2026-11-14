@@ -18,7 +18,10 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.lang.Nullable;
@@ -34,6 +37,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
 public class PipelineRunner {
+
+  private static final Logger LOG = LoggerFactory.getLogger(PipelineRunner.class);
 
   private final Map<StepName, PipelineStep> steps;
   private final GenerationRunRepository runs;
@@ -112,7 +117,7 @@ public class PipelineRunner {
                 () -> new AppException(ErrorCode.NOT_FOUND, "config not found: " + configId));
     VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
     try {
-      run =
+      Optional<GenerationRun> started =
           update(
               runId,
               r -> {
@@ -121,8 +126,13 @@ public class PipelineRunner {
                 }
                 r.setStatus(RunStatus.RUNNING);
               });
+      if (started.isEmpty()) {
+        return;
+      }
+      run = started.get();
       for (StepName name : StepName.values()) {
         if (StepOutputs.has(run.getStepOutputs(), name)) {
+          LOG.debug("generation run {}: step {} already has a saved output, skipping", runId, name);
           continue;
         }
         RunContext ctx = new RunContext(run, project, config, vcs, RunLogger.NOOP, cancellation);
@@ -130,13 +140,20 @@ public class PipelineRunner {
         ctx.log().step(name);
         StepResult result = execute(steps.get(name), ctx);
         switch (result) {
-          case StepResult.Continue c -> run = update(runId, r -> saveOutput(r, name, c.output()));
+          case StepResult.Continue c -> {
+            Optional<GenerationRun> saved = update(runId, r -> saveOutput(r, name, c.output()));
+            if (saved.isEmpty()) {
+              return;
+            }
+            run = saved.get();
+          }
           case StepResult.Park p -> {
             return;
           }
           case StepResult.Fail f -> {
-            run = update(runId, r -> markFailed(r, name, f));
-            ctx.log().error(f.message());
+            if (update(runId, r -> markFailed(r, name, f)).isPresent()) {
+              ctx.log().error(f.message());
+            }
             return;
           }
         }
@@ -146,12 +163,17 @@ public class PipelineRunner {
     }
   }
 
-  /** Applies {@code change} to the run in its own transaction and returns the saved run. */
-  private GenerationRun update(String runId, Consumer<GenerationRun> change) {
+  /**
+   * Applies {@code change} in its own transaction. Writes nothing and returns empty if terminal.
+   */
+  private Optional<GenerationRun> update(String runId, Consumer<GenerationRun> change) {
     return transactions.execute(tx -> {
       GenerationRun saved = runs.findById(runId).orElseThrow();
+      if (saved.getStatus().isTerminal()) {
+        return Optional.empty();
+      }
       change.accept(saved);
-      return saved;
+      return Optional.of(saved);
     });
   }
 
