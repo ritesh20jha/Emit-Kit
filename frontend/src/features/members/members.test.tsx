@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, test } from "vitest";
 import { OrgSettings } from "@/features/orgs";
 import type { components } from "@/lib/api/generated/schema";
+import { useMe } from "@/lib/auth/session";
 import { defaultMe } from "@/test/msw/handlers/me";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/render";
@@ -43,6 +44,12 @@ function renderMembers(me: Me = ADMIN_ME) {
   );
 }
 
+/** Observes /me while the page is mounted, so an invalidation of the session refetches it, as in the app. */
+function MeProbe() {
+  useMe();
+  return null;
+}
+
 /** Opens one row's role select and picks an option, as a pointer user does. */
 async function pickRole(user: ReturnType<typeof userEvent.setup>, login: string, role: string) {
   await user.click(await screen.findByRole("combobox", { name: `Role for ${login}` }));
@@ -69,15 +76,21 @@ beforeEach(() => {
 });
 
 describe("members", () => {
-  test("admin changes a role inline", async () => {
+  test("admin changes a role inline, and the new role shows before the server answers", async () => {
     const user = userEvent.setup();
     // A stateful fake: the PATCH changes the row the list returns, so a refetch after the change agrees with it.
     const rows: Member[] = MEMBERS.map((member) => ({ ...member, roleSource: "SYNC" }));
+    // The PATCH waits on this gate, so the screen can be read while the change is still in flight.
+    let releasePatch: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releasePatch = resolve;
+    });
     let patchBody: unknown;
     server.use(
       http.get("/api/v1/orgs/:orgId/members", () => HttpResponse.json(rows)),
       http.patch("/api/v1/orgs/:orgId/members/:userId", async ({ request, params }) => {
         patchBody = await request.json();
+        await gate;
         const row = rows.find((member) => member.userId === params.userId);
         Object.assign(row ?? {}, { role: "EDITOR", roleSource: "MANUAL" });
         return HttpResponse.json(row);
@@ -87,15 +100,27 @@ describe("members", () => {
 
     await pickRole(user, "hubot", "EDITOR");
 
-    await waitFor(() => expect(patchBody).toEqual({ role: "EDITOR" }));
-    expect(await screen.findByRole("combobox", { name: "Role for hubot" })).toHaveTextContent("EDITOR");
+    // Optimistic: the select shows EDITOR while the PATCH is pending, and the server's source has not arrived.
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Role for hubot" })).toHaveTextContent("EDITOR"));
+    expect(patchBody).toEqual({ role: "EDITOR" });
+    expect(screen.queryByText("Set manually")).not.toBeInTheDocument();
+
+    // Settled: the refetch carries the server's source, and the role stays EDITOR.
+    releasePatch();
     expect(await screen.findByText("Set manually")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Role for hubot" })).toHaveTextContent("EDITOR");
   });
 
   test("last-admin error rolls back and toasts the message", async () => {
     const user = userEvent.setup();
+    let listReads = 0;
     server.use(
-      listMembers(MEMBERS),
+      http.get("/api/v1/orgs/:orgId/members", () => {
+        listReads += 1;
+        // The page's first read succeeds. Any refetch after the failure hangs, so the select can only show
+        // ADMIN if the rollback restored the previous list.
+        return listReads === 1 ? HttpResponse.json(MEMBERS) : new Promise(() => {});
+      }),
       http.patch("/api/v1/orgs/:orgId/members/:userId", () =>
         HttpResponse.json(
           {
@@ -116,6 +141,7 @@ describe("members", () => {
     expect(await screen.findByText("An organization needs at least one admin")).toBeInTheDocument();
     expect(screen.getByText("VALIDATION_FAILED")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Role for octocat" })).toHaveTextContent("ADMIN"));
+    expect(listReads).toBe(2);
   });
 
   test("non-admin sees roles as text, no selects", async () => {
@@ -170,11 +196,16 @@ describe("org settings", () => {
   test("re-sync shows toast and refetches", async () => {
     const user = userEvent.setup();
     let orgReads = 0;
+    let meReads = 0;
     let syncs = 0;
     server.use(
       http.get("/api/v1/orgs/:orgId", () => {
         orgReads += 1;
         return HttpResponse.json(orgDetail(orgReads === 1 ? 2 : 3));
+      }),
+      http.get("/api/v1/me", () => {
+        meReads += 1;
+        return HttpResponse.json(ADMIN_ME);
       }),
       http.post("/api/v1/me/sync-orgs", () => {
         syncs += 1;
@@ -184,12 +215,15 @@ describe("org settings", () => {
     renderWithProviders(
       <ThemeProvider>
         <Toaster />
+        <MeProbe />
         <OrgSettings orgId={ORG} />
       </ThemeProvider>,
       { me: ADMIN_ME },
     );
     const memberCount = () => screen.getByText("Members").nextElementSibling;
     await waitFor(() => expect(memberCount()).toHaveTextContent("2"));
+    // The seeded session is fresh, so nothing has read /me yet. Any read below comes from the re-sync.
+    expect(meReads).toBe(0);
 
     await user.click(screen.getByRole("button", { name: "Re-sync from GitHub" }));
 
@@ -197,6 +231,7 @@ describe("org settings", () => {
     expect(syncs).toBe(1);
     await waitFor(() => expect(memberCount()).toHaveTextContent("3"));
     expect(orgReads).toBe(2);
+    await waitFor(() => expect(meReads).toBe(1));
   });
 
   test("loading and error states render", async () => {
