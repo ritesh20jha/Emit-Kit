@@ -162,7 +162,6 @@ public class GenerationRun extends BaseEntity {
     return currentStep;
   }
 
-  /** Records the step the pipeline is on. Set by the pipeline runner after each step. */
   public void setCurrentStep(StepName currentStep) {
     this.currentStep = currentStep;
   }
@@ -175,7 +174,6 @@ public class GenerationRun extends BaseEntity {
     return failureMessage;
   }
 
-  /** Records why the run failed. Set by the pipeline runner when a step fails the run. */
   public void setFailure(String failureCode, String failureMessage) {
     this.failureCode = failureCode;
     this.failureMessage = failureMessage;
@@ -185,7 +183,6 @@ public class GenerationRun extends BaseEntity {
     return cancelRequested;
   }
 
-  /** Sets the flag that asks the worker to stop the run. Read again between steps. */
   public void setCancelRequested(boolean cancelRequested) {
     this.cancelRequested = cancelRequested;
   }
