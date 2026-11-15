@@ -50,7 +50,7 @@ class JavaSdkGeneratorTest {
 
   @Test
   void outputIsByteStable() {
-    var model = FixtureSpecs.load("auth-schemes");
+    var model = FixtureSpecs.load("polymorphism");
     assertThat(generator.generate(model, ctx())).isEqualTo(generator.generate(model, ctx()));
   }
 
@@ -298,6 +298,25 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
+  void objectMethodBuilderAndMapperNamesGetAnUnderscore() {
+    var files = generateFrom(NAMES);
+    assertThat(content(files, SRC + "resources/BuilderApi.java"))
+        .contains("public Hook toString_(", "Boolean wait_");
+    assertThat(content(files, SRC + "resources/MapperApi.java"))
+        .contains("public void getClass_()");
+    assertThat(content(files, SRC + "NamesClient.java"))
+        .contains("public BuilderApi builder_()", "public MapperApi mapper_()");
+    assertThat(content(files, SRC + "model/Hook.java")).contains("String hashCode_");
+  }
+
+  @Test
+  void operationIdsThatNormalizeToOneMethodAreRejected() {
+    assertThatThrownBy(() -> generateFrom(DUPLICATE_OPERATIONS))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContainingAll("get_user", "getUser");
+  }
+
+  @Test
   void schemasThatNormalizeToOneTypeAreRejected() {
     assertThatThrownBy(() -> generateFrom(COLLIDING_SCHEMAS))
         .isInstanceOf(IllegalArgumentException.class)
@@ -360,6 +379,38 @@ class JavaSdkGeneratorTest {
       info: {title: Collide, version: 1.0.0}
       paths: {}
       components: {schemas: {Account: {properties: {user_id: {type: string}, userId: {type: string}}}}}
+      """;
+
+  private static final String NAMES =
+      """
+      openapi: 3.0.3
+      info: {title: Names, version: 1.0.0}
+      paths:
+        /hooks:
+          post:
+            operationId: toString
+            tags: [builder]
+            parameters: [{name: wait, in: query, schema: {type: boolean}}]
+            responses: {'200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/Hook'}}}}}
+        /maps:
+          get:
+            operationId: getClass
+            tags: [mapper]
+            responses: {'200': {description: ok}}
+      components:
+        schemas:
+          Hook: {properties: {hashCode: {type: string}}}
+      """;
+
+  private static final String DUPLICATE_OPERATIONS =
+      """
+      openapi: 3.0.3
+      info: {title: Dupes, version: 1.0.0}
+      paths:
+        /users/{id}:
+          get: {operationId: get_user, parameters: [{name: id, in: path, required: true, schema: {type: string}}], responses: {'200': {description: ok}}}
+        /other:
+          get: {operationId: getUser, responses: {'200': {description: ok}}}
       """;
 
   private List<GeneratedFile> generateFrom(String yaml) {

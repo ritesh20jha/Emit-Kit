@@ -66,23 +66,21 @@ public final class JavaSdkGenerator implements Generator {
             FileKind.CUSTOM_STUB));
     JavaTypeRenderer types = new JavaTypeRenderer(model, view.packageName());
     for (JavaTypeRenderer.TypeFile file : types.files()) {
-      files.add(
-          typeFile(
-              src + "model/" + file.name() + ".java", "Model.java", file, types.modelPackage()));
+      files.add(typeFile(src + "model/" + file.name() + ".java", file, types.modelPackage()));
     }
     String resources = view.packageName() + ".resources";
     for (JavaTypeRenderer.TypeFile file : JavaResourceRenderer.files(model, types, view)) {
-      files.add(
-          typeFile(src + "resources/" + file.name() + ".java", "Resource.java", file, resources));
+      files.add(typeFile(src + "resources/" + file.name() + ".java", file, resources));
     }
     return List.copyOf(files);
   }
 
+  /** A model or resource file: the shared skeleton around one top-level type. */
   private static GeneratedFile typeFile(
-      String path, String template, JavaTypeRenderer.TypeFile file, String packageName) {
+      String path, JavaTypeRenderer.TypeFile file, String packageName) {
     FileView view =
         new FileView(packageName, JavaTypeRenderer.importBlock(file.imports()), file.body());
-    return new GeneratedFile(path, TEMPLATES.render(template, view), FileKind.GENERATED);
+    return new GeneratedFile(path, TEMPLATES.render("Model.java", view), FileKind.GENERATED);
   }
 
   private static GeneratedFile generated(String path, String template, JavaClientView view) {
