@@ -78,6 +78,8 @@ services:
       SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set in .env.prod}
       # Where the browser goes after login. The app default is the local dev server.
       EMITKIT_WEB_BASE_URL: https://${EMITKIT_SITE_ADDRESS}
+      # Where GitHub sends webhooks; Caddy routes /webhooks/* to the api.
+      EMITKIT_PUBLIC_URL: https://${EMITKIT_SITE_ADDRESS}
     secrets: [api_vault_secret_id]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/liveness"]

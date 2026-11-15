@@ -41,11 +41,21 @@ public interface GenerationRunRepository extends JpaRepository<GenerationRun, St
    */
   default List<GenerationRun> findByProjectId(
       String projectId, @Nullable RunCursor after, int limit) {
+    return findByProjectId(projectId, null, null, after, limit);
+  }
+
+  /** One page of a project's runs, newest first, narrowed by a status and a trigger if given. */
+  default List<GenerationRun> findByProjectId(
+      String projectId,
+      @Nullable RunStatus status,
+      @Nullable RunTrigger trigger,
+      @Nullable RunCursor after,
+      int limit) {
     Pageable page = PageRequest.of(0, limit);
     if (after == null) {
-      return findFirstPageByProjectId(projectId, page);
+      return findFirstPageByProjectId(projectId, status, trigger, page);
     }
-    return findPageAfter(projectId, after.createdAt(), after.id(), page);
+    return findPageAfter(projectId, status, trigger, after.createdAt(), after.id(), page);
   }
 
   Optional<GenerationRun> findFirstByProjectIdAndStatusAndDryRunFalseOrderByCreatedAtDescIdDesc(
@@ -53,15 +63,25 @@ public interface GenerationRunRepository extends JpaRepository<GenerationRun, St
 
   @Query(
       "select r from GenerationRun r where r.projectId = :projectId"
+          + " and (:status is null or r.status = :status)"
+          + " and (:trigger is null or r.trigger = :trigger)"
           + " order by r.createdAt desc, r.id desc")
-  List<GenerationRun> findFirstPageByProjectId(@Param("projectId") String projectId, Pageable page);
+  List<GenerationRun> findFirstPageByProjectId(
+      @Param("projectId") String projectId,
+      @Param("status") @Nullable RunStatus status,
+      @Param("trigger") @Nullable RunTrigger trigger,
+      Pageable page);
 
   @Query(
       "select r from GenerationRun r where r.projectId = :projectId"
+          + " and (:status is null or r.status = :status)"
+          + " and (:trigger is null or r.trigger = :trigger)"
           + " and (r.createdAt < :createdAt or (r.createdAt = :createdAt and r.id < :id))"
           + " order by r.createdAt desc, r.id desc")
   List<GenerationRun> findPageAfter(
       @Param("projectId") String projectId,
+      @Param("status") @Nullable RunStatus status,
+      @Param("trigger") @Nullable RunTrigger trigger,
       @Param("createdAt") Instant createdAt,
       @Param("id") String id,
       Pageable page);

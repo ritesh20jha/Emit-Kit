@@ -45,6 +45,12 @@ public final class SpecParser {
       if (root == null || !errors.isEmpty()) {
         return new ParseResult(null, errors, null, hash, format);
       }
+      // swagger-parser expands aliases, so a document that would expand too far never reaches it.
+      String refusal = AliasBudget.refusal(content);
+      if (refusal != null) {
+        errors.add(refusal);
+        return new ParseResult(null, errors, null, hash, format);
+      }
       SwaggerParseResult swagger = read(content, root);
       errors.addAll(swagger.getMessages());
       OpenAPI api = swagger.getOpenAPI();

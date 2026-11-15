@@ -11,11 +11,23 @@ import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.gen.core.golden.GoldenFiles;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Info;
+import dev.emitkit.spec.model.ObjectSchema;
+import dev.emitkit.spec.model.Operation;
+import dev.emitkit.spec.model.ParamLocation;
+import dev.emitkit.spec.model.Parameter;
+import dev.emitkit.spec.model.PrimitiveSchema;
+import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.model.RefSchema;
+import dev.emitkit.spec.model.Response;
+import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -28,15 +40,108 @@ class PythonSdkGeneratorTest {
   private final PythonSdkGenerator generator = new PythonSdkGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "auth-schemes"})
+  @ValueSource(
+      strings = {
+        "petstore",
+        "auth-schemes",
+        "polymorphism",
+        "enums",
+        "pagination",
+        "no-operation-ids",
+        "reserved-words",
+        "deep-nesting",
+        "multi-tag"
+      })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
 
   @Test
   void outputIsByteStable() {
-    var model = FixtureSpecs.load("auth-schemes");
+    var model = FixtureSpecs.load("petstore");
     assertThat(generator.generate(model, ctx())).isEqualTo(generator.generate(model, ctx()));
+  }
+
+  @Test
+  void reservedPropertyGetsAlias() {
+    assertThat(content("reserved-words", "models.py"))
+        .contains("from_: ")
+        .contains("alias=\"from\"");
+  }
+
+  @Test
+  void oneOfIsAPlainUnionWithoutDiscriminator() {
+    assertThat(content("polymorphism", "models.py"))
+        .contains("Pet = Union[Cat, Dog]")
+        .doesNotContain("discriminator");
+  }
+
+  @Test
+  void enumQueryParameterIsSentAsItsValue() {
+    assertThat(content("enums", "resources/default.py"))
+        .contains(
+            "query=_drop_none({\"color\": TypeAdapter(Optional[Color]).dump_python(color, "
+                + "mode='json')})");
+  }
+
+  @Test
+  void enumPathParameterIsSentAsItsValue() {
+    var colorItem =
+        new Operation(
+            "getColorItem",
+            false,
+            "get",
+            "/colors/{color}",
+            "items",
+            null,
+            null,
+            List.of(
+                new Parameter(
+                    "color", ParamLocation.PATH, true, new RefSchema("Color", false, null), null)),
+            null,
+            Map.of("200", new Response("200", "ok", null)),
+            List.of(),
+            false);
+    assertThat(
+            sdkFile(
+                extended(FixtureSpecs.load("enums"), colorItem, Map.of()),
+                "acme_pets/resources/items.py"))
+        .contains(
+            "f\"/colors/{_quote(str(TypeAdapter(Color).dump_python(color, mode='json')), "
+                + "safe='')}\"");
+  }
+
+  @Test
+  void baseModelAttributeNamesGetAnAliasedSuffix() {
+    var str = new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
+    var probe =
+        new ObjectSchema(
+            Map.of("schema", str, "json", str, "model_name", str), Set.of(), null, false, null);
+    assertThat(
+            sdkFile(
+                extended(FixtureSpecs.load("reserved-words"), null, Map.of("Probe", probe)),
+                "acme_pets/models.py"))
+        .contains("schema_: Optional[str] = Field(default=None, alias=\"schema\")")
+        .contains("json_: Optional[str] = Field(default=None, alias=\"json\")")
+        .contains("field_model_name: Optional[str] = Field(default=None, alias=\"model_name\")");
+  }
+
+  /** The base document with one more operation (when given) and more component schemas. */
+  private static ApiModel extended(
+      ApiModel base, Operation operation, Map<String, Schema> schemas) {
+    var operations = new ArrayList<>(base.operations());
+    if (operation != null) {
+      operations.add(operation);
+    }
+    var merged = new LinkedHashMap<>(base.schemas());
+    merged.putAll(schemas);
+    return new ApiModel(
+        base.info(), base.servers(), base.securitySchemes(), base.tags(), operations, merged);
+  }
+
+  @Test
+  void recursiveModelRebuilt() {
+    assertThat(content("deep-nesting", "models.py")).contains("Node.model_rebuild()");
   }
 
   @Test
@@ -73,7 +178,7 @@ class PythonSdkGeneratorTest {
         .contains("version = \"1.2.3\"")
         .contains("requires-python = \">=3.9\"")
         .contains("\"httpx>=0.27\"")
-        .contains("\"pydantic>=2.6\"")
+        .contains("\"pydantic>=2.8\"")
         .contains("build-backend = \"hatchling.build\"");
   }
 
@@ -213,6 +318,11 @@ class PythonSdkGeneratorTest {
   void quoteEscapesQuotesBackslashesControlCharactersAndSeparators() {
     assertThat(PyClientView.quote("a\"b\\c\nd\t\r\u0001\u007F\u2028"))
         .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u0001\\u007F\\u2028\"");
+  }
+
+  /** A file of the {@code acme_pets} package generated from the named fixture. */
+  private String content(String fixture, String relative) {
+    return content(generate(fixture, ".emitkit/", names("acme-pets")), "acme_pets/" + relative);
   }
 
   private String pyproject(PackageNames names) {

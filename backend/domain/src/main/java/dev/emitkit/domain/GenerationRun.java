@@ -142,8 +142,16 @@ public class GenerationRun extends BaseEntity {
     return triggeredByUserId;
   }
 
+  public void setTriggeredByUserId(String triggeredByUserId) {
+    this.triggeredByUserId = triggeredByUserId;
+  }
+
   public String getParentRunId() {
     return parentRunId;
+  }
+
+  public void setParentRunId(String parentRunId) {
+    this.parentRunId = parentRunId;
   }
 
   public boolean isDryRun() {
@@ -168,6 +176,10 @@ public class GenerationRun extends BaseEntity {
 
   public String getFailureCode() {
     return failureCode;
+  }
+
+  public void setFailureCode(String failureCode) {
+    this.failureCode = failureCode;
   }
 
   public String getFailureMessage() {

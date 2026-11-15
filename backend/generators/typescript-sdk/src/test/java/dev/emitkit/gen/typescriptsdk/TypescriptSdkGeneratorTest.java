@@ -10,12 +10,23 @@ import dev.emitkit.gen.core.PackageNames;
 import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.gen.core.golden.GoldenFiles;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.ArraySchema;
 import dev.emitkit.spec.model.Info;
+import dev.emitkit.spec.model.Operation;
+import dev.emitkit.spec.model.ParamLocation;
+import dev.emitkit.spec.model.Parameter;
+import dev.emitkit.spec.model.PrimitiveSchema;
+import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.model.RefSchema;
+import dev.emitkit.spec.model.Response;
+import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -25,20 +36,97 @@ class TypescriptSdkGeneratorTest {
   private final TypeScriptSdkGenerator generator = new TypeScriptSdkGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "auth-schemes"})
+  @ValueSource(
+      strings = {
+        "petstore",
+        "auth-schemes",
+        "polymorphism",
+        "enums",
+        "pagination",
+        "no-operation-ids",
+        "reserved-words",
+        "deep-nesting",
+        "multi-tag"
+      })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
 
   @Test
   void outputIsByteStable() {
-    var model = FixtureSpecs.load("auth-schemes");
+    var model = FixtureSpecs.load("petstore");
     assertThat(generator.generate(model, ctx())).isEqualTo(generator.generate(model, ctx()));
   }
 
   @Test
   void idIsTS_SDK() {
     assertThat(generator.id()).isEqualTo(GeneratorId.TS_SDK);
+  }
+
+  @Test
+  void reservedOperationIdIsEscaped() {
+    assertThat(content("reserved-words", "src/resources/default.ts"))
+        .contains("async delete_(")
+        .contains("async default_(");
+  }
+
+  @Test
+  void collidingTagsMergeIntoOneResource() {
+    assertThat(paths("reserved-words")).filteredOn(p -> p.contains("resources/user")).hasSize(1);
+    assertThat(content("reserved-words", "src/resources/user.ts"))
+        .contains("export class UserResource {")
+        .doesNotContain("export class UserResource2");
+    assertThat(content("reserved-words", "src/client.ts"))
+        .contains("readonly user: UserResource;")
+        .contains("this.user = new UserResource(this);");
+  }
+
+  @Test
+  void schemaNamesThatShadowGlobalsGetAModelSuffix() {
+    assertThat(content("reserved-words", "src/types.ts"))
+        .contains("export interface ErrorModel {")
+        .contains("  \"2fa\"?: boolean;")
+        .contains("export type StringModel = string;");
+  }
+
+  @Test
+  void resourceMethodsParseTheSuccessBodyAndTypeTheParams() {
+    assertThat(content("petstore", "src/resources/pets.ts"))
+        .contains("export class PetsResource {")
+        .contains(
+            "async getPetById(params: { petId: number }): Promise<Pet> {\n"
+                + "    const response = await this.client.request(\"GET\", "
+                + "\"/pets/\" + encodeURIComponent(String(params.petId)));\n"
+                + "    return response.json();\n")
+        .contains("async listPets(params: { limit?: number } = {}): Promise<Pet[]> {")
+        .contains("async createPet(body?: Pet): Promise<void> {");
+  }
+
+  @Test
+  void enumsAndPolymorphismRenderAsUnionsAndIntersections() {
+    assertThat(content("enums", "src/types.ts"))
+        .contains("export type Color = \"red\" | \"green\" | \"blue\";")
+        .contains("export type Priority = 1 | 2 | 3;");
+    assertThat(content("polymorphism", "src/types.ts"))
+        .contains("export type Pet = Cat | Dog;")
+        .contains("export type Kitten = Animal & { ageMonths?: number };")
+        .contains("export type OptionalOwner = Owner | null;");
+  }
+
+  @Test
+  void nullableItemsOfAnArrayAreParenthesised() {
+    var model =
+        new ApiModel(
+            new Info("Items", "1.0.0", null, null),
+            List.of(),
+            Map.of(),
+            List.of(),
+            List.of(),
+            Map.of(
+                "Names",
+                new ArraySchema(
+                    new PrimitiveSchema(PrimitiveType.STRING, null, true, null), false, null)));
+    assertThat(sdkFile(model, "src/types.ts")).contains("export type Names = (string | null)[];");
   }
 
   @Test
@@ -205,6 +293,178 @@ class TypescriptSdkGeneratorTest {
         .contains("const DEFAULT_BASE_URL = \"\";");
   }
 
+  @Test
+  void deprecatedOperationIsMarkedAndItsTextIsEscaped() {
+    var model =
+        withListPets(op ->
+            new Operation(
+                op.operationId(),
+                op.operationIdSynthesized(),
+                op.method(),
+                op.path(),
+                op.tag(),
+                "Lists */ pets",
+                "All of them.",
+                op.parameters(),
+                op.requestBody(),
+                op.responses(),
+                op.security(),
+                true));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains(
+            "  /**\n   * Lists *\\/ pets All of them.\n   * @deprecated\n   */\n  async listPets(");
+  }
+
+  @Test
+  void queryNamesThatAreNotIdentifiersAreQuoted() {
+    var apiVersion =
+        new Parameter(
+            "api-version",
+            ParamLocation.QUERY,
+            true,
+            new PrimitiveSchema(PrimitiveType.STRING, null, false, null),
+            null);
+    var model =
+        withListPets(op ->
+            new Operation(
+                op.operationId(),
+                op.operationIdSynthesized(),
+                op.method(),
+                op.path(),
+                op.tag(),
+                op.summary(),
+                op.description(),
+                List.of(apiVersion),
+                op.requestBody(),
+                op.responses(),
+                op.security(),
+                op.deprecated()));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("async listPets(params: { \"api-version\": string }): Promise<Pet[]> {")
+        .contains("query: { \"api-version\": params[\"api-version\"] },");
+  }
+
+  @Test
+  void schemaNamesAvoidSdkExportsResourceClassesAndEachOther() {
+    var schemas = new LinkedHashMap<String, Schema>();
+    schemas.put("Pet", text());
+    schemas.put("pet", text());
+    schemas.put("PetstoreClient", text());
+    schemas.put("PetsResource", text());
+    schemas.put("ApiError", text());
+    schemas.put("AuthOptions", text());
+    schemas.put("Requester", text());
+    var model =
+        synthetic(
+            schemas, List.of(op("getPet", "pets", "/pets", new RefSchema("pet", false, null))));
+    assertThat(sdkFile(model, "src/types.ts"))
+        .contains("export type Pet = string;")
+        .contains("export type Pet2 = string;")
+        .contains("export type PetstoreClientModel = string;")
+        .contains("export type PetsResource2 = string;")
+        .contains("export type ApiErrorModel = string;")
+        .contains("export type AuthOptionsModel = string;")
+        .contains("export type RequesterModel = string;");
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("import type { Pet2 } from \"../types.js\";")
+        .contains("export class PetsResource {")
+        .contains("Promise<Pet2>");
+  }
+
+  @Test
+  void methodNamesThatShadowResourceInternalsGetASuffix() {
+    var model =
+        synthetic(
+            Map.of(),
+            List.of(
+                op("client", "pets", "/client", null), op("constructor", "pets", "/ctor", null)));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("async client_(")
+        .contains("async constructor_(");
+  }
+
+  @Test
+  void clientPropertiesThatShadowClientMembersGetASuffix() {
+    var model =
+        synthetic(
+            Map.of(),
+            List.of(
+                op("listRequests", "request", "/requests", null),
+                op("listConstructors", "constructor", "/ctors", null)));
+    assertThat(sdkFile(model, "src/client.ts"))
+        .contains("  readonly request_: RequestResource;")
+        .contains("    this.request_ = new RequestResource(this);")
+        .contains("  readonly constructor_: ConstructorResource;")
+        .contains("    this.constructor_ = new ConstructorResource(this);")
+        .doesNotContain("readonly constructor:");
+    assertThat(sdkFile(model, "src/index.ts"))
+        .contains("export * from \"./resources/constructor.js\";");
+  }
+
+  @Test
+  void tagsThatNameTheSameResourceShareOneClassAndFile() {
+    var model =
+        synthetic(
+            Map.of(),
+            List.of(op("listFoo", "foo-2", "/a", null), op("listFoo2", "foo2", "/b", null)));
+    var files = generate(model, ".emitkit/", names(null, "petstore-sdk"));
+    assertThat(
+            files.stream().map(GeneratedFile::path).filter(p -> p.contains("/resources/")).toList())
+        .containsExactly(".emitkit/sdk/typescript/src/resources/foo-2.ts");
+    assertThat(content(files, "src/resources/foo-2.ts"))
+        .contains("async listFoo(")
+        .contains("async listFoo2(")
+        .containsOnlyOnce("export class Foo2Resource {");
+    assertThat(content(files, "src/client.ts"))
+        .containsOnlyOnce("  readonly foo2: Foo2Resource;")
+        .containsOnlyOnce("this.foo2 = new Foo2Resource(this);");
+  }
+
+  @Test
+  void refIntoASubSchemaRendersAsUnknownWithoutAnImport() {
+    var model =
+        synthetic(
+            Map.of("Node", text()),
+            List.of(
+                op("getNodeId", "pets", "/n", new RefSchema("Node/properties/id", false, null))));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("Promise<unknown>")
+        .doesNotContain("../types.js");
+    assertThat(sdkFile(model, "src/types.ts")).doesNotContain("PropertiesId");
+  }
+
+  /** A string-valued schema, so the exported declaration is one short line. */
+  private static Schema text() {
+    return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
+  }
+
+  /** A GET operation on {@code path} in {@code tag} whose 200 response has {@code response}. */
+  private static Operation op(String operationId, String tag, String path, Schema response) {
+    return new Operation(
+        operationId,
+        false,
+        "GET",
+        path,
+        tag,
+        null,
+        null,
+        List.of(),
+        null,
+        Map.of("200", new Response("200", null, response)),
+        List.of(),
+        false);
+  }
+
+  private static ApiModel synthetic(Map<String, Schema> schemas, List<Operation> operations) {
+    return new ApiModel(
+        new Info("Petstore", "1.0.0", null, null),
+        List.of(),
+        Map.of(),
+        List.of(),
+        operations,
+        schemas);
+  }
+
   private String packageJson(PackageNames names) {
     return content(generate("petstore", ".emitkit/", names), "package.json");
   }
@@ -223,6 +483,22 @@ class TypescriptSdkGeneratorTest {
     return sdkFile(model(title, servers, Map.of()), "README.md");
   }
 
+  /** The petstore model with its listPets operation replaced by {@code change}. */
+  private static ApiModel withListPets(UnaryOperator<Operation> change) {
+    ApiModel base = FixtureSpecs.load("petstore");
+    List<Operation> operations =
+        base.operations().stream()
+            .map(op -> op.operationId().equals("listPets") ? change.apply(op) : op)
+            .toList();
+    return new ApiModel(
+        base.info(),
+        base.servers(),
+        base.securitySchemes(),
+        base.tags(),
+        operations,
+        base.schemas());
+  }
+
   private static ApiModel model(
       String title, List<Server> servers, Map<String, SecurityScheme> schemes) {
     ApiModel base = FixtureSpecs.load("petstore");
@@ -237,6 +513,16 @@ class TypescriptSdkGeneratorTest {
 
   private String sdkFile(ApiModel model, String relative) {
     return content(generate(model, ".emitkit/", names(null, "petstore-sdk")), relative);
+  }
+
+  private String content(String fixture, String relative) {
+    return content(generate(fixture, ".emitkit/", names(null, "petstore-sdk")), relative);
+  }
+
+  private List<String> paths(String fixture) {
+    return generate(fixture, ".emitkit/", names(null, "petstore-sdk")).stream()
+        .map(GeneratedFile::path)
+        .toList();
   }
 
   private static String content(List<GeneratedFile> files, String relative) {
