@@ -58,6 +58,15 @@ export class AppError extends Error {
   }
 }
 
+/**
+ * What a toast says about a failed mutation: the server's own detail when it gave one (e.g. "An organization
+ * needs at least one admin"), else the code's plain message. Structural, so ui/ needs no import from lib/.
+ */
+export function failureFeedback(error: unknown): { message: string; code?: string } {
+  if (error instanceof AppError) return { message: error.detail ?? error.message, code: error.code };
+  return { message: "Something went wrong. Try again." };
+}
+
 /** Maps an RFC 9457 problem body to an AppError. A missing or unknown `code` becomes INTERNAL. */
 export function toAppError(res: Response, body: unknown): AppError {
   const problem = isRecord(body) ? body : {};
