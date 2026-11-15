@@ -13,13 +13,17 @@ import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.StepName;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
-import java.time.Clock;
+import java.time.InstantSource;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,9 +34,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Runs the steps of a generation run in {@link StepName} order (spec v1 §5.1). Each step's output
- * is saved in its own transaction, so a run that stopped partway resumes at the first step without
- * a saved output.
+ * Runs a generation run's steps in {@link StepName} order (spec v1 §5.1). Each write is its own
+ * transaction, so a run that stopped partway resumes at the first step without a saved output.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -47,7 +50,8 @@ public class PipelineRunner {
   private final VcsProvider vcsProvider;
   private final TransactionTemplate transactions;
   private final CancellationRegistry cancellation;
-  private final Clock clock;
+  private final Function<String, RunLogger> loggers;
+  private final InstantSource clock;
 
   @Autowired
   public PipelineRunner(
@@ -66,7 +70,8 @@ public class PipelineRunner {
         vcsProvider,
         transactionManager,
         cancellation,
-        Clock.systemUTC());
+        runId -> RunLogger.NOOP,
+        InstantSource.system());
   }
 
   PipelineRunner(
@@ -77,7 +82,8 @@ public class PipelineRunner {
       VcsProvider vcsProvider,
       PlatformTransactionManager transactionManager,
       CancellationRegistry cancellation,
-      Clock clock) {
+      Function<String, RunLogger> loggers,
+      InstantSource clock) {
     this.steps = indexSteps(steps);
     this.runs = runs;
     this.projects = projects;
@@ -85,37 +91,27 @@ public class PipelineRunner {
     this.vcsProvider = vcsProvider;
     this.transactions = new TransactionTemplate(transactionManager);
     this.cancellation = cancellation;
+    this.loggers = loggers;
     this.clock = clock;
   }
 
   /**
-   * Runs a generation run from where it stopped. A run that has already finished does nothing, so a
-   * redelivered message is harmless. Returns when the run fails, parks, or has no steps left.
-   *
-   * <p>An {@link AppException} from a step fails the run. A {@link TransientException} and a {@link
-   * CancelledException} propagate, and the run stays {@code RUNNING} for the worker to handle.
+   * Runs a generation run from where it stopped. A finished run does nothing, so a redelivered
+   * message is harmless. An {@link AppException} from a step fails the run. A {@link
+   * TransientException} or a {@link CancelledException} propagates and leaves the run RUNNING.
    */
   public void run(String runId) {
-    GenerationRun run =
-        runs.findById(runId)
-            .orElseThrow(
-                () -> new AppException(ErrorCode.NOT_FOUND, "generation run not found: " + runId));
+    GenerationRun run = found(runs.findById(runId), "generation run " + runId);
     if (run.getStatus().isTerminal()) {
       return;
     }
     String projectId = run.getProjectId();
     String configId = run.getConfigId();
-    Project project =
-        projects
-            .findById(projectId)
-            .orElseThrow(
-                () -> new AppException(ErrorCode.NOT_FOUND, "project not found: " + projectId));
-    ProjectConfig config =
-        configs
-            .findById(configId)
-            .orElseThrow(
-                () -> new AppException(ErrorCode.NOT_FOUND, "config not found: " + configId));
-    VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
+    Project project = found(projects.findById(projectId), "project " + projectId);
+    ProjectConfig config = found(configs.findById(configId), "config " + configId);
+    RunLogger log = loggers.apply(runId);
+    // Resolved on first use inside a step, so a run whose steps never need VCS never asks.
+    Supplier<VcsClient> vcs = once(() -> vcsProvider.forProject(project.getCreatedBy()));
     try {
       Optional<GenerationRun> started =
           update(
@@ -135,10 +131,16 @@ public class PipelineRunner {
           LOG.debug("generation run {}: step {} already has a saved output, skipping", runId, name);
           continue;
         }
-        RunContext ctx = new RunContext(run, project, config, vcs, RunLogger.NOOP, cancellation);
-        ctx.checkCancelled();
-        ctx.log().step(name);
-        StepResult result = execute(steps.get(name), ctx);
+        cancellation.checkCancelled(runId);
+        log.step(name);
+        // current_step names the running step, so it is written before the step runs.
+        Optional<GenerationRun> entered = update(runId, r -> r.setCurrentStep(name));
+        if (entered.isEmpty()) {
+          return;
+        }
+        run = entered.get();
+        StepResult result =
+            execute(steps.get(name), new RunContext(run, project, config, vcs, log, cancellation));
         switch (result) {
           case StepResult.Continue c -> {
             Optional<GenerationRun> saved = update(runId, r -> saveOutput(r, name, c.output()));
@@ -152,8 +154,9 @@ public class PipelineRunner {
           }
           case StepResult.Fail f -> {
             if (update(runId, r -> markFailed(r, name, f)).isPresent()) {
-              ctx.log().error(f.message());
+              log.error(f.message());
             }
+            log.done();
             return;
           }
         }
@@ -164,11 +167,12 @@ public class PipelineRunner {
   }
 
   /**
-   * Applies {@code change} in its own transaction. Writes nothing and returns empty if terminal.
+   * Applies {@code change} in its own transaction, on a row locked and read there. Writes nothing
+   * and returns empty if the run has become terminal, so a finished run is never written again.
    */
   private Optional<GenerationRun> update(String runId, Consumer<GenerationRun> change) {
     return transactions.execute(tx -> {
-      GenerationRun saved = runs.findById(runId).orElseThrow();
+      GenerationRun saved = found(runs.findByIdForUpdate(runId), "generation run " + runId);
       if (saved.getStatus().isTerminal()) {
         return Optional.empty();
       }
@@ -189,10 +193,7 @@ public class PipelineRunner {
     run.setFinishedAt(clock.instant());
   }
 
-  /**
-   * Runs one step. An {@link AppException} becomes a {@link StepResult.Fail}. Any other checked
-   * exception is a bug in the step, so it is wrapped and propagated.
-   */
+  /** Runs one step. An {@link AppException} becomes a {@link StepResult.Fail}. */
   private static StepResult execute(PipelineStep step, RunContext ctx) {
     try {
       return step.execute(ctx);
@@ -207,9 +208,17 @@ public class PipelineRunner {
     }
   }
 
-  /**
-   * Indexes the steps by name. Fails unless there is exactly one step for each {@link StepName}.
-   */
+  private static <T> T found(Optional<T> row, String what) {
+    return row.orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, what + " not found"));
+  }
+
+  /** Calls {@code supplier} on first use and returns that value from then on. */
+  private static <T> Supplier<T> once(Supplier<T> supplier) {
+    AtomicReference<T> value = new AtomicReference<>();
+    return () -> value.updateAndGet(v -> v != null ? v : supplier.get());
+  }
+
+  /** Indexes the steps by name. Fails unless there is exactly one step per {@link StepName}. */
   private static Map<StepName, PipelineStep> indexSteps(List<PipelineStep> steps) {
     Map<StepName, PipelineStep> byName = new EnumMap<>(StepName.class);
     List<StepName> duplicates = new ArrayList<>();
@@ -218,18 +227,11 @@ public class PipelineRunner {
         duplicates.add(step.name());
       }
     }
-    List<StepName> missing = new ArrayList<>();
-    for (StepName name : StepName.values()) {
-      if (!byName.containsKey(name)) {
-        missing.add(name);
-      }
-    }
+    List<StepName> missing =
+        Arrays.stream(StepName.values()).filter(n -> !byName.containsKey(n)).toList();
     if (!missing.isEmpty() || !duplicates.isEmpty()) {
       throw new IllegalStateException(
-          "pipeline needs exactly one step bean per StepName; missing "
-              + missing
-              + ", duplicate "
-              + duplicates);
+          "one step bean per StepName is needed; missing " + missing + ", duplicate " + duplicates);
     }
     return byName;
   }

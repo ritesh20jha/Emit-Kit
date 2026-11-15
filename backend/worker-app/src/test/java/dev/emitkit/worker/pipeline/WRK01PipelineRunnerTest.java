@@ -28,11 +28,8 @@ import dev.emitkit.domain.UserRepository;
 import dev.emitkit.domain.VersionStrategy;
 import dev.emitkit.vcs.VcsProvider;
 import java.lang.reflect.Proxy;
-import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -55,8 +52,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * Runs the pipeline against PostgreSQL 18 with the domain's Flyway migrations. The steps are
- * scripted fakes that record the order they run in.
+ * Runs the pipeline against PostgreSQL 18 with the domain's Flyway migrations and scripted steps.
  */
 @SpringBootTest(
     classes = WRK01PipelineRunnerTest.TestApp.class,
@@ -77,9 +73,26 @@ class WRK01PipelineRunnerTest {
   @Autowired private GenerationRunRepository runs;
   @Autowired private PlatformTransactionManager transactions;
 
-  private final Steps steps = new Steps();
+  /** What a fake step does when it runs. */
+  private interface Script {
+    StepResult run(RunContext ctx) throws Exception;
+  }
+
+  private final List<StepName> order = new ArrayList<>();
+  private final Map<StepName, Script> scripts = new EnumMap<>(StepName.class);
   private final FakeVcs vcs = new FakeVcs();
-  private final TestClock clock = new TestClock(EPOCH);
+  private final List<String> logCalls = new ArrayList<>();
+  private final RunLogger recorder =
+      (RunLogger)
+          Proxy.newProxyInstance(
+              getClass().getClassLoader(),
+              new Class<?>[] {RunLogger.class},
+              (proxy, method, args) -> {
+                logCalls.add(method.getName());
+                return null;
+              });
+  private Instant now = EPOCH;
+  private final InstantSource clock = () -> now;
   private User creator;
   private String runId;
   private CancellationRegistry cancellation;
@@ -119,11 +132,19 @@ class WRK01PipelineRunnerTest {
 
   @Test
   void runsStepsInOrder() {
+    scripts.put(
+        FETCH_SPEC,
+        ctx -> {
+          ctx.vcs();
+          return new StepResult.Continue("FETCH_SPEC-out");
+        });
+
     runner().run(runId);
 
-    assertThat(steps.order).containsExactly(StepName.values());
+    assertThat(order).containsExactly(StepName.values());
     assertThat(vcs.creators).containsExactly(creator.getId());
     assertThat(reload().getCurrentStep()).isEqualTo(StepName.FINALIZE);
+    assertThat(reload().getStartedAt()).isEqualTo(EPOCH);
     assertThat(StepOutputs.read(reload().getStepOutputs(), DIFF_SPEC, String.class))
         .hasValue("DIFF_SPEC-out");
   }
@@ -133,7 +154,7 @@ class WRK01PipelineRunnerTest {
     saveOutput(FETCH_SPEC, "saved-fetch");
     saveOutput(PARSE_SPEC, "saved-parse");
     saveOutput(LINT_SPEC, "saved-lint");
-    steps.on(
+    scripts.put(
         DIFF_SPEC,
         ctx -> {
           lintOutputSeenByDiff = ctx.output(LINT_SPEC, String.class);
@@ -142,14 +163,14 @@ class WRK01PipelineRunnerTest {
 
     runner().run(runId);
 
-    assertThat(steps.order)
+    assertThat(order)
         .containsExactlyElementsOf(List.of(StepName.values()).subList(3, StepName.values().length));
     assertThat(lintOutputSeenByDiff).hasValue("saved-lint");
   }
 
   @Test
   void failSetsFailureCode() {
-    steps.on(LINT_SPEC, ctx -> new StepResult.Fail(ErrorCode.LINT_FAILED, "2 errors"));
+    scripts.put(LINT_SPEC, ctx -> new StepResult.Fail(ErrorCode.LINT_FAILED, "2 errors"));
 
     runner().run(runId);
 
@@ -158,12 +179,13 @@ class WRK01PipelineRunnerTest {
     assertThat(run.getFailureCode()).isEqualTo("LINT_FAILED");
     assertThat(run.getFailureMessage()).isEqualTo("2 errors");
     assertThat(run.getFinishedAt()).isNotNull();
-    assertThat(steps.order).containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC);
+    assertThat(order).containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC);
+    assertThat(logCalls).endsWith("error", "done");
   }
 
   @Test
   void appExceptionBecomesFail() {
-    steps.on(
+    scripts.put(
         PARSE_SPEC,
         ctx -> {
           throw new AppException(ErrorCode.SPEC_INVALID, "bad spec");
@@ -175,12 +197,12 @@ class WRK01PipelineRunnerTest {
     assertThat(run.getStatus()).isEqualTo(RunStatus.FAILED);
     assertThat(run.getFailureCode()).isEqualTo("SPEC_INVALID");
     assertThat(run.getFailureMessage()).isEqualTo("bad spec");
-    assertThat(steps.order).containsExactly(FETCH_SPEC, PARSE_SPEC);
+    assertThat(order).containsExactly(FETCH_SPEC, PARSE_SPEC);
   }
 
   @Test
   void transientExceptionPropagates_runStaysRunning() {
-    steps.on(
+    scripts.put(
         LINT_SPEC,
         ctx -> {
           throw new TransientException(ErrorCode.STORAGE_ERROR, "blip");
@@ -188,27 +210,40 @@ class WRK01PipelineRunnerTest {
 
     assertThatThrownBy(() -> runner().run(runId)).isInstanceOf(TransientException.class);
 
+    // The current step was written before LINT ran, and no later write happened.
     GenerationRun run = reload();
     assertThat(run.getStatus()).isEqualTo(RunStatus.RUNNING);
+    assertThat(run.getCurrentStep()).isEqualTo(LINT_SPEC);
     assertThat(run.getFailureCode()).isNull();
+
+    // Redelivery: FETCH and PARSE are saved, so the run resumes at LINT.
+    scripts.clear();
+    order.clear();
+    now = EPOCH.plusSeconds(60);
+    runner().run(runId);
+
+    assertThat(order)
+        .containsExactlyElementsOf(List.of(StepName.values()).subList(2, StepName.values().length));
+    assertThat(reload().getStartedAt()).isEqualTo(EPOCH);
   }
 
   @Test
   void parkStops() {
-    steps.on(
+    scripts.put(
         LINT_SPEC,
         ctx -> {
           // A parking step persists its own status change; the runner writes nothing on Park.
-          GenerationRun run = ctx.run();
-          run.setStatus(RunStatus.AWAITING_APPROVAL);
-          runs.saveAndFlush(run);
+          GenerationRun row = reload();
+          row.setStatus(RunStatus.AWAITING_APPROVAL);
+          runs.saveAndFlush(row);
           return new StepResult.Park();
         });
 
     runner().run(runId);
 
     assertThat(reload().getStatus()).isEqualTo(RunStatus.AWAITING_APPROVAL);
-    assertThat(steps.order).containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC);
+    assertThat(StepOutputs.has(reload().getStepOutputs(), LINT_SPEC)).isFalse();
+    assertThat(order).containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC);
   }
 
   @Test
@@ -219,7 +254,7 @@ class WRK01PipelineRunnerTest {
 
     runner().run(runId);
 
-    assertThat(steps.order).isEmpty();
+    assertThat(order).isEmpty();
     assertThat(vcs.creators).isEmpty();
     assertThat(reload().getStatus()).isEqualTo(RunStatus.SUCCESS);
     assertThat(reload().getStartedAt()).isNull();
@@ -228,48 +263,80 @@ class WRK01PipelineRunnerTest {
   @Test
   void runFinishedAfterReadIsNotOverwritten() {
     // A duplicate delivery finishes the run after this one has read it but before it starts.
+    AtomicBoolean fired = new AtomicBoolean();
     GenerationRunRepository racing =
-        racingAfterFirstRead(() -> {
-          GenerationRun row = reload();
-          row.setStatus(RunStatus.SUCCESS);
-          runs.saveAndFlush(row);
-        });
+        (GenerationRunRepository)
+            Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[] {GenerationRunRepository.class},
+                (proxy, method, args) -> {
+                  Object result = method.invoke(runs, args);
+                  if (method.getName().equals("findById") && fired.compareAndSet(false, true)) {
+                    GenerationRun row = reload();
+                    row.setStatus(RunStatus.SUCCESS);
+                    runs.saveAndFlush(row);
+                  }
+                  return result;
+                });
 
-    runnerWith(steps.all(), racing).run(runId);
+    runnerWith(steps(), racing).run(runId);
 
     GenerationRun run = reload();
     assertThat(run.getStatus()).isEqualTo(RunStatus.SUCCESS);
     assertThat(run.getStartedAt()).isNull();
-    assertThat(steps.order).isEmpty();
+    assertThat(order).isEmpty();
+  }
+
+  @Test
+  void vcsFailureInsideStepFailsRunWithItsCode() {
+    vcs.failure = new AppException(ErrorCode.VCS_AUTH, "re-link the project");
+    scripts.put(
+        FETCH_SPEC,
+        ctx -> {
+          ctx.vcs();
+          return new StepResult.Continue("unreachable");
+        });
+
+    runner().run(runId);
+
+    GenerationRun run = reload();
+    assertThat(run.getStatus()).isEqualTo(RunStatus.FAILED);
+    assertThat(run.getFailureCode()).isEqualTo("VCS_AUTH");
+    assertThat(run.getFailureMessage()).isEqualTo("re-link the project");
+    assertThat(order).containsExactly(FETCH_SPEC);
+  }
+
+  @Test
+  void vcsIsNotRequestedWhenNoStepNeedsIt() {
+    vcs.failure = new AppException(ErrorCode.VCS_AUTH, "re-link the project");
+
+    runner().run(runId);
+
+    assertThat(reload().getCurrentStep()).isEqualTo(StepName.FINALIZE);
+    assertThat(vcs.creators).isEmpty();
   }
 
   @Test
   void missingStepBean_failsStartup() {
-    assertThatThrownBy(() -> runnerWith(steps.all(LINT_SPEC)))
+    assertThatThrownBy(() -> runnerWith(steps(LINT_SPEC)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("LINT_SPEC");
-
-    List<PipelineStep> withDuplicate = new ArrayList<>(steps.all());
-    withDuplicate.add(new FakeStep(FETCH_SPEC, steps));
-    assertThatThrownBy(() -> runnerWith(withDuplicate))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("FETCH_SPEC");
   }
 
   @Test
   void cancelRequestedInDb_isReadAtMostEveryFiveSeconds() {
-    steps.on(
+    scripts.put(
         DIFF_SPEC,
         ctx -> {
-          GenerationRun run = ctx.run();
-          run.setCancelRequested(true);
-          runs.saveAndFlush(run);
+          GenerationRun row = reload();
+          row.setCancelRequested(true);
+          runs.saveAndFlush(row);
           return new StepResult.Continue("diff");
         });
-    steps.on(
+    scripts.put(
         CALC_VERSION,
         ctx -> {
-          clock.advance(Duration.ofSeconds(5));
+          now = now.plusSeconds(5);
           return new StepResult.Continue("calc");
         });
 
@@ -277,29 +344,40 @@ class WRK01PipelineRunnerTest {
 
     // The flag set during DIFF_SPEC is not read until five seconds have passed, so CALC_VERSION
     // still runs, and the next check reads the flag and stops the run.
-    assertThat(steps.order)
-        .containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC, DIFF_SPEC, CALC_VERSION);
+    assertThat(order).containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC, DIFF_SPEC, CALC_VERSION);
     assertThat(reload().getCurrentStep()).isEqualTo(CALC_VERSION);
   }
 
-  /** A repository that runs {@code afterFirstRead} once, right after its first findById. */
-  private GenerationRunRepository racingAfterFirstRead(Runnable afterFirstRead) {
-    AtomicBoolean fired = new AtomicBoolean();
-    return (GenerationRunRepository)
-        Proxy.newProxyInstance(
-            getClass().getClassLoader(),
-            new Class<?>[] {GenerationRunRepository.class},
-            (proxy, method, args) -> {
-              Object result = method.invoke(runs, args);
-              if (method.getName().equals("findById") && fired.compareAndSet(false, true)) {
-                afterFirstRead.run();
-              }
-              return result;
-            });
+  /** One fake step per name, except the omitted ones. Each continues with a fixed output. */
+  private List<PipelineStep> steps(StepName... omit) {
+    List<StepName> omitted = List.of(omit);
+    List<PipelineStep> result = new ArrayList<>();
+    for (StepName name : StepName.values()) {
+      if (!omitted.contains(name)) {
+        result.add(fakeStep(name));
+      }
+    }
+    return result;
+  }
+
+  private PipelineStep fakeStep(StepName name) {
+    return new PipelineStep() {
+      @Override
+      public StepName name() {
+        return name;
+      }
+
+      @Override
+      public StepResult execute(RunContext ctx) throws Exception {
+        order.add(name);
+        Script script = scripts.get(name);
+        return script == null ? new StepResult.Continue(name.name() + "-out") : script.run(ctx);
+      }
+    };
   }
 
   private PipelineRunner runner() {
-    return runnerWith(steps.all());
+    return runnerWith(steps());
   }
 
   private PipelineRunner runnerWith(List<PipelineStep> pipelineSteps) {
@@ -309,7 +387,15 @@ class WRK01PipelineRunnerTest {
   private PipelineRunner runnerWith(
       List<PipelineStep> pipelineSteps, GenerationRunRepository repo) {
     return new PipelineRunner(
-        pipelineSteps, repo, projects, configs, vcs.provider(), transactions, cancellation, clock);
+        pipelineSteps,
+        repo,
+        projects,
+        configs,
+        vcs.provider(),
+        transactions,
+        cancellation,
+        id -> recorder,
+        clock);
   }
 
   private GenerationRun reload() {
@@ -322,45 +408,10 @@ class WRK01PipelineRunnerTest {
     runs.saveAndFlush(run);
   }
 
-  /** Scripted step bodies, plus the order in which the steps ran. */
-  static final class Steps {
-    final List<StepName> order = new ArrayList<>();
-    final Map<StepName, Script> scripts = new EnumMap<>(StepName.class);
-
-    /** What a fake step does when it runs. */
-    interface Script {
-      StepResult run(RunContext ctx) throws Exception;
-    }
-
-    void on(StepName name, Script script) {
-      scripts.put(name, script);
-    }
-
-    /** One fake step per name, except the omitted ones. Each continues with a fixed output. */
-    List<PipelineStep> all(StepName... omit) {
-      List<StepName> omitted = List.of(omit);
-      List<PipelineStep> result = new ArrayList<>();
-      for (StepName name : StepName.values()) {
-        if (!omitted.contains(name)) {
-          result.add(new FakeStep(name, this));
-        }
-      }
-      return result;
-    }
-  }
-
-  private record FakeStep(StepName name, Steps steps) implements PipelineStep {
-    @Override
-    public StepResult execute(RunContext ctx) throws Exception {
-      steps.order.add(name);
-      Steps.Script script = steps.scripts.get(name);
-      return script == null ? new StepResult.Continue(name.name() + "-out") : script.run(ctx);
-    }
-  }
-
-  /** Records the project creators the runner asks a client for. Hands out no real client. */
+  /** Records the project creators the runner asks a client for. Throws {@code failure} if set. */
   static final class FakeVcs {
     final List<String> creators = new ArrayList<>();
+    AppException failure;
 
     VcsProvider provider() {
       return (VcsProvider)
@@ -372,36 +423,11 @@ class WRK01PipelineRunnerTest {
                   throw new UnsupportedOperationException(method.getName());
                 }
                 creators.add((String) args[0]);
+                if (failure != null) {
+                  throw failure;
+                }
                 return null;
               });
-    }
-  }
-
-  /** A clock the test moves by hand, so the five-second recheck needs no sleeping. */
-  static final class TestClock extends Clock {
-    private Instant now;
-
-    TestClock(Instant now) {
-      this.now = now;
-    }
-
-    void advance(Duration by) {
-      now = now.plus(by);
-    }
-
-    @Override
-    public ZoneId getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return now;
     }
   }
 

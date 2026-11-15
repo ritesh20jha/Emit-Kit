@@ -9,10 +9,7 @@ public sealed interface StepResult {
   /** The step finished. {@code output} is saved as JSON under the step's name. */
   record Continue(@Nullable Object output) implements StepResult {}
 
-  /**
-   * The run stops here. The step has already set the run's status, for example to {@code
-   * AWAITING_APPROVAL}, and persisted it. The runner writes nothing on a park.
-   */
+  /** The run stops here. The step has already saved its own status change. */
   record Park() implements StepResult {}
 
   /** The step failed, so the run fails with {@code code} and {@code message}. */

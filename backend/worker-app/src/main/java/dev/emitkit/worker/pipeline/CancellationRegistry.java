@@ -2,9 +2,9 @@ package dev.emitkit.worker.pipeline;
 
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunRepository;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.InstantSource;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,9 +13,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * The runs that have been asked to stop. The control listener fills it through {@link #cancel}. A
- * run that is not marked here is checked against {@code cancel_requested} in the database, at most
- * once every five seconds per run, so a cancel sent to another worker still stops this one.
+ * Runs asked to stop: filled by {@link #add}, and checked against {@code cancel_requested} at most
+ * once every five seconds per run, so a cancel sent to another worker still counts.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -24,22 +23,22 @@ public final class CancellationRegistry {
   static final Duration DB_RECHECK = Duration.ofSeconds(5);
 
   private final GenerationRunRepository runs;
-  private final Clock clock;
+  private final InstantSource clock;
   private final Set<String> cancelled = ConcurrentHashMap.newKeySet();
   private final Map<String, Instant> lastDbCheck = new ConcurrentHashMap<>();
 
   @Autowired
   public CancellationRegistry(GenerationRunRepository runs) {
-    this(runs, Clock.systemUTC());
+    this(runs, InstantSource.system());
   }
 
-  CancellationRegistry(GenerationRunRepository runs, Clock clock) {
+  CancellationRegistry(GenerationRunRepository runs, InstantSource clock) {
     this.runs = runs;
     this.clock = clock;
   }
 
   /** Records that the run has been asked to stop. */
-  public void cancel(String runId) {
+  public void add(String runId) {
     cancelled.add(runId);
   }
 

@@ -2,10 +2,7 @@ package dev.emitkit.worker.pipeline;
 
 import dev.emitkit.domain.StepName;
 
-/**
- * One step of the generation pipeline. Steps are Spring beans, exactly one per {@link StepName}. A
- * step does its work in {@link #execute} and reports the outcome as a {@link StepResult}.
- */
+/** One step of the generation pipeline. Steps are Spring beans, one per {@link StepName}. */
 public interface PipelineStep {
 
   /** The step this bean implements. */

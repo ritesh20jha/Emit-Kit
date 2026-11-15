@@ -9,16 +9,16 @@ public interface RunLogger {
   RunLogger NOOP =
       new RunLogger() {
         @Override
-        public void info(String m) {}
+        public void info(String message) {}
 
         @Override
-        public void warn(String m) {}
+        public void warn(String message) {}
 
         @Override
-        public void error(String m) {}
+        public void error(String message) {}
 
         @Override
-        public void step(StepName s) {}
+        public void step(StepName step) {}
 
         @Override
         public void flush() {}
@@ -28,16 +28,16 @@ public interface RunLogger {
       };
 
   /** Writes an informational line. */
-  void info(String m);
+  void info(String message);
 
   /** Writes a warning line. */
-  void warn(String m);
+  void warn(String message);
 
   /** Writes an error line. */
-  void error(String m);
+  void error(String message);
 
   /** Marks the start of a step, so the following lines belong to it. */
-  void step(StepName s);
+  void step(StepName step);
 
   /** Pushes buffered lines out. */
   void flush();

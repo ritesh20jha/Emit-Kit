@@ -7,10 +7,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
-/**
- * Reads and writes the step outputs of a run: a JSON object from step name to the output that step
- * saved. The runner uses it to skip the steps that already ran.
- */
+/** The step outputs of a run: a JSON object from step name to the output that step saved. */
 final class StepOutputs {
 
   private static final JsonMapper JSON = JsonMapper.builder().build();

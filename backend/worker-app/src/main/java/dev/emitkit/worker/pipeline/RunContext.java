@@ -6,18 +6,15 @@ import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.StepName;
 import dev.emitkit.vcs.VcsClient;
 import java.util.Optional;
+import java.util.function.Supplier;
 
-/**
- * What a step runs with: the run, its project and config, a VCS client acting as the project's
- * creator, a logger, and the outputs of the steps that already ran. The runner builds one for each
- * step.
- */
+/** What a step runs with. The runner builds one for each step. */
 public final class RunContext {
 
   private final GenerationRun run;
   private final Project project;
   private final ProjectConfig config;
-  private final VcsClient vcs;
+  private final Supplier<VcsClient> vcs;
   private final RunLogger log;
   private final CancellationRegistry cancellation;
 
@@ -25,7 +22,7 @@ public final class RunContext {
       GenerationRun run,
       Project project,
       ProjectConfig config,
-      VcsClient vcs,
+      Supplier<VcsClient> vcs,
       RunLogger log,
       CancellationRegistry cancellation) {
     this.run = run;
@@ -36,7 +33,10 @@ public final class RunContext {
     this.cancellation = cancellation;
   }
 
-  /** The run, as the runner last saved it. */
+  /**
+   * A read-only snapshot taken when the step started. Never save it: a save writes every column and
+   * clobbers newer values such as {@code cancel_requested}.
+   */
   public GenerationRun run() {
     return run;
   }
@@ -49,8 +49,9 @@ public final class RunContext {
     return config;
   }
 
+  /** The creator's VCS client, created on first use. */
   public VcsClient vcs() {
-    return vcs;
+    return vcs.get();
   }
 
   public RunLogger log() {
