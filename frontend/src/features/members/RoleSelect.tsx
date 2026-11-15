@@ -1,7 +1,12 @@
 import { Select, type SelectOption } from "@/ui";
 import type { Role } from "./api";
 
-const ROLE_OPTIONS: SelectOption[] = (["ADMIN", "EDITOR", "VIEWER"] as const).map((role) => ({ value: role, label: role }));
+/** Keyed by Role, so a role added to the API fails to compile here until it gets an option. */
+const ROLE_LABELS: Record<Role, string> = { ADMIN: "ADMIN", EDITOR: "EDITOR", VIEWER: "VIEWER" };
+const ROLE_OPTIONS: SelectOption[] = (Object.keys(ROLE_LABELS) as Role[]).map((role) => ({
+  value: role,
+  label: ROLE_LABELS[role],
+}));
 
 export interface RoleSelectProps {
   login: string;

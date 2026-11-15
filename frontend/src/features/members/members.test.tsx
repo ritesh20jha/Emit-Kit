@@ -14,6 +14,7 @@ import { MembersPage } from "./MembersPage";
 type Member = components["schemas"]["MemberResponse"];
 type Me = components["schemas"]["MeResponse"];
 type OrgDetail = components["schemas"]["OrgDetail"];
+type Role = components["schemas"]["Role"];
 
 const ORG = "org1";
 /** defaultMe is an ADMIN of org1. */
@@ -102,7 +103,7 @@ describe("members", () => {
 
     // Optimistic: the select shows EDITOR while the PATCH is pending, and the server's source has not arrived.
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Role for hubot" })).toHaveTextContent("EDITOR"));
-    expect(patchBody).toEqual({ role: "EDITOR" });
+    await waitFor(() => expect(patchBody).toEqual({ role: "EDITOR" }));
     expect(screen.queryByText("Set manually")).not.toBeInTheDocument();
 
     // Settled: the refetch carries the server's source, and the role stays EDITOR.
@@ -141,7 +142,40 @@ describe("members", () => {
     expect(await screen.findByText("An organization needs at least one admin")).toBeInTheDocument();
     expect(screen.getByText("VALIDATION_FAILED")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Role for octocat" })).toHaveTextContent("ADMIN"));
-    expect(listReads).toBe(2);
+    await waitFor(() => expect(listReads).toBe(2));
+  });
+
+  test("an admin who demotes themselves loses the role controls", async () => {
+    const user = userEvent.setup();
+    // A second admin keeps the org valid, so the server accepts the self-demotion.
+    // Copied rows: the PATCH below mutates them, and MEMBERS is shared with the other tests.
+    const rows: Member[] = [
+      ...MEMBERS.map((member) => ({ ...member })),
+      { userId: "u3", login: "monalisa", name: null, avatarUrl: "https://example.test/ml.png", role: "ADMIN", roleSource: "MANUAL" },
+    ];
+    // A stateful fake for /me: the PATCH on the signed-in user changes the role /me reports, as the server does.
+    let me: Me = ADMIN_ME;
+    server.use(
+      http.get("/api/v1/me", () => HttpResponse.json(me)),
+      http.get("/api/v1/orgs/:orgId/members", () => HttpResponse.json(rows)),
+      http.patch("/api/v1/orgs/:orgId/members/:userId", async ({ request, params }) => {
+        const { role } = (await request.json()) as { role: Role };
+        const row = rows.find((member) => member.userId === params.userId);
+        Object.assign(row ?? {}, { role, roleSource: "MANUAL" });
+        if (params.userId === ADMIN_ME.id) {
+          me = { ...me, orgs: me.orgs.map((org) => (org.orgId === ORG ? { ...org, role } : org)) };
+        }
+        return HttpResponse.json(row);
+      }),
+    );
+    renderMembers();
+
+    await pickRole(user, "octocat", "VIEWER");
+
+    // The session refetch flips the page to the read-only view: no selects, and the remaining admin is named.
+    expect(await screen.findByText("You need admin access to change member roles. Ask an org admin.")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Org admins: monalisa")).toBeInTheDocument());
   });
 
   test("non-admin sees roles as text, no selects", async () => {

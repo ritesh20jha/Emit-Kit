@@ -47,6 +47,12 @@ export function useChangeRole(orgId: string) {
       queryClient.setQueryData(key, context?.previous);
       toast.error(failureFeedback(error));
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+    // A self-demotion changes what /me says about the signed-in user, so the session is refetched too. Exact, so the
+    // quota query under ["me"] is left alone.
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: key }),
+        queryClient.invalidateQueries({ queryKey: qk.me, exact: true }),
+      ]),
   });
 }

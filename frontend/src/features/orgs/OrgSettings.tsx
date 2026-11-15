@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AppError } from "@/lib/api/appError";
+import { failureFeedback } from "@/lib/api/appError";
 import { Button, CopyButton, ErrorState, PageHeader, Skeleton } from "@/ui";
 import { orgQuery, useResync } from "./api";
 
@@ -21,8 +21,7 @@ export function OrgSettings({ orgId }: OrgSettingsProps) {
       </div>
     );
   } else if (query.isError) {
-    const feedback = query.error instanceof AppError ? query.error : { message: "Something went wrong. Try again." };
-    body = <ErrorState error={feedback} onRetry={() => void query.refetch()} />;
+    body = <ErrorState error={failureFeedback(query.error)} onRetry={() => void query.refetch()} />;
   } else {
     const org = query.data;
     body = (

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users } from "lucide-react";
-import { AppError } from "@/lib/api/appError";
+import { failureFeedback } from "@/lib/api/appError";
 import { usePermission } from "@/lib/auth/permissions";
 import { EmptyState, ErrorState, NoAccessState, PageHeader, Skeleton } from "@/ui";
 import { membersQuery, useChangeRole } from "./api";
@@ -27,8 +27,7 @@ export function MembersPage({ orgId }: MembersPageProps) {
       </div>
     );
   } else if (query.isError) {
-    const feedback = query.error instanceof AppError ? query.error : { message: "Something went wrong. Try again." };
-    body = <ErrorState error={feedback} onRetry={() => void query.refetch()} />;
+    body = <ErrorState error={failureFeedback(query.error)} onRetry={() => void query.refetch()} />;
   } else if (query.data.length === 0) {
     body = (
       <EmptyState
