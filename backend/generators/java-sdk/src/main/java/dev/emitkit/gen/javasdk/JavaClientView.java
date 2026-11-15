@@ -66,7 +66,9 @@ record JavaClientView(
     List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
     List<Accessor> accessors =
         JavaResourceRenderer.groups(model).stream()
-            .map(g -> new Accessor(g.member(), g.className(), docText(String.join(", ", g.tags()))))
+            .map(g ->
+                new Accessor(
+                    accessorName(g.member()), g.className(), docText(String.join(", ", g.tags()))))
             .sorted(Comparator.comparing(Accessor::resource))
             .toList();
     return new JavaClientView(
@@ -89,6 +91,15 @@ record JavaClientView(
         headers,
         queries,
         accessors);
+  }
+
+  /** A client method name that Object, builder() or mapper() already declares gets a _. */
+  static String accessorName(String member) {
+    boolean taken =
+        JavaTypeRenderer.OBJECT_METHODS.contains(member)
+            || member.equals("builder")
+            || member.equals("mapper");
+    return taken ? member + "_" : member;
   }
 
   /** Rejects a Maven artifact id or version that could not be written raw into a Kotlin string. */

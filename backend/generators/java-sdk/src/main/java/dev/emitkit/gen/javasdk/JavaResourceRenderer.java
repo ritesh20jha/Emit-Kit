@@ -27,6 +27,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * One {@code {Tag}Api} class per resolved tag. Methods take the required parameters, then the body,
@@ -114,7 +115,10 @@ final class JavaResourceRenderer {
 
     Scope api = new Scope("", true, imports);
     StringBuilder methods = new StringBuilder();
+    Map<String, String> methodNames = new HashMap<>();
     for (Operation op : ops) {
+      String detail = "operations of " + group.className();
+      JavaTypeRenderer.claim(methodNames, javaMethodName(op), op.operationId(), detail);
       methods.append(method(op, types, api));
     }
     StringBuilder out = new StringBuilder();
@@ -145,14 +149,15 @@ final class JavaResourceRenderer {
       Set.of("query", "options", "body", "response", "client", "item");
 
   /** Helper methods the resource classes declare. An operation with one of these gets a _. */
-  private static final Set<String> RESERVED_METHODS = Set.of("segment", "read");
+  private static final Set<String> RESERVED_METHODS =
+      Stream.concat(Stream.of("segment", "read"), JavaTypeRenderer.OBJECT_METHODS.stream())
+          .collect(Collectors.toUnmodifiableSet());
 
   /** One operation: its method, and the options record it takes, if any, added to {@code api}. */
   private static String method(Operation op, JavaTypeRenderer types, Scope api) {
     NameStrategy java = NameStrategy.forLanguage(Language.JAVA);
     String base = java.type(op.operationId());
-    String member = java.member(op.operationId());
-    String methodName = RESERVED_METHODS.contains(member) ? member + "_" : member;
+    String methodName = javaMethodName(op);
     List<String> args = new ArrayList<>();
     Map<String, String> pathValues = new LinkedHashMap<>();
     Map<String, String> javaNames = new HashMap<>();
@@ -165,7 +170,7 @@ final class JavaResourceRenderer {
         continue;
       }
       String name = java.member(p.name());
-      if (RESERVED_LOCALS.contains(name)) {
+      if (RESERVED_LOCALS.contains(name) || JavaTypeRenderer.OBJECT_METHODS.contains(name)) {
         name = name + "_";
       }
       JavaTypeRenderer.claim(javaNames, name, p.name(), "parameters of " + op.operationId());
@@ -270,6 +275,12 @@ final class JavaResourceRenderer {
         .filter(r -> r.status().startsWith("2") && r.schema() != null)
         .findFirst()
         .orElse(null);
+  }
+
+  /** The Java method name for an operation: its member name, with a _ when reserved. */
+  private static String javaMethodName(Operation op) {
+    String member = NameStrategy.forLanguage(Language.JAVA).member(op.operationId());
+    return RESERVED_METHODS.contains(member) ? member + "_" : member;
   }
 
   private static boolean hasParam(Operation op, ParamLocation in) {
