@@ -1,17 +1,24 @@
 package dev.emitkit.domain;
 
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.lang.Nullable;
 
 /** Generation runs, keyed by ULID. */
 public interface GenerationRunRepository extends JpaRepository<GenerationRun, String> {
+
+  /** Loads a run and locks its row until the transaction ends. Call only inside a transaction. */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select r from GenerationRun r where r.id = :id")
+  Optional<GenerationRun> findByIdForUpdate(@Param("id") String id);
 
   /**
    * The newest run that succeeded and was not a dry run. The next diff is taken against its spec

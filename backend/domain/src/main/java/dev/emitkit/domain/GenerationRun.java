@@ -186,12 +186,17 @@ public class GenerationRun extends BaseEntity {
     return failureMessage;
   }
 
-  public void setFailureMessage(String failureMessage) {
+  public void setFailure(String failureCode, String failureMessage) {
+    this.failureCode = failureCode;
     this.failureMessage = failureMessage;
   }
 
   public boolean isCancelRequested() {
     return cancelRequested;
+  }
+
+  public void setCancelRequested(boolean cancelRequested) {
+    this.cancelRequested = cancelRequested;
   }
 
   public int getAttempt() {
@@ -244,6 +249,10 @@ public class GenerationRun extends BaseEntity {
 
   public Instant getStartedAt() {
     return startedAt;
+  }
+
+  public void setStartedAt(Instant startedAt) {
+    this.startedAt = startedAt;
   }
 
   public Instant getFinishedAt() {
