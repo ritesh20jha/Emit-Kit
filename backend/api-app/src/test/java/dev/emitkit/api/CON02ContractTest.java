@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.emitkit.api.access.OrgAccessService;
+import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.auth.GitHubUserService;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
@@ -16,6 +17,7 @@ import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
+import dev.emitkit.api.runs.RunService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
@@ -83,6 +85,8 @@ class CON02ContractTest {
   @MockitoBean private VcsProvider vcsProvider;
   @MockitoBean private LintRateLimiter lintRateLimiter;
   @MockitoBean private SpecHistoryService specHistory;
+  @MockitoBean private ProjectAccess projectAccess;
+  @MockitoBean private RunService runService;
 
   @Test
   @WithMockUser

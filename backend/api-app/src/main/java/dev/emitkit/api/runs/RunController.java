@@ -1,8 +1,13 @@
 package dev.emitkit.api.runs;
 
+import dev.emitkit.api.access.Permission;
+import dev.emitkit.api.access.ProjectAccess;
+import dev.emitkit.api.auth.CurrentUser;
+import dev.emitkit.api.auth.EmitKitUser;
 import dev.emitkit.api.common.Page;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.RunTrigger;
 import dev.emitkit.spec.lint.LintIssue;
@@ -21,12 +26,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Runs: list and start them per project, then read, cancel, rerun or decide one. Bodies are stubs.
- */
+/** Runs: list, start and read them. Cancel, rerun, approval and lint are still stubs. */
 @RestController
 @Tag(name = "Runs", description = "Generation runs: start, read, cancel, rerun and approve them.")
 public class RunController {
+
+  private final RunService runs;
+  private final ProjectAccess projectAccess;
+
+  public RunController(RunService runs, ProjectAccess projectAccess) {
+    this.runs = runs;
+    this.projectAccess = projectAccess;
+  }
 
   @GetMapping("/api/v1/projects/{id}/runs")
   @Operation(summary = "List the runs of a project, newest first, one page at a time")
@@ -40,21 +51,36 @@ public class RunController {
       @Parameter(description = "Only runs started by this trigger")
           @RequestParam(name = "trigger", required = false)
           @Nullable RunTrigger trigger) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    projectAccess.require(id, Permission.RUN_VIEW);
+    return runs.list(id, status, trigger, cursor, limit);
   }
 
   @PostMapping("/api/v1/projects/{id}/runs")
   @ResponseStatus(HttpStatus.CREATED)
   @Operation(summary = "Start a generation run for a project")
   public RunDetail startRun(
-      @PathVariable("id") String id, @Valid @RequestBody TriggerRunRequest request) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+      @PathVariable("id") String id,
+      @Valid @RequestBody TriggerRunRequest request,
+      @CurrentUser EmitKitUser user) {
+    projectAccess.require(id, Permission.RUN_TRIGGER);
+    GenerationRun run = runs.create(id, RunTrigger.MANUAL, request.dryRun(), user.userId(), null);
+    return runs.detail(run);
   }
 
   @GetMapping("/api/v1/runs/{runId}")
   @Operation(summary = "Read one run")
   public RunDetail getRun(@PathVariable("runId") String runId) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    GenerationRun run = runs.find(runId);
+    try {
+      projectAccess.require(run.getProjectId(), Permission.RUN_VIEW);
+    } catch (AppException e) {
+      // A non-member gets the same answer as an unknown run, so the run's existence stays hidden.
+      if (e.code() == ErrorCode.NOT_FOUND) {
+        throw new AppException(ErrorCode.NOT_FOUND, "run not found");
+      }
+      throw e;
+    }
+    return runs.detail(run);
   }
 
   @PostMapping("/api/v1/runs/{runId}/cancel")

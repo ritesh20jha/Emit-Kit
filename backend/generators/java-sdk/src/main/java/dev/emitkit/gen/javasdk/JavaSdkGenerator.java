@@ -30,6 +30,9 @@ public final class JavaSdkGenerator implements Generator {
   /** Context for {@code exception-subclass.java}: the subclass plus the package it lives in. */
   record ExceptionView(String packageName, String name, String summary) {}
 
+  /** Context for the model and resource file skeletons: package, imports and declaration. */
+  record FileView(String packageName, String imports, String body) {}
+
   @Override
   public GeneratorId id() {
     return GeneratorId.JAVA_SDK;
@@ -61,13 +64,23 @@ public final class JavaSdkGenerator implements Generator {
             src + "custom/package-info.java",
             TEMPLATES.render("custom-package-info.java", view),
             FileKind.CUSTOM_STUB));
-    files.addAll(resourceFiles());
+    JavaTypeRenderer types = new JavaTypeRenderer(model, view.packageName());
+    for (JavaTypeRenderer.TypeFile file : types.files()) {
+      files.add(typeFile(src + "model/" + file.name() + ".java", file, types.modelPackage()));
+    }
+    String resources = view.packageName() + ".resources";
+    for (JavaTypeRenderer.TypeFile file : JavaResourceRenderer.files(model, types, view)) {
+      files.add(typeFile(src + "resources/" + file.name() + ".java", file, resources));
+    }
     return List.copyOf(files);
   }
 
-  /** Hook for per-resource and per-type files. Empty until the resource generator lands. */
-  private static List<GeneratedFile> resourceFiles() {
-    return List.of();
+  /** A model or resource file: the shared skeleton around one top-level type. */
+  private static GeneratedFile typeFile(
+      String path, JavaTypeRenderer.TypeFile file, String packageName) {
+    FileView view =
+        new FileView(packageName, JavaTypeRenderer.importBlock(file.imports()), file.body());
+    return new GeneratedFile(path, TEMPLATES.render("Model.java", view), FileKind.GENERATED);
   }
 
   private static GeneratedFile generated(String path, String template, JavaClientView view) {
