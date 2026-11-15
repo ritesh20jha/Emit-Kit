@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
  * @param apiKeyHeaders header names that receive the API key
  * @param apiKeyQueries query parameter names that receive the API key, empty when a header apiKey
  *     scheme exists so the key never appears in a URL
+ * @param resources one resource per file, each exposed as a client property
  */
 record TsClientView(
     String className,
@@ -47,7 +48,8 @@ record TsClientView(
     boolean hasBearer,
     boolean hasBasic,
     List<Literal> apiKeyHeaders,
-    List<Literal> apiKeyQueries) {
+    List<Literal> apiKeyQueries,
+    List<TsResources.Group> resources) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
 
@@ -55,8 +57,7 @@ record TsClientView(
   record Literal(String text) {}
 
   static TsClientView of(ApiModel model, GeneratorContext ctx) {
-    String className =
-        clientName(NameStrategy.forLanguage(Language.TYPESCRIPT).type(model.info().title()));
+    String className = className(model);
     PackageNames names = ctx.names();
     String scope = names.npmScope();
     String packageName =
@@ -82,7 +83,13 @@ record TsClientView(
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
         headers,
-        queries);
+        queries,
+        TsResources.groups(model));
+  }
+
+  /** The client class name for {@code model}, from its title. */
+  static String className(ApiModel model) {
+    return clientName(NameStrategy.forLanguage(Language.TYPESCRIPT).type(model.info().title()));
   }
 
   /** HTTP bearer, OAuth2 and OpenID Connect schemes all carry an access token as a bearer. */

@@ -15,6 +15,9 @@ public interface ProjectConfigRepository extends JpaRepository<ProjectConfig, St
     return findFirstByProjectIdOrderByVersionDesc(projectId);
   }
 
+  /** Removes every config version of a project. */
+  void deleteByProjectId(String projectId);
+
   /** The version the next config of a project should take: 1 for a new project. */
   @Query(
       "select coalesce(max(c.version), 0) + 1 from ProjectConfig c where c.projectId = :projectId")

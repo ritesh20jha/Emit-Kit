@@ -8,14 +8,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.emitkit.api.access.OrgAccessService;
+import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.auth.GitHubUserService;
 import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
+import dev.emitkit.api.projects.ProjectService;
+import dev.emitkit.api.spec.LintRateLimiter;
+import dev.emitkit.api.spec.SpecHistoryService;
+import dev.emitkit.api.runs.RunService;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
 import dev.emitkit.domain.UserRepository;
+import dev.emitkit.vcs.VcsProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -66,6 +72,12 @@ class CON01ContractTest {
   @MockitoBean private OrgAccessService orgAccess;
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
+  @MockitoBean private ProjectService projectService;
+  @MockitoBean private VcsProvider vcsProvider;
+  @MockitoBean private LintRateLimiter lintRateLimiter;
+  @MockitoBean private SpecHistoryService specHistory;
+  @MockitoBean private ProjectAccess projectAccess;
+  @MockitoBean private RunService runService;
 
   @Test
   @WithMockUser
@@ -94,20 +106,9 @@ class CON01ContractTest {
 
   @ParameterizedTest
   @WithMockUser
-  @CsvSource({
-    "GET,/api/v1/me/vcs-quota,",
-    "GET,/api/v1/orgs,",
-    "POST,/api/v1/me/sync-orgs,
-    "GET,/api/v1/orgs/org1,",
-    "GET,/api/v1/orgs/org1/members,",
-    "PATCH,/api/v1/orgs/org1/members/user1,{\"role\":\"EDITOR\"}"
-  })
-  void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
-    MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());
-    if (body != null) {
-      request.contentType(MediaType.APPLICATION_JSON).content(body);
-    }
-    mvc.perform(request)
+  @CsvSource({"GET,/api/v1/me/vcs-quota"})
+  void contractEndpointIs501(String method, String path) throws Exception {
+    mvc.perform(request(HttpMethod.valueOf(method), path).with(csrf()))
         .andExpect(status().is(501))
         .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
   }

@@ -22,6 +22,7 @@ dependencies {
     testImplementation(libs.spring.boot.testcontainers)
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.rabbitmq)
+    testImplementation(libs.testcontainers.postgresql)
 }
 
 // The convention plugin disables bootJar until a main class exists; worker-app has one now.

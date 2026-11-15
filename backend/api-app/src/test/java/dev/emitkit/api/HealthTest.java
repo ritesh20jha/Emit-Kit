@@ -22,7 +22,7 @@ import org.springframework.core.env.Environment;
       GitHubTestCredentials.CLIENT_ID,
       GitHubTestCredentials.CLIENT_SECRET
     })
-@Import({RedisTestConfig.class, PostgresTestConfig.class})
+@Import({RedisTestConfig.class, PostgresTestConfig.class, RabbitTestConfig.class})
 class HealthTest {
 
   @LocalManagementPort private int managementPort;

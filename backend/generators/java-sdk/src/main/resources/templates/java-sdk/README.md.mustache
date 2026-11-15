@@ -34,6 +34,11 @@ Credentials are set on the builder. Each method exists only when the API declare
 scheme: `apiKey` for API key schemes, `bearerToken` for HTTP bearer, OAuth2 and OpenID Connect
 schemes, and `basic` for HTTP basic. Other schemes, such as cookie API keys, are not mapped.
 
+## Parameters
+
+Header and cookie parameters are not sent yet, so an operation that needs one cannot be called
+through this SDK until support is added.
+
 ## Errors
 
 Non-2xx responses throw an `ApiException` subclass chosen by status: `UnauthorizedException` (401
