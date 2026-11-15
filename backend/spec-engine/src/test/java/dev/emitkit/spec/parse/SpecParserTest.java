@@ -49,6 +49,80 @@ class SpecParserTest {
         });
   }
 
+  /** A server list whose items are all aliases of one mapping with a URL of {@code urlLength}. */
+  private static String aliasedServers(int aliases, int urlLength) {
+    var yaml = new StringBuilder(HEADER + "servers:\n");
+    yaml.append("  - &s {url: \"http://").append("a".repeat(urlLength)).append("\"}\n");
+    for (int i = 0; i < aliases; i++) {
+      yaml.append("  - *s\n");
+    }
+    return yaml.toString();
+  }
+
+  @Test
+  void aliasesAddingManyNodes_areRefusedQuickly() {
+    String raw = aliasedServers(40_000, 1024);
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(1),
+        () -> {
+          ParseResult r = parser.parse(raw);
+          assertThat(r.model()).isNull();
+          assertThat(r.errors())
+              .containsExactly("could not read document: aliases add more than 10000 nodes");
+        });
+  }
+
+  @Test
+  void aliasesAddingManyTextChars_areRefused() {
+    String big = "b".repeat(64 * 1024);
+    var yaml = new StringBuilder(HEADER + "x-big: &big \"" + big + "\"\n");
+    for (int i = 0; i < 300; i++) {
+      yaml.append("x-s%d: *big\n".formatted(i));
+    }
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(5),
+        () -> {
+          ParseResult r = parser.parse(yaml.toString());
+          assertThat(r.model()).isNull();
+          assertThat(r.errors())
+              .containsExactly("could not read document: aliases add more than 1 MiB of text");
+        });
+  }
+
+  @Test
+  void aliasHeavyDocumentWithLargeText_isRefusedWithoutExpanding() {
+    // 165,000 aliases of a 64 KiB URL: once expanded, about 10 GB of text.
+    String raw = aliasedServers(165_000, 64 * 1024);
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(5),
+        () -> {
+          ParseResult r = parser.parse(raw);
+          assertThat(r.model()).isNull();
+          assertThat(r.errors())
+              .containsExactly("could not read document: aliases add more than 10000 nodes");
+        });
+  }
+
+  @Test
+  void largeAliasFreeDocument_isNotRefused() {
+    var yaml = new StringBuilder(HEADER + "x-unused: &unused \"v\"\n");
+    String value = "t".repeat(512);
+    for (int i = 0; i < 2_000; i++) {
+      yaml.append("x-k%d: \"%s\"\n".formatted(i, value));
+    }
+    assertTimeoutPreemptively(
+        Duration.ofSeconds(5), () -> assertThat(AliasBudget.refusal(yaml.toString())).isNull());
+  }
+
+  @Test
+  void documentWithoutAnchors_skipsTheAliasCheckAndStillReportsErrors() {
+    String raw = "openapi: [unclosed";
+    assertThat(AliasBudget.refusal(raw)).isNull();
+    ParseResult r = parser.parse(raw);
+    assertThat(r.model()).isNull();
+    assertThat(r.errors()).singleElement().asString().startsWith("could not read document: ");
+  }
+
   @Test
   void ordinarySpecWithAFewAliases_stillParses() {
     String raw =
