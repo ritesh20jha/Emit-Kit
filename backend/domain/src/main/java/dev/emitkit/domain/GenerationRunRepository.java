@@ -28,13 +28,7 @@ public interface GenerationRunRepository extends JpaRepository<GenerationRun, St
     return findByProjectId(projectId, null, null, after, limit);
   }
 
-  /**
-   * One page of a project's runs, newest first, narrowed by an optional status and trigger. A null
-   * {@code after} starts at the first page. Callers decode the client's token with {@link
-   * RunCursor#decode} first.
-   *
-   * @return at most {@code limit} runs, empty when there are no more
-   */
+  /** One page of a project's runs, newest first, narrowed by a status and a trigger if given. */
   default List<GenerationRun> findByProjectId(
       String projectId,
       @Nullable RunStatus status,

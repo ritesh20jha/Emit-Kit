@@ -123,11 +123,10 @@ class RunMapper {
     int warnings = 0;
     int infos = 0;
     for (SeverityCount count : lintResults.countBySeverity(runId)) {
-      int n = Math.toIntExact(count.count());
       switch (count.severity()) {
-        case ERROR -> errors = n;
-        case WARNING -> warnings = n;
-        case INFO -> infos = n;
+        case ERROR -> errors = Math.toIntExact(count.count());
+        case WARNING -> warnings = Math.toIntExact(count.count());
+        case INFO -> infos = Math.toIntExact(count.count());
       }
     }
     return new LintCounts(errors, warnings, infos);

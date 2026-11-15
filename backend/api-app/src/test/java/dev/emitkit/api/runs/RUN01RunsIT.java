@@ -61,13 +61,14 @@ import dev.emitkit.domain.VersionStrategy;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.core.AmqpAdmin;
-import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
@@ -82,6 +83,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -110,18 +112,11 @@ class RUN01RunsIT {
   @TestConfiguration(proxyBeanMethods = false)
   static class JobTopology {
     @Bean
-    DirectExchange jobsExchange() {
-      return new DirectExchange(Queues.JOBS_EXCHANGE);
-    }
-
-    @Bean
-    Queue jobsQueue() {
-      return QueueBuilder.durable(Queues.JOBS_QUEUE).build();
-    }
-
-    @Bean
-    Binding jobsBinding(Queue jobsQueue, DirectExchange jobsExchange) {
-      return BindingBuilder.bind(jobsQueue).to(jobsExchange).with(Queues.JOBS_ROUTING_KEY);
+    Declarables jobTopology() {
+      DirectExchange exchange = new DirectExchange(Queues.JOBS_EXCHANGE);
+      Queue queue = QueueBuilder.durable(Queues.JOBS_QUEUE).build();
+      return new Declarables(
+          exchange, queue, BindingBuilder.bind(queue).to(exchange).with(Queues.JOBS_ROUTING_KEY));
     }
   }
 
@@ -162,7 +157,7 @@ class RUN01RunsIT {
   void create_publishesJobAfterCommit() {
     Fixture f = fixture();
 
-    GenerationRun run = runs.create(f.project().getId(), MANUAL, false, f.owner().getId(), null);
+    GenerationRun run = create(f);
 
     assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 2000))
         .isEqualTo(new GenerationJob(run.getId(), 0));
@@ -173,13 +168,13 @@ class RUN01RunsIT {
   @Test
   void rollback_publishesNothing() {
     Fixture f = fixture();
-    TransactionTemplate transaction = new TransactionTemplate(transactions);
 
     assertThatThrownBy(() ->
-            transaction.executeWithoutResult(status -> {
-              runs.create(f.project().getId(), MANUAL, false, f.owner().getId(), null);
-              throw new IllegalStateException("caller failed after create");
-            }))
+            new TransactionTemplate(transactions)
+                .executeWithoutResult(status -> {
+                  create(f);
+                  throw new IllegalStateException("caller failed after create");
+                }))
         .isInstanceOf(IllegalStateException.class);
 
     assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
@@ -194,8 +189,7 @@ class RUN01RunsIT {
         .convertAndSend(
             eq(Queues.JOBS_EXCHANGE), eq(Queues.JOBS_ROUTING_KEY), any(GenerationJob.class));
 
-    assertThatThrownBy(
-            () -> runs.create(f.project().getId(), MANUAL, false, f.owner().getId(), null))
+    assertThatThrownBy(() -> create(f))
         .isInstanceOfSatisfying(
             AppException.class,
             e -> {
@@ -216,7 +210,7 @@ class RUN01RunsIT {
     Fixture f = fixture();
     ProjectConfig latest = config(f.project(), 2, f.owner());
 
-    GenerationRun run = runs.create(f.project().getId(), MANUAL, false, f.owner().getId(), null);
+    GenerationRun run = create(f);
 
     assertThat(run.getConfigId()).isEqualTo(latest.getId());
   }
@@ -237,49 +231,34 @@ class RUN01RunsIT {
   @Test
   void rerun_parentFromAnotherProject_isNotFound() {
     Fixture f = fixture();
-    Project other = project(f.org(), f.owner(), "acme/gadgets");
+    Project other = project(f.org(), "acme/gadgets", f.owner());
     ProjectConfig otherConfig = config(other, 1, f.owner());
     GenerationRun parent =
         generationRuns.saveAndFlush(
             new GenerationRun(null, other.getId(), otherConfig.getId(), MANUAL, false, BASE));
 
-    assertThatThrownBy(
-            () -> runs.create(f.project().getId(), RERUN, false, f.owner().getId(), parent.getId()))
-        .isInstanceOfSatisfying(
-            AppException.class,
-            e -> {
-              assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
-              assertThat(e.getMessage()).isEqualTo("parent run not found");
-            });
+    assertNotFound(
+        () -> runs.create(f.project().getId(), RERUN, false, f.owner().getId(), parent.getId()),
+        "parent run not found");
   }
 
   @Test
   void create_projectWithoutConfig_isNotFound() {
     Fixture f = fixture();
-    Project bare = project(f.org(), f.owner(), "acme/gadgets");
+    Project bare = project(f.org(), "acme/gadgets", f.owner());
 
-    assertThatThrownBy(() -> runs.create(bare.getId(), MANUAL, false, f.owner().getId(), null))
-        .isInstanceOfSatisfying(
-            AppException.class,
-            e -> {
-              assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
-              assertThat(e.getMessage()).isEqualTo("project has no config");
-            });
+    assertNotFound(
+        () -> runs.create(bare.getId(), MANUAL, false, f.owner().getId(), null),
+        "project has no config");
   }
 
   @Test
   void startRun_viaEndpoint_returns201AndEnqueues() throws Exception {
     Fixture f = fixture();
-    User editor = user(2, "editor");
-    member(f.org(), editor, EDITOR);
+    User editor = addMember(f.org(), 2, "editor", EDITOR);
 
     String body =
-        mvc.perform(
-                post(RUNS, f.project().getId())
-                    .with(csrf())
-                    .with(signedInAs(editor))
-                    .contentType("application/json")
-                    .content("{\"dryRun\":true}"))
+        postRun(f, editor, "{\"dryRun\":true}")
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.status").value("QUEUED"))
             .andExpect(jsonPath("$.dryRun").value(true))
@@ -323,12 +302,9 @@ class RUN01RunsIT {
   @Test
   void get_includesSteps_andLintCounts() throws Exception {
     Fixture f = fixture();
-    GenerationRun run =
-        new GenerationRun(null, f.project().getId(), f.config().getId(), MANUAL, false, BASE);
-    run.setStatus(RUNNING);
+    GenerationRun run = run(f, RUNNING, MANUAL, 0);
     run.setCurrentStep(StepName.RUN_GENERATORS);
-    generationRuns.saveAndFlush(run);
-    String id = run.getId();
+    String id = generationRuns.saveAndFlush(run).getId();
     logLine(id, BASE, null, "run started");
     logLine(id, BASE, StepName.FETCH_SPEC, "fetching");
     logLine(id, BASE.plusMillis(2000), StepName.FETCH_SPEC, "fetched");
@@ -370,15 +346,9 @@ class RUN01RunsIT {
   @Test
   void viewerTrigger_403() throws Exception {
     Fixture f = fixture();
-    User viewer = user(2, "viewer");
-    member(f.org(), viewer, VIEWER);
+    User viewer = addMember(f.org(), 2, "viewer", VIEWER);
 
-    mvc.perform(
-            post(RUNS, f.project().getId())
-                .with(csrf())
-                .with(signedInAs(viewer))
-                .contentType("application/json")
-                .content("{\"dryRun\":false}"))
+    postRun(f, viewer, "{\"dryRun\":false}")
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("FORBIDDEN"));
 
@@ -392,13 +362,12 @@ class RUN01RunsIT {
   private Fixture fixture() {
     Organization acme =
         organizations.save(new Organization(null, null, "vcs-acme", "acme", "acme", false, null));
-    User owner = user(1, "owner");
-    member(acme, owner, ADMIN);
-    Project project = project(acme, owner, "acme/widgets");
+    User owner = addMember(acme, 1, "owner", ADMIN);
+    Project project = project(acme, "acme/widgets", owner);
     return new Fixture(acme, owner, project, config(project, 1, owner));
   }
 
-  private Project project(Organization org, User creator, String repo) {
+  private Project project(Organization org, String repo, User creator) {
     return projects.save(
         new Project(
             null, org.getId(), repo, "openapi.yaml", "main", OutputMode.APPEND, creator.getId()));
@@ -432,6 +401,30 @@ class RUN01RunsIT {
         .getContentAsString();
   }
 
+  /** Starts a manual run in the fixture's project, as its owner. */
+  private GenerationRun create(Fixture f) {
+    return runs.create(f.project().getId(), MANUAL, false, f.owner().getId(), null);
+  }
+
+  private ResultActions postRun(Fixture f, User caller, String body) throws Exception {
+    return mvc.perform(
+        post(RUNS, f.project().getId())
+            .with(csrf())
+            .with(signedInAs(caller))
+            .contentType("application/json")
+            .content(body));
+  }
+
+  private static void assertNotFound(ThrowingCallable call, String message) {
+    assertThatThrownBy(call)
+        .isInstanceOfSatisfying(
+            AppException.class,
+            e -> {
+              assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
+              assertThat(e.getMessage()).isEqualTo(message);
+            });
+  }
+
   private static List<String> ids(String page) {
     return JsonPath.read(page, "$.items[*].id");
   }
@@ -446,13 +439,14 @@ class RUN01RunsIT {
     logs.save(new GenerationRunLog(runId, seq, ts, "INFO", step, message));
   }
 
-  private User user(long githubId, String login) {
-    return users.save(
-        new User(null, githubId, login, null, null, "https://avatars.example.com/u/" + githubId));
-  }
-
-  private void member(Organization org, User user, Role role) {
+  /** Adds a user as a member of an org with the given role. */
+  private User addMember(Organization org, long githubId, String login, Role role) {
+    User user =
+        users.save(
+            new User(
+                null, githubId, login, null, null, "https://avatars.example.com/u/" + githubId));
     orgMembers.save(new OrgMember(org.getId(), user.getId(), role, RoleSource.SYNC));
+    return user;
   }
 
   private static RequestPostProcessor signedInAs(User user) {
