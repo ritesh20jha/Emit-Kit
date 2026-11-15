@@ -49,7 +49,8 @@ export interface ProjectsListProps {
 export function ProjectsList({ orgId, search, onSearchChange }: ProjectsListProps) {
   const query = useQuery(projectsQuery(orgId, search));
   const canCreate = usePermission("PROJECT_CREATE", orgId);
-  const filtered = search.q !== undefined || search.status !== undefined || search.cursor !== undefined;
+  const hasFilters = search.q !== undefined || search.status !== undefined;
+  const filtered = hasFilters || search.cursor !== undefined;
 
   // A new filter starts again from the first page, since a cursor only means something for the search it came from.
   const commitQuery = (q: string) => onSearchChange({ ...search, q: q || undefined, cursor: undefined }, { replace: true });
@@ -68,6 +69,8 @@ export function ProjectsList({ orgId, search, onSearchChange }: ProjectsListProp
         query={query}
         canCreate={canCreate}
         filtered={filtered}
+        hasFilters={hasFilters}
+        onClearFilters={() => onSearchChange({}, { replace: false })}
         onNext={(cursor) => onSearchChange({ ...search, cursor }, { replace: false })}
         onFirstPage={() => onSearchChange({ ...search, cursor: undefined }, { replace: false })}
         hasCursor={search.cursor !== undefined}
@@ -81,13 +84,26 @@ interface ResultsProps {
   query: UseQueryResult<PageProjectSummary, Error>;
   canCreate: boolean;
   filtered: boolean;
+  /** A search or status filter is set, as opposed to only a cursor. */
+  hasFilters: boolean;
   hasCursor: boolean;
+  onClearFilters: () => void;
   onNext: (cursor: string) => void;
   onFirstPage: () => void;
 }
 
 /** The four states of the list: loading, empty, error and no permission. Rows only show once there are some. */
-function Results({ orgId, query, canCreate, filtered, hasCursor, onNext, onFirstPage }: ResultsProps) {
+function Results({
+  orgId,
+  query,
+  canCreate,
+  filtered,
+  hasFilters,
+  hasCursor,
+  onClearFilters,
+  onNext,
+  onFirstPage,
+}: ResultsProps) {
   if (query.isError) {
     return <ListError error={query.error} onRetry={() => void query.refetch()} />;
   }
@@ -96,8 +112,26 @@ function Results({ orgId, query, canCreate, filtered, hasCursor, onNext, onFirst
   const nextCursor = page.nextCursor;
 
   if (page.items.length === 0) {
+    // Every empty result leads somewhere: clearing the filters, or going back to the first page.
+    if (filtered && hasFilters) {
+      return (
+        <EmptyState
+          icon={FolderGit2}
+          title="No projects match these filters."
+          description="Try another search, or choose a different status."
+          action={<Button variant="secondary" size="sm" onClick={onClearFilters}>Clear filters</Button>}
+        />
+      );
+    }
     if (filtered) {
-      return <EmptyState icon={FolderGit2} title="No projects match these filters." description="Try another search, or choose a different status." />;
+      return (
+        <EmptyState
+          icon={FolderGit2}
+          title="No projects on this page."
+          description="Go back to the first page to see the rest."
+          action={<Button variant="secondary" size="sm" onClick={onFirstPage}>First page</Button>}
+        />
+      );
     }
     return (
       <EmptyState

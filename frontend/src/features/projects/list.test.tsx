@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "@/app/router";
 import type { components } from "@/lib/api/generated/schema";
 import { defaultMe } from "@/test/msw/handlers/me";
@@ -85,19 +85,44 @@ beforeEach(() => {
   serve(filterProjects);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 test("search writes q to the URL and filters", async () => {
-  const user = userEvent.setup();
+  // Only setTimeout is faked, and the clock still moves with real time, so MSW and the router keep running.
+  // The debounce is then timed by hand: 250 ms is inside the window, 350 ms is past it.
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+  const user = userEvent.setup({ delay: null });
   const router = renderProjects("/orgs/org1");
   await screen.findByRole("link", { name: "acme/billing-api" });
   const navigate = vi.spyOn(router, "navigate");
+  const historyLength = router.history.length;
 
   await user.type(screen.getByRole("searchbox", { name: "Search projects" }), "billing");
 
+  // Typing alone writes nothing: the URL and the router stay as they were inside the window.
+  act(() => {
+    vi.advanceTimersByTime(250);
+  });
+  expect(navigate).not.toHaveBeenCalled();
+  expect(router.state.location.search).toEqual({});
+
+  // Once the box has been quiet for 300 ms, exactly one write lands, with the final value.
+  act(() => {
+    vi.advanceTimersByTime(100);
+  });
   await waitFor(() => expect(router.state.location.search).toEqual({ q: "billing" }));
+  expect(navigate).toHaveBeenCalledTimes(1);
   expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ replace: true }));
+  // replace: the write reuses the current history entry instead of adding one.
+  expect(router.history.length).toBe(historyLength);
+
+  // No partial query ("b", "bi", ...) ever reached the API: every q sent was the final value.
+  const sentQueries = new Set(requests.map((params) => params.get("q")).filter((value) => value !== null));
+  expect(sentQueries).toEqual(new Set(["billing"]));
   await waitFor(() => expect(screen.queryByRole("link", { name: "acme/payments-sdk" })).not.toBeInTheDocument());
   expect(screen.getByRole("link", { name: "acme/billing-api" })).toBeInTheDocument();
-  expect(requests.at(-1)?.get("q")).toBe("billing");
 });
 
 test("status filter survives reload", async () => {
@@ -170,6 +195,36 @@ test("a failed load shows the error code, and Retry loads the list again", async
   serve(filterProjects);
   await user.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("link", { name: "acme/billing-api" })).toBeInTheDocument();
+});
+
+test("a cursor page with no rows offers a way back to the first page", async () => {
+  const user = userEvent.setup();
+  serve((params) =>
+    params.get("cursor") === "c2" ? { items: [], nextCursor: null } : { items: [billing, payments], nextCursor: "c2" },
+  );
+  const router = renderProjects("/orgs/org1");
+  await screen.findByRole("link", { name: "acme/billing-api" });
+
+  await user.click(screen.getByRole("button", { name: "Next page" }));
+  expect(await screen.findByRole("heading", { name: "No projects on this page." })).toBeInTheDocument();
+  expect(router.state.location.search).toEqual({ cursor: "c2" });
+
+  await user.click(screen.getByRole("button", { name: "First page" }));
+  expect(await screen.findByRole("link", { name: "acme/billing-api" })).toBeInTheDocument();
+  expect(router.state.location.search).toEqual({});
+});
+
+test("a filter with no matches offers Clear filters, which returns to the unfiltered first page", async () => {
+  const user = userEvent.setup();
+  const router = renderProjects("/orgs/org1?status=CANCELLED");
+  expect(await screen.findByRole("heading", { name: "No projects match these filters." })).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Clear filters" }));
+
+  expect(await screen.findByRole("link", { name: "acme/billing-api" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "acme/payments-sdk" })).toBeInTheDocument();
+  expect(router.state.location.search).toEqual({});
+  expect(screen.getByRole("combobox", { name: "Last run status" })).toHaveTextContent("All statuses");
 });
 
 describe("no permission", () => {
