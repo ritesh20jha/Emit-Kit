@@ -14,6 +14,7 @@ import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Info;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import dev.emitkit.spec.parse.SpecParser;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,7 +32,18 @@ class JavaSdkGeneratorTest {
   private final JavaSdkGenerator generator = new JavaSdkGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "auth-schemes"})
+  @ValueSource(
+      strings = {
+        "petstore",
+        "auth-schemes",
+        "polymorphism",
+        "enums",
+        "pagination",
+        "no-operation-ids",
+        "reserved-words",
+        "deep-nesting",
+        "multi-tag"
+      })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
@@ -45,6 +57,54 @@ class JavaSdkGeneratorTest {
   @Test
   void idIsJAVA_SDK() {
     assertThat(generator.id()).isEqualTo(GeneratorId.JAVA_SDK);
+  }
+
+  @Test
+  void schemaNamedObjectIsRenamed() {
+    assertThat(relativePaths("reserved-words")).contains("model/Object_.java");
+  }
+
+  @Test
+  void inlineObjectGetsNestedRecord() {
+    // deep-nesting has no Order schema; its first inline object is Deep.level1.
+    assertThat(content("deep-nesting", SRC + "model/Deep.java"))
+        .contains("public record DeepLevel1(");
+  }
+
+  @Test
+  void discriminatedUnionIsASealedInterfaceAndAnUndiscriminatedUnionIsJsonNode() {
+    var files = generate("polymorphism", ".emitkit/", names("com.acme", "pets-sdk"));
+    assertThat(content(files, SRC + "model/Pet.java"))
+        .contains("public sealed interface Pet permits Cat, Dog {}");
+    assertThat(content(files, SRC + "model/Cat.java"))
+        .contains("public record Cat(", "implements Pet");
+    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+        .contains("public JsonNode listShapes()");
+  }
+
+  @Test
+  void integerEnumConstantsAreLegalIdentifiers() {
+    assertThat(content("enums", SRC + "model/Priority.java")).contains("_1(1),", "@JsonValue");
+  }
+
+  @Test
+  void eachTagGetsOneResourceAndAClientAccessor() {
+    var files = generate("multi-tag", ".emitkit/", names("com.acme", "pets-sdk"));
+    assertThat(content(files, SRC + "MultiTagClient.java"))
+        .contains(
+            "public PetsApi pets() {", "public StoreApi store() {", "public AdminApi admin() {");
+    assertThat(relativePaths("multi-tag"))
+        .contains("resources/PetsApi.java", "resources/StoreApi.java", "resources/AdminApi.java");
+  }
+
+  @Test
+  void tagsThatResolveToOneNameShareOneResource() {
+    // The tags "user" and "User" both resolve to UserApi, so their operations share it.
+    assertThat(relativePaths("reserved-words"))
+        .filteredOn(path -> path.equals("resources/UserApi.java"))
+        .hasSize(1);
+    assertThat(content("reserved-words", SRC + "resources/UserApi.java"))
+        .contains("public void class_()", "public void import_()", "public Object_ getItemIn(");
   }
 
   @Test
@@ -217,6 +277,97 @@ class JavaSdkGeneratorTest {
         .doesNotContain("+ authQuery +");
   }
 
+  @Test
+  void arrayQueryParamsAreSentCommaSeparatedAndSaySo() {
+    assertThat(content(generateFrom(ARRAYS), SRC + "resources/DefaultApi.java"))
+        .contains(
+            ".stream().map(item -> String.valueOf(item)).collect(Collectors.joining(\",\"))",
+            ".stream().map(item -> item).collect(Collectors.joining(\",\"))",
+            "Array query parameters are sent comma-separated.")
+        .doesNotContain("String.valueOf(ids)");
+  }
+
+  @Test
+  void parametersAndOperationsNamedLikeGeneratedCodeGetAnUnderscore() {
+    assertThat(content(generateFrom(SHADOWING), SRC + "resources/DefaultApi.java"))
+        .contains(
+            "public String segment_(String client_, String query_, String options_, "
+                + "String response_, String body, SegmentOptions options) {",
+            "\"/segment/\" + segment(client_)",
+            "String body_");
+  }
+
+  @Test
+  void schemasThatNormalizeToOneTypeAreRejected() {
+    assertThatThrownBy(() -> generateFrom(COLLIDING_SCHEMAS))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContainingAll("user_item", "UserItem");
+  }
+
+  @Test
+  void propertiesThatNormalizeToOneComponentAreRejected() {
+    assertThatThrownBy(() -> generateFrom(COLLIDING_PROPERTIES))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContainingAll("user_id", "userId");
+  }
+
+  private static final String ARRAYS =
+      """
+      openapi: 3.0.3
+      info: {title: Arrays, version: 1.0.0}
+      paths:
+        /items:
+          get:
+            operationId: listItems
+            parameters:
+              - {name: ids, in: query, required: true, schema: {type: array, items: {type: integer}}}
+              - {name: tags, in: query, schema: {type: array, items: {type: string}}}
+            responses: {'200': {description: ok}}
+      """;
+
+  private static final String SHADOWING =
+      """
+      openapi: 3.0.3
+      info: {title: Shadowing, version: 1.0.0}
+      paths:
+        /segment/{client}:
+          post:
+            operationId: segment
+            parameters:
+              - {name: client, in: path, required: true, schema: {type: string}}
+              - {name: query, in: query, required: true, schema: {type: string}}
+              - {name: options, in: query, required: true, schema: {type: string}}
+              - {name: response, in: query, required: true, schema: {type: string}}
+              - {name: body, in: query, schema: {type: string}}
+            requestBody: {required: true, content: {application/json: {schema: {type: string}}}}
+            responses: {'200': {description: ok, content: {application/json: {schema: {type: string}}}}}
+      """;
+
+  private static final String COLLIDING_SCHEMAS =
+      """
+      openapi: 3.0.3
+      info: {title: Collide, version: 1.0.0}
+      paths: {}
+      components:
+        schemas:
+          user_item: {properties: {id: {type: string}}}
+          UserItem: {properties: {id: {type: string}}}
+      """;
+
+  private static final String COLLIDING_PROPERTIES =
+      """
+      openapi: 3.0.3
+      info: {title: Collide, version: 1.0.0}
+      paths: {}
+      components: {schemas: {Account: {properties: {user_id: {type: string}, userId: {type: string}}}}}
+      """;
+
+  private List<GeneratedFile> generateFrom(String yaml) {
+    var result = new SpecParser().parse(yaml);
+    assertThat(result.errors()).isEmpty();
+    return generate(result.model(), ".emitkit/", names("com.acme", "pets-sdk"));
+  }
+
   private static String missingBaseUrl(String advice) {
     return "throw new IllegalStateException(\"PetstoreClient: baseUrl is required. "
         + advice
@@ -259,6 +410,19 @@ class JavaSdkGeneratorTest {
 
   private static String content(List<GeneratedFile> files, String path) {
     return files.stream().filter(f -> f.path().equals(path)).findFirst().orElseThrow().content();
+  }
+
+  private String content(String fixture, String path) {
+    return content(generate(fixture, ".emitkit/", names("com.acme", "pets-sdk")), path);
+  }
+
+  /** Paths under the package root, such as {@code model/Pet.java}. */
+  private List<String> relativePaths(String fixture) {
+    return generate(fixture, ".emitkit/", names("com.acme", "pets-sdk")).stream()
+        .map(GeneratedFile::path)
+        .filter(path -> path.startsWith(SRC))
+        .map(path -> path.substring(SRC.length()))
+        .toList();
   }
 
   private List<GeneratedFile> generate(String fixture, String outputDir, PackageNames names) {
