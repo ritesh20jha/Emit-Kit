@@ -13,4 +13,7 @@ public interface RunArtifactRepository extends JpaRepository<RunArtifact, String
 
   /** Artifacts created before {@code cutoff}, for the 30-day retention job. */
   List<RunArtifact> findByCreatedAtBefore(Instant cutoff);
+
+  /** Up to 100 artifacts created before {@code cutoff}, so retention can delete them in batches. */
+  List<RunArtifact> findTop100ByCreatedAtBefore(Instant cutoff);
 }

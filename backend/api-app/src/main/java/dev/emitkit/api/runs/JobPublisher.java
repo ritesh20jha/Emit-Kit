@@ -78,8 +78,7 @@ class JobPublisher {
         runs.findById(runId)
             .ifPresent(run -> {
               run.setStatus(RunStatus.FAILED);
-              run.setFailureCode(ErrorCode.INTERNAL.name());
-              run.setFailureMessage(QUEUE_FAILURE_MESSAGE);
+              run.setFailure(ErrorCode.INTERNAL.name(), QUEUE_FAILURE_MESSAGE);
               run.setFinishedAt(Instant.now());
             }));
   }

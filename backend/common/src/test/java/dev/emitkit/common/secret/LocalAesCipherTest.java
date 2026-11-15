@@ -43,6 +43,19 @@ class LocalAesCipherTest {
   }
 
   @Test
+  void rewrapBatch_returnsInputUnchanged() {
+    var c = new LocalAesCipher();
+    String ct = c.encrypt("x", ctx);
+
+    assertThat(c.rewrapBatch(List.of(new CipherItem(ct, ctx)))).containsExactly(ct);
+  }
+
+  @Test
+  void latestKeyVersion_isOne() {
+    assertThat(new LocalAesCipher().latestKeyVersion()).isOne();
+  }
+
+  @Test
   void encrypt_usesRandomIv_soSamePlaintextGivesDifferentCiphertexts() {
     var c = new LocalAesCipher();
     assertThat(c.encrypt("x", ctx)).isNotEqualTo(c.encrypt("x", ctx));

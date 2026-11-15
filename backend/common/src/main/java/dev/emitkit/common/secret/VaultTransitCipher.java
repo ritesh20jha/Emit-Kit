@@ -10,6 +10,7 @@ import org.springframework.vault.core.VaultTransitOperations;
 import org.springframework.vault.support.Ciphertext;
 import org.springframework.vault.support.Plaintext;
 import org.springframework.vault.support.VaultDecryptionResult;
+import org.springframework.vault.support.VaultEncryptionResult;
 import org.springframework.vault.support.VaultTransitContext;
 import org.springframework.web.client.RestClientException;
 
@@ -73,6 +74,33 @@ public final class VaultTransitCipher implements SecretCipher {
     return results.stream().map(VaultTransitCipher::plaintextOf).toList();
   }
 
+  @Override
+  public int latestKeyVersion() {
+    try {
+      return ops.getKey(key).getLatestVersion();
+    } catch (VaultException | RestClientException e) {
+      throw translate(e);
+    }
+  }
+
+  @Override
+  public List<String> rewrapBatch(List<CipherItem> items) {
+    if (items.isEmpty()) {
+      return List.of();
+    }
+    List<Ciphertext> batch =
+        items.stream()
+            .map(item -> Ciphertext.of(item.ciphertext()).with(transitContext(item.ctx())))
+            .toList();
+    List<VaultEncryptionResult> results;
+    try {
+      results = ops.rewrap(key, batch);
+    } catch (VaultException | RestClientException e) {
+      throw translate(e);
+    }
+    return results.stream().map(VaultTransitCipher::ciphertextOf).toList();
+  }
+
   private static VaultTransitContext transitContext(SecretContext ctx) {
     return VaultTransitContext.builder().context(ctx.bytes()).build();
   }
@@ -83,6 +111,14 @@ public final class VaultTransitCipher implements SecretCipher {
           ErrorCode.INTERNAL, "secret decryption failed", Map.of(), result.getCause());
     }
     return result.getAsString();
+  }
+
+  private static String ciphertextOf(VaultEncryptionResult result) {
+    if (!result.isSuccessful()) {
+      throw new AppException(
+          ErrorCode.INTERNAL, "secret rewrap failed", Map.of(), result.getCause());
+    }
+    return result.get().getCiphertext();
   }
 
   /**

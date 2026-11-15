@@ -33,4 +33,22 @@ public interface SecretCipher {
    *     its context
    */
   List<String> decryptBatch(List<CipherItem> items);
+
+  /**
+   * The key version that new encryptions use. Ciphertexts with a lower version can be re-wrapped.
+   *
+   * @throws SecretBackendException if the secret backend is unreachable, sealed or failing
+   */
+  int latestKeyVersion();
+
+  /**
+   * Re-encrypts ciphertexts under the latest key version, without changing their plaintexts. The
+   * binding to each item's {@link SecretContext} is kept.
+   *
+   * @return the new ciphertexts in the same order as {@code items}; empty if {@code items} is empty
+   * @throws SecretBackendException if the secret backend is unreachable, sealed or failing
+   * @throws dev.emitkit.common.error.AppException with {@code INTERNAL} if any item does not match
+   *     its context
+   */
+  List<String> rewrapBatch(List<CipherItem> items);
 }

@@ -60,6 +60,18 @@ class VaultTransitCipherIT {
   }
 
   @Test
+  void rewrapBatch_itemFailure_isInternalNotBackendFailure() {
+    List<CipherItem> items = List.of(new CipherItem(cipher.encrypt("s3cret", ctx), row("B")));
+
+    assertInternal(() -> cipher.rewrapBatch(items));
+  }
+
+  @Test
+  void latestKeyVersion_isOneBeforeAnyRotation() {
+    assertThat(cipher.latestKeyVersion()).isEqualTo(1);
+  }
+
+  @Test
   void vaultDown_throwsSecretBackendException() {
     VaultTransitCipher down = stoppedCipher();
 
