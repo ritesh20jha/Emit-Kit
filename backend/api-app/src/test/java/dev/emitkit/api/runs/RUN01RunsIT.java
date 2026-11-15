@@ -67,11 +67,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.core.AmqpAdmin;
-import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Declarables;
-import org.springframework.amqp.core.DirectExchange;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -105,18 +100,6 @@ class RUN01RunsIT {
     @Bean
     MockMvcBuilderCustomizer securityMockMvc() {
       return builder -> builder.apply(springSecurity());
-    }
-  }
-
-  /** The API only publishes; the test declares the jobs queue it reads back. */
-  @TestConfiguration(proxyBeanMethods = false)
-  static class JobTopology {
-    @Bean
-    Declarables jobTopology() {
-      DirectExchange exchange = new DirectExchange(Queues.JOBS_EXCHANGE);
-      Queue queue = QueueBuilder.durable(Queues.JOBS_QUEUE).build();
-      return new Declarables(
-          exchange, queue, BindingBuilder.bind(queue).to(exchange).with(Queues.JOBS_ROUTING_KEY));
     }
   }
 
@@ -319,28 +302,35 @@ class RUN01RunsIT {
     lintResults.save(new LintResult(null, id, "rule-b", Severity.ERROR, "$.info", "bad info"));
     lintResults.save(new LintResult(null, id, "rule-c", Severity.WARNING, "$.tags", "odd tag"));
 
-    String body =
-        mvc.perform(get("/api/v1/runs/{runId}", id).with(signedInAs(f.owner())))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.id").value(id))
-            .andExpect(jsonPath("$.status").value("RUNNING"))
-            .andExpect(jsonPath("$.currentStep").value("RUN_GENERATORS"))
-            .andExpect(jsonPath("$.steps[0].name").value("FETCH_SPEC"))
-            .andExpect(jsonPath("$.steps[0].durationMs").value(2000))
-            .andExpect(jsonPath("$.steps[1].durationMs").value(500))
-            .andExpect(jsonPath("$.steps[7].durationMs").doesNotExist())
-            .andExpect(jsonPath("$.lint.errors").value(2))
-            .andExpect(jsonPath("$.lint.warnings").value(1))
-            .andExpect(jsonPath("$.lint.infos").value(0))
-            .andExpect(jsonPath("$.approval").doesNotExist())
-            .andExpect(jsonPath("$.artifactAvailable").value(false))
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    assertThat(JsonPath.<List<String>>read(body, "$.steps[*].status"))
-        .containsExactly(
-            "DONE", "DONE", "DONE", "DONE", "DONE", "DONE", "RUNNING", "PENDING", "PENDING",
-            "PENDING", "PENDING");
+    mvc.perform(get("/api/v1/runs/{runId}", id).with(signedInAs(f.owner())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(id))
+        .andExpect(jsonPath("$.status").value("RUNNING"))
+        .andExpect(jsonPath("$.currentStep").value("RUN_GENERATORS"))
+        .andExpect(jsonPath("$.steps[0].name").value("FETCH_SPEC"))
+        .andExpect(jsonPath("$.steps[0].durationMs").value(2000))
+        .andExpect(jsonPath("$.steps[1].durationMs").value(500))
+        .andExpect(jsonPath("$.steps[7].durationMs").doesNotExist())
+        .andExpect(jsonPath("$.lint.errors").value(2))
+        .andExpect(jsonPath("$.lint.warnings").value(1))
+        .andExpect(jsonPath("$.lint.infos").value(0))
+        .andExpect(jsonPath("$.approval").doesNotExist())
+        .andExpect(jsonPath("$.artifactAvailable").value(false));
+  }
+
+  @Test
+  void getRun_nonMemberAndUnknownRun_getTheSameNotFound() throws Exception {
+    Fixture f = fixture();
+    GenerationRun run = run(f, QUEUED, MANUAL, 1);
+    User stranger =
+        users.save(new User(null, 9, "stranger", null, null, "https://avatars.example.com/u/9"));
+
+    for (String id : List.of(run.getId(), "01MISSINGRUN00000000000000")) {
+      mvc.perform(get("/api/v1/runs/{runId}", id).with(signedInAs(stranger)))
+          .andExpect(status().isNotFound())
+          .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+          .andExpect(jsonPath("$.detail").value("run not found"));
+    }
   }
 
   @Test

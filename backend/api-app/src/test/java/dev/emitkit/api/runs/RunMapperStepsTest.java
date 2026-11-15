@@ -37,20 +37,23 @@ class RunMapperStepsTest {
 
   /**
    * Columns: run status, current step, logged steps ("ALL" = every step before the current one,
-   * "NONE" = no step), then the expected state of all eleven steps in pipeline order.
+   * "NONE" = no step), dry run, then the expected state of all eleven steps in pipeline order.
    */
-  @ParameterizedTest(name = "{0} at {1}, logged {2}")
+  @ParameterizedTest(name = "{0} at {1}, logged {2}, dryRun {3}")
   @CsvSource(
       delimiter = '|',
       value = {
-        "RUNNING | RUN_GENERATORS | FETCH_SPEC,PARSE_SPEC | DONE,DONE,SKIPPED,SKIPPED,SKIPPED,SKIPPED,RUNNING,PENDING,PENDING,PENDING,PENDING",
-        "FAILED | RUN_GENERATORS | ALL | DONE,DONE,DONE,DONE,DONE,DONE,FAILED,PENDING,PENDING,PENDING,PENDING",
-        "CANCELLED | RUN_GENERATORS | ALL | DONE,DONE,DONE,DONE,DONE,DONE,FAILED,PENDING,PENDING,PENDING,PENDING",
-        "SUCCESS | FINALIZE | NONE | DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE",
-        "QUEUED | | NONE | PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING"
+        "RUNNING | RUN_GENERATORS | FETCH_SPEC,PARSE_SPEC | false | DONE,DONE,SKIPPED,SKIPPED,SKIPPED,SKIPPED,RUNNING,PENDING,PENDING,PENDING,PENDING",
+        "RUNNING | RUN_GENERATORS | ALL | false | DONE,DONE,DONE,DONE,DONE,DONE,RUNNING,PENDING,PENDING,PENDING,PENDING",
+        "FAILED | RUN_GENERATORS | ALL | false | DONE,DONE,DONE,DONE,DONE,DONE,FAILED,PENDING,PENDING,PENDING,PENDING",
+        "CANCELLED | RUN_GENERATORS | ALL | false | DONE,DONE,DONE,DONE,DONE,DONE,FAILED,PENDING,PENDING,PENDING,PENDING",
+        "SUCCESS | FINALIZE | NONE | false | DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE",
+        "SUCCESS | FINALIZE | NONE | true | DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,DONE,SKIPPED,DONE",
+        "QUEUED | | NONE | false | PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING,PENDING"
       })
-  void stepStates(RunStatus status, StepName current, String logged, String expected) {
-    GenerationRun run = new GenerationRun(null, "project", "config", RunTrigger.MANUAL, false, T0);
+  void stepStates(
+      RunStatus status, StepName current, String logged, boolean dryRun, String expected) {
+    GenerationRun run = new GenerationRun(null, "project", "config", RunTrigger.MANUAL, dryRun, T0);
     run.setStatus(status);
     run.setCurrentStep(current);
     when(logs.findStepSpans(run.getId())).thenReturn(spans(logged, current));

@@ -7,6 +7,7 @@ import dev.emitkit.common.messaging.Queues;
 import dev.emitkit.domain.GenerationRunRepository;
 import dev.emitkit.domain.RunStatus;
 import java.time.Instant;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -62,8 +63,13 @@ class JobPublisher {
           Queues.JOBS_EXCHANGE, Queues.JOBS_ROUTING_KEY, new GenerationJob(runId, 0));
     } catch (RuntimeException e) {
       LOG.error("Could not publish generation job for run {}", runId, e);
-      markFailed(runId);
-      throw new AppException(ErrorCode.INTERNAL, QUEUE_FAILURE_MESSAGE);
+      try {
+        markFailed(runId);
+      } catch (RuntimeException markError) {
+        LOG.error("Could not mark run {} failed", runId, markError);
+        e.addSuppressed(markError);
+      }
+      throw new AppException(ErrorCode.INTERNAL, QUEUE_FAILURE_MESSAGE, Map.of(), e);
     }
   }
 

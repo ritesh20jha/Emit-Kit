@@ -97,15 +97,18 @@ class RunMapper {
           StepSpan span = spans.get(step);
           Long durationMs = span == null ? null : elapsedMs(span.first(), span.last());
           return new StepState(
-              step, stepStatus(run.getStatus(), step, currentIndex, span != null), durationMs);
+              step,
+              stepStatus(run.getStatus(), run.isDryRun(), step, currentIndex, span != null),
+              durationMs);
         })
         .toList();
   }
 
   private static StepStatus stepStatus(
-      RunStatus runStatus, StepName step, int currentIndex, boolean hasLogs) {
+      RunStatus runStatus, boolean dryRun, StepName step, int currentIndex, boolean hasLogs) {
     if (runStatus == RunStatus.SUCCESS) {
-      return StepStatus.DONE;
+      // A dry run generates and checks but never commits, so its commit step is skipped.
+      return dryRun && step == StepName.COMMIT_OUTPUT ? StepStatus.SKIPPED : StepStatus.DONE;
     }
     int index = step.ordinal();
     if (index < currentIndex) {

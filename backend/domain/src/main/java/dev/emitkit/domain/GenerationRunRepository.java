@@ -22,7 +22,16 @@ public interface GenerationRunRepository extends JpaRepository<GenerationRun, St
         projectId, RunStatus.SUCCESS);
   }
 
-  /** One page of a project's runs, newest first, with no filter. */
+  /**
+   * One page of a project's runs, newest first. Callers decode a client's token with {@link
+   * RunCursor#decode} first, so a malformed token surfaces as an {@link IllegalArgumentException}
+   * rather than a persistence exception.
+   *
+   * @param after the position just after the last run of the previous page, or {@code null} for the
+   *     first page
+   * @param limit the maximum number of runs to return
+   * @return at most {@code limit} runs, empty when there are no more
+   */
   default List<GenerationRun> findByProjectId(
       String projectId, @Nullable RunCursor after, int limit) {
     return findByProjectId(projectId, null, null, after, limit);

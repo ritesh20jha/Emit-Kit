@@ -71,7 +71,15 @@ public class RunController {
   @Operation(summary = "Read one run")
   public RunDetail getRun(@PathVariable("runId") String runId) {
     GenerationRun run = runs.find(runId);
-    projectAccess.require(run.getProjectId(), Permission.RUN_VIEW);
+    try {
+      projectAccess.require(run.getProjectId(), Permission.RUN_VIEW);
+    } catch (AppException e) {
+      // A non-member gets the same answer as an unknown run, so the run's existence stays hidden.
+      if (e.code() == ErrorCode.NOT_FOUND) {
+        throw new AppException(ErrorCode.NOT_FOUND, "run not found");
+      }
+      throw e;
+    }
     return runs.detail(run);
   }
 
