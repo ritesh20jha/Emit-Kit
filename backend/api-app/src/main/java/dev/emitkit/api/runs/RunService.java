@@ -15,10 +15,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Creates, lists and reads generation runs. {@link #create} does not check permissions: webhooks
- * and system triggers start runs too, and they have no user. The controller checks before it calls.
- */
+/** Creates, lists and reads runs. Callers check permissions; webhooks start runs without a user. */
 @Service
 public class RunService {
 
@@ -41,15 +38,7 @@ public class RunService {
     this.mapper = mapper;
   }
 
-  /**
-   * Queues a run and publishes its job once the transaction commits. The run uses the project's
-   * latest config, or, for a rerun of a parent run, the config that parent used.
-   *
-   * @param userId the user who started the run, or null for a webhook or system trigger
-   * @param parentRunId the run this one reruns, or null
-   * @throws AppException NOT_FOUND when the project has no config, or the parent run is missing or
-   *     belongs to another project; INTERNAL when the job cannot be published
-   */
+  /** Queues a run on the project's latest config, or on the parent's config for a rerun. */
   @Transactional
   public GenerationRun create(
       String projectId,
@@ -67,15 +56,7 @@ public class RunService {
     return run;
   }
 
-  /**
-   * One page of a project's runs, newest first.
-   *
-   * @param status only runs with this status, or null for any
-   * @param trigger only runs started by this trigger, or null for any
-   * @param cursor the cursor from the previous page, or null for the first page
-   * @param limit the page size, from 1 to {@link #MAX_LIMIT}; null for {@link #DEFAULT_LIMIT}
-   * @throws AppException VALIDATION_FAILED for a bad limit or cursor
-   */
+  /** One page of a project's runs, newest first. A null status, trigger or limit is no filter. */
   @Transactional(readOnly = true)
   public Page<RunSummary> list(
       String projectId,
@@ -89,29 +70,23 @@ public class RunService {
           ErrorCode.VALIDATION_FAILED, "limit must be between 1 and " + MAX_LIMIT);
     }
     RunCursor after = cursor == null ? null : decodeCursor(cursor);
-    // One row past the page tells whether another page exists, so no empty last page is offered.
+    // One extra row tells whether another page exists.
     List<GenerationRun> found = runs.findByProjectId(projectId, status, trigger, after, size + 1);
-    if (found.size() <= size) {
-      return new Page<>(found.stream().map(mapper::toSummary).toList(), null);
-    }
-    List<GenerationRun> page = found.subList(0, size);
-    GenerationRun last = page.getLast();
-    String next = RunCursor.encode(last.getCreatedAt(), last.getId());
+    boolean more = found.size() > size;
+    List<GenerationRun> page = more ? found.subList(0, size) : found;
+    String next =
+        more ? RunCursor.encode(page.getLast().getCreatedAt(), page.getLast().getId()) : null;
     return new Page<>(page.stream().map(mapper::toSummary).toList(), next);
   }
 
-  /**
-   * The run with this id. The caller checks the permission on its project before it reads the run.
-   *
-   * @throws AppException NOT_FOUND when there is no such run
-   */
+  /** The run with this id, or NOT_FOUND. The caller checks the permission on its project. */
   @Transactional(readOnly = true)
   public GenerationRun find(String runId) {
     return runs.findById(runId)
         .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "run not found"));
   }
 
-  /** The full view of a run: steps, lint counts, approval and artifact availability. */
+  /** The full view of a run. */
   public RunDetail detail(GenerationRun run) {
     return mapper.toDetail(run);
   }

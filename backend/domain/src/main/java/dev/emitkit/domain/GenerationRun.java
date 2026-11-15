@@ -246,10 +246,6 @@ public class GenerationRun extends BaseEntity {
     return startedAt;
   }
 
-  public void setStartedAt(Instant startedAt) {
-    this.startedAt = startedAt;
-  }
-
   public Instant getFinishedAt() {
     return finishedAt;
   }

@@ -6,14 +6,11 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Sends job messages as JSON, the format the worker's listener reads. The API only publishes, so it
- * declares no queues; the worker owns the topology.
- */
+/** Sends job messages as JSON, the format the worker reads. The worker owns the topology. */
 @Configuration(proxyBeanMethods = false)
 class RabbitConfig {
 
-  /** The shared message types are the only classes the worker will deserialize, as on its side. */
+  /** Trusts the shared message types only, as the worker does. */
   @Bean
   MessageConverter jsonMessageConverter() {
     return new JacksonJsonMessageConverter(Queues.class.getPackageName());

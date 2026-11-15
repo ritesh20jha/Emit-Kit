@@ -106,10 +106,7 @@ class RUN01RunsIT {
     }
   }
 
-  /**
-   * The API only publishes jobs; the worker declares the topology. The test declares the jobs queue
-   * it reads back.
-   */
+  /** The API only publishes; the test declares the jobs queue it reads back. */
   @TestConfiguration(proxyBeanMethods = false)
   static class JobTopology {
     @Bean
@@ -151,7 +148,8 @@ class RUN01RunsIT {
     amqp.purgeQueue(Queues.JOBS_QUEUE, false);
     logs.deleteAll();
     lintResults.deleteAll();
-    generationRuns.deleteAll();
+    // One statement, so a rerun row and its parent are deleted together.
+    generationRuns.deleteAllInBatch();
     configs.deleteAll();
     projects.deleteAll();
     orgMembers.deleteAll();
@@ -214,6 +212,62 @@ class RUN01RunsIT {
   }
 
   @Test
+  void create_usesLatestConfig() {
+    Fixture f = fixture();
+    ProjectConfig latest = config(f.project(), 2, f.owner());
+
+    GenerationRun run = runs.create(f.project().getId(), MANUAL, false, f.owner().getId(), null);
+
+    assertThat(run.getConfigId()).isEqualTo(latest.getId());
+  }
+
+  @Test
+  void rerun_usesParentConfig_notLatest() {
+    Fixture f = fixture();
+    GenerationRun parent = run(f, SUCCESS, MANUAL, 1);
+    config(f.project(), 2, f.owner());
+
+    GenerationRun rerun =
+        runs.create(f.project().getId(), RERUN, false, f.owner().getId(), parent.getId());
+
+    assertThat(rerun.getConfigId()).isEqualTo(f.config().getId());
+    assertThat(rerun.getParentRunId()).isEqualTo(parent.getId());
+  }
+
+  @Test
+  void rerun_parentFromAnotherProject_isNotFound() {
+    Fixture f = fixture();
+    Project other = project(f.org(), f.owner(), "acme/gadgets");
+    ProjectConfig otherConfig = config(other, 1, f.owner());
+    GenerationRun parent =
+        generationRuns.saveAndFlush(
+            new GenerationRun(null, other.getId(), otherConfig.getId(), MANUAL, false, BASE));
+
+    assertThatThrownBy(
+            () -> runs.create(f.project().getId(), RERUN, false, f.owner().getId(), parent.getId()))
+        .isInstanceOfSatisfying(
+            AppException.class,
+            e -> {
+              assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
+              assertThat(e.getMessage()).isEqualTo("parent run not found");
+            });
+  }
+
+  @Test
+  void create_projectWithoutConfig_isNotFound() {
+    Fixture f = fixture();
+    Project bare = project(f.org(), f.owner(), "acme/gadgets");
+
+    assertThatThrownBy(() -> runs.create(bare.getId(), MANUAL, false, f.owner().getId(), null))
+        .isInstanceOfSatisfying(
+            AppException.class,
+            e -> {
+              assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
+              assertThat(e.getMessage()).isEqualTo("project has no config");
+            });
+  }
+
+  @Test
   void startRun_viaEndpoint_returns201AndEnqueues() throws Exception {
     Fixture f = fixture();
     User editor = user(2, "editor");
@@ -258,13 +312,11 @@ class RUN01RunsIT {
     run(f, QUEUED, RERUN, 9);
 
     String first = listRuns(f, "status=QUEUED&trigger=MANUAL&limit=2");
-    assertThat(JsonPath.<List<String>>read(first, "$.items[*].id"))
-        .containsExactly(m10.getId(), m8.getId());
+    assertThat(ids(first)).containsExactly(m10.getId(), m8.getId());
     String second = listRuns(f, "status=QUEUED&trigger=MANUAL&limit=2&cursor=" + nextCursor(first));
-    assertThat(JsonPath.<List<String>>read(second, "$.items[*].id"))
-        .containsExactly(m6.getId(), m4.getId());
+    assertThat(ids(second)).containsExactly(m6.getId(), m4.getId());
     String third = listRuns(f, "status=QUEUED&trigger=MANUAL&limit=2&cursor=" + nextCursor(second));
-    assertThat(JsonPath.<List<String>>read(third, "$.items[*].id")).containsExactly(m2.getId());
+    assertThat(ids(third)).containsExactly(m2.getId());
     assertThat(JsonPath.<String>read(third, "$.nextCursor")).isNull();
   }
 
@@ -334,7 +386,7 @@ class RUN01RunsIT {
     assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
   }
 
-  /** A signed-in owner of an org, with one project that has a config. */
+  /** A signed-in owner of an org, with one project that has a config at version 1. */
   private record Fixture(Organization org, User owner, Project project, ProjectConfig config) {}
 
   private Fixture fixture() {
@@ -342,21 +394,20 @@ class RUN01RunsIT {
         organizations.save(new Organization(null, null, "vcs-acme", "acme", "acme", false, null));
     User owner = user(1, "owner");
     member(acme, owner, ADMIN);
-    Project project =
-        projects.save(
-            new Project(
-                null,
-                acme.getId(),
-                "acme/widgets",
-                "openapi.yaml",
-                "main",
-                OutputMode.APPEND,
-                owner.getId()));
-    ProjectConfig config =
-        configs.save(
-            new ProjectConfig(
-                null, project.getId(), 1, VersionStrategy.EMITKIT_MANAGED, owner.getId()));
-    return new Fixture(acme, owner, project, config);
+    Project project = project(acme, owner, "acme/widgets");
+    return new Fixture(acme, owner, project, config(project, 1, owner));
+  }
+
+  private Project project(Organization org, User creator, String repo) {
+    return projects.save(
+        new Project(
+            null, org.getId(), repo, "openapi.yaml", "main", OutputMode.APPEND, creator.getId()));
+  }
+
+  private ProjectConfig config(Project project, int version, User creator) {
+    return configs.save(
+        new ProjectConfig(
+            null, project.getId(), version, VersionStrategy.EMITKIT_MANAGED, creator.getId()));
   }
 
   /** A run created {@code second} seconds after {@link #BASE}, so the list order is known. */
@@ -379,6 +430,10 @@ class RUN01RunsIT {
         .andReturn()
         .getResponse()
         .getContentAsString();
+  }
+
+  private static List<String> ids(String page) {
+    return JsonPath.read(page, "$.items[*].id");
   }
 
   private static String nextCursor(String page) {

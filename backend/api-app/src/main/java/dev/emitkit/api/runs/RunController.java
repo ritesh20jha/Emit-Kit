@@ -26,10 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Runs: list and start them per project, then read, cancel, rerun or decide one. Cancel, rerun,
- * approval and lint are still stubs.
- */
+/** Runs: list, start and read them. Cancel, rerun, approval and lint are still stubs. */
 @RestController
 @Tag(name = "Runs", description = "Generation runs: start, read, cancel, rerun and approve them.")
 public class RunController {

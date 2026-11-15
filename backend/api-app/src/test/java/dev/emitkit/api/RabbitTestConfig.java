@@ -5,10 +5,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.testcontainers.rabbitmq.RabbitMQContainer;
 
-/**
- * Starts a throwaway RabbitMQ for the job publisher; Spring Boot wires its connection details. The
- * same image the worker's tests use.
- */
+/** Starts a throwaway RabbitMQ for the job publisher; Spring Boot wires its connection details. */
 @TestConfiguration(proxyBeanMethods = false)
 public class RabbitTestConfig {
 

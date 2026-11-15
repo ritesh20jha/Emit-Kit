@@ -18,14 +18,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Puts a run's job on the jobs queue once the transaction that created the run has committed, so a
- * worker never receives a job whose run is not yet visible. If the send fails, the run is marked
- * FAILED in its own transaction, because the creating transaction has already committed.
+ * Publishes a run's job after its creating transaction commits. A failed send marks the run FAILED.
  */
 @Component
 class JobPublisher {
 
-  static final String QUEUE_FAILURE_MESSAGE = "Could not queue run";
+  private static final String QUEUE_FAILURE_MESSAGE = "Could not queue run";
 
   private static final Logger LOG = LoggerFactory.getLogger(JobPublisher.class);
 
@@ -43,12 +41,7 @@ class JobPublisher {
     this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
-  /**
-   * Publishes the job for {@code runId} after the active transaction commits, or at once when no
-   * transaction is active. A rolled-back transaction publishes nothing.
-   *
-   * @throws AppException INTERNAL when the send fails; the run is then marked FAILED
-   */
+  /** Publishes after the active transaction commits, or at once when none is active. */
   void publishAfterCommit(String runId) {
     if (TransactionSynchronizationManager.isSynchronizationActive()) {
       TransactionSynchronizationManager.registerSynchronization(

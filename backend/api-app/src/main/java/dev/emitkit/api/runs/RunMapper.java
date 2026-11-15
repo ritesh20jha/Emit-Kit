@@ -67,14 +67,12 @@ class RunMapper {
         run.getTrigger(),
         run.isDryRun(),
         run.getCurrentStep(),
-        steps(run, spansByStep(runId)),
+        steps(run),
         run.getFailureCode(),
         run.getFailureMessage(),
         run.getCommitSha(),
         run.getSdkVersion(),
         run.getChangeType(),
-        // The diff is written by the worker's DIFF_SPEC step, which does not exist yet, so a run
-        // has no summary to read here.
         null,
         lintCounts(runId),
         approval(runId),
@@ -84,22 +82,14 @@ class RunMapper {
         run.getCreatedAt(),
         run.getStartedAt(),
         run.getFinishedAt(),
-        // A run's artifact is downloadable while its row exists. The download endpoint (RUN-04)
-        // reads the same row.
         artifacts.findByRunId(runId).isPresent());
   }
 
-  private Map<StepName, StepSpan> spansByStep(String runId) {
-    return logs.findStepSpans(runId).stream()
-        .collect(Collectors.toMap(StepSpan::step, Function.identity()));
-  }
-
-  /**
-   * One state per pipeline step, in pipeline order. Steps before the current one are DONE when they
-   * wrote log lines, otherwise SKIPPED. The current step is RUNNING, or FAILED when the run failed
-   * or was cancelled. A successful run has every step DONE.
-   */
-  private static List<StepState> steps(GenerationRun run, Map<StepName, StepSpan> spans) {
+  /** Steps before the current one are DONE with log lines, else SKIPPED. */
+  private List<StepState> steps(GenerationRun run) {
+    Map<StepName, StepSpan> spans =
+        logs.findStepSpans(run.getId()).stream()
+            .collect(Collectors.toMap(StepSpan::step, Function.identity()));
     StepName current = run.getCurrentStep();
     int currentIndex = current == null ? -1 : current.ordinal();
     return Arrays.stream(StepName.values())
@@ -122,9 +112,8 @@ class RunMapper {
       return hasLogs ? StepStatus.DONE : StepStatus.SKIPPED;
     }
     if (index == currentIndex) {
-      return runStatus == RunStatus.FAILED || runStatus == RunStatus.CANCELLED
-          ? StepStatus.FAILED
-          : StepStatus.RUNNING;
+      boolean stopped = runStatus == RunStatus.FAILED || runStatus == RunStatus.CANCELLED;
+      return stopped ? StepStatus.FAILED : StepStatus.RUNNING;
     }
     return StepStatus.PENDING;
   }
@@ -134,10 +123,11 @@ class RunMapper {
     int warnings = 0;
     int infos = 0;
     for (SeverityCount count : lintResults.countBySeverity(runId)) {
+      int n = Math.toIntExact(count.count());
       switch (count.severity()) {
-        case ERROR -> errors = Math.toIntExact(count.count());
-        case WARNING -> warnings = Math.toIntExact(count.count());
-        case INFO -> infos = Math.toIntExact(count.count());
+        case ERROR -> errors = n;
+        case WARNING -> warnings = n;
+        case INFO -> infos = n;
       }
     }
     return new LintCounts(errors, warnings, infos);
@@ -147,23 +137,16 @@ class RunMapper {
   private @Nullable ApprovalView approval(String runId) {
     return approvals
         .findByRunId(runId)
-        .map(approval ->
+        .map(a ->
             new ApprovalView(
-                approval.getDecision(),
-                loginOf(approval.getDecidedBy()),
-                approval.getComment(),
-                approval.getDecidedAt()))
+                a.getDecision(), loginOf(a.getDecidedBy()), a.getComment(), a.getDecidedAt()))
         .orElse(null);
   }
 
   private @Nullable String loginOf(@Nullable String userId) {
-    if (userId == null) {
-      return null;
-    }
-    return users.findById(userId).map(User::getLogin).orElse(null);
+    return userId == null ? null : users.findById(userId).map(User::getLogin).orElse(null);
   }
 
-  /** Milliseconds from {@code from} to {@code to}, or null while either end is still unknown. */
   private static @Nullable Long elapsedMs(@Nullable Instant from, @Nullable Instant to) {
     return from == null || to == null ? null : Duration.between(from, to).toMillis();
   }
