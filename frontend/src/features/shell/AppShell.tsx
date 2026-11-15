@@ -2,7 +2,17 @@ import { useRouter, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
 import { AppError } from "@/lib/api/appError";
 import { useMe } from "@/lib/auth/session";
-import { type FeedbackError, ErrorState, Skeleton, useMediaQuery } from "@/ui";
+import {
+  CommandPalette,
+  CommandRegistryProvider,
+  type FeedbackError,
+  ErrorState,
+  ShortcutsHelp,
+  ShortcutsProvider,
+  Skeleton,
+  useMediaQuery,
+} from "@/ui";
+import { AppCommands } from "./AppCommands";
 import { defaultOrgId, lastOrg } from "./lastOrg";
 import { MobileDrawer } from "./MobileDrawer";
 import { Sidebar } from "./Sidebar";
@@ -37,18 +47,26 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (!me) return <ShellSkeleton />;
   const nav = { orgs: me.orgs, currentOrgId: routeOrgId ?? defaultOrgId(me.orgs, lastOrg.get()) };
+  // The palette and shortcuts mount here, so every signed-in page gets them and the skeleton does not.
   return (
-    <div className="flex min-h-dvh">
-      {!isMobile && (
-        <aside className="w-56 shrink-0 border-r border-border">
-          <Sidebar {...nav} />
-        </aside>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar user={me} menu={isMobile ? <MobileDrawer {...nav} /> : undefined} />
-        <main className="flex-1 p-4">{children}</main>
-      </div>
-    </div>
+    <CommandRegistryProvider>
+      <ShortcutsProvider>
+        <AppCommands orgs={me.orgs} currentOrgId={nav.currentOrgId} />
+        <CommandPalette />
+        <ShortcutsHelp />
+        <div className="flex min-h-dvh">
+          {!isMobile && (
+            <aside className="w-56 shrink-0 border-r border-border">
+              <Sidebar {...nav} />
+            </aside>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <TopBar user={me} menu={isMobile ? <MobileDrawer {...nav} /> : undefined} />
+            <main className="flex-1 p-4">{children}</main>
+          </div>
+        </div>
+      </ShortcutsProvider>
+    </CommandRegistryProvider>
   );
 }
 
