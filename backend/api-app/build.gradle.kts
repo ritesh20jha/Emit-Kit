@@ -16,12 +16,17 @@ dependencies {
     implementation(libs.spring.boot.starter.session.data.redis)
     implementation(libs.spring.boot.starter.oauth2.client)
     implementation(libs.springdoc.openapi.webmvc)
+    implementation(libs.spring.boot.starter.amqp)
+    // spring-amqp marks Jackson optional, so the JSON converter needs it at runtime; its constructor
+    // overloads reference JsonMapper, so it is also needed at compile time.
+    implementation(libs.jackson.databind)
 
     testImplementation(libs.spring.boot.starter.webmvc.test)
     testImplementation(libs.spring.security.test)
     testImplementation(libs.spring.boot.testcontainers)
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.testcontainers.rabbitmq)
     testImplementation(libs.wiremock.standalone)
     testImplementation(testFixtures(project(":vcs")))
 }
