@@ -12,7 +12,9 @@ function OrgProjectsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
+    // Keyed by org: a switch changes only the params, and a pending search must not carry into the new org.
     <ProjectsList
+      key={orgId}
       orgId={orgId}
       search={search}
       onSearchChange={(next, { replace }) => void navigate({ search: next, replace })}

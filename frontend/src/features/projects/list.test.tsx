@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "@/app/router";
+import { parseProjectSearch } from "./schemas";
 import type { components } from "@/lib/api/generated/schema";
 import { defaultMe } from "@/test/msw/handlers/me";
 import { server } from "@/test/msw/server";
@@ -225,6 +226,60 @@ test("a filter with no matches offers Clear filters, which returns to the unfilt
   expect(screen.getByRole("link", { name: "acme/payments-sdk" })).toBeInTheDocument();
   expect(router.state.location.search).toEqual({});
   expect(screen.getByRole("combobox", { name: "Last run status" })).toHaveTextContent("All statuses");
+});
+
+test("while a filter or page loads, the list does not show stale results as current", async () => {
+  const user = userEvent.setup();
+  // While `gate` is set, list requests wait on it, so the test decides when each response lands.
+  let gate: Promise<void> | null = null;
+  server.use(
+    http.get(PROJECTS_PATH, async ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      requests.push(params);
+      if (gate) await gate;
+      // The unfiltered list has a second page, so a Next page button is on screen to check.
+      const page = filterProjects(params);
+      return HttpResponse.json(params.has("status") || params.has("q") ? page : { ...page, nextCursor: "c2" });
+    }),
+  );
+  renderProjects("/orgs/org1?status=CANCELLED");
+  expect(await screen.findByRole("heading", { name: "No projects match these filters." })).toBeInTheDocument();
+
+  // Clear filters: the empty filtered result is the placeholder while the unfiltered list loads. It must not read as "no projects".
+  let release = () => {};
+  gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await user.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(screen.getByText("Loading projects…")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "No projects yet." })).not.toBeInTheDocument();
+  gate = null;
+  release();
+  expect(await screen.findByRole("link", { name: "acme/billing-api" })).toBeInTheDocument();
+
+  // A filter change over non-empty rows: the old rows stay, dimmed and busy, and Next page is off until the new page lands.
+  gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await user.click(screen.getByRole("combobox", { name: "Last run status" }));
+  await user.click(await screen.findByRole("option", { name: "Failed" }));
+  expect(screen.getByRole("link", { name: "acme/billing-api" }).closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+  gate = null;
+  release();
+  await waitFor(() => expect(screen.queryByRole("link", { name: "acme/billing-api" })).not.toBeInTheDocument());
+  expect(screen.getByRole("link", { name: "acme/payments-sdk" }).closest("[aria-busy]")).toBeNull();
+});
+
+describe("parseProjectSearch", () => {
+  test("reads a numeric q or cursor back as text", () => {
+    expect(parseProjectSearch({ q: 2024 })).toEqual({ q: "2024" });
+    expect(parseProjectSearch({ cursor: 12 })).toEqual({ cursor: "12" });
+  });
+
+  test("drops empty and unknown values", () => {
+    expect(parseProjectSearch({ q: "", status: "NOPE", cursor: "" })).toEqual({});
+  });
 });
 
 describe("no permission", () => {

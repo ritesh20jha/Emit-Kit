@@ -4,8 +4,10 @@ import { FolderGit2, Plus } from "lucide-react";
 import { AppError } from "@/lib/api/appError";
 import type { components } from "@/lib/api/generated/schema";
 import { usePermission } from "@/lib/auth/permissions";
+import { cn } from "@/lib/utils/cn";
 import {
   Button,
+  buttonClasses,
   EmptyState,
   ErrorState,
   NoAccessState,
@@ -15,7 +17,6 @@ import {
   Skeleton,
   StatusPill,
 } from "@/ui";
-import { buttonClasses } from "@/ui/Button";
 import { type PageProjectSummary, projectsQuery } from "./api";
 import { ProjectFilters } from "./ProjectFilters";
 import type { ProjectSearch, RunStatus } from "./schemas";
@@ -109,6 +110,10 @@ function Results({
   }
   const page = query.data;
   if (!page) return <ListSkeleton />;
+  // Placeholder rows belong to the previous filter or page. They stay visible, dimmed and busy, until the response lands.
+  // An empty placeholder would read as the new result, so it shows the loading state instead.
+  const stale = query.isPlaceholderData;
+  if (stale && page.items.length === 0) return <ListSkeleton />;
   const nextCursor = page.nextCursor;
 
   if (page.items.length === 0) {
@@ -144,7 +149,7 @@ function Results({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div aria-busy={stale || undefined} className={cn("flex flex-col gap-3", stale && "opacity-60")}>
       <ResponsiveTable
         label="Projects"
         columns={COLUMNS}
@@ -155,12 +160,12 @@ function Results({
       {(hasCursor || nextCursor !== null) && (
         <div className="flex items-center justify-end gap-2">
           {hasCursor && (
-            <Button variant="ghost" size="sm" onClick={onFirstPage}>
+            <Button variant="ghost" size="sm" disabled={stale} onClick={onFirstPage}>
               First page
             </Button>
           )}
           {nextCursor !== null && (
-            <Button variant="secondary" size="sm" onClick={() => onNext(nextCursor)}>
+            <Button variant="secondary" size="sm" disabled={stale} onClick={() => onNext(nextCursor)}>
               Next page
             </Button>
           )}

@@ -1,6 +1,6 @@
 export { Badge, type BadgeProps, type BadgeVariant } from "./Badge";
 export { Breadcrumbs, type BreadcrumbItem, type BreadcrumbsProps } from "./Breadcrumbs";
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./Button";
+export { Button, type ButtonProps, type ButtonSize, type ButtonVariant, buttonClasses } from "./Button";
 export { Checkbox, type CheckboxProps } from "./Checkbox";
 export { CodeBlock, type CodeBlockProps } from "./CodeBlock";
 export { ConfirmDialog, type ConfirmDialogProps } from "./ConfirmDialog";

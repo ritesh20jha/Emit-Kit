@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Input, Select } from "@/ui";
 import { isRunStatus, RUN_STATUSES, type RunStatus } from "./schemas";
 
@@ -42,14 +42,16 @@ export function ProjectFilters({ q, status, onQueryCommit, onStatusChange }: Pro
     setText(q);
   }, [q]);
 
+  // Reads the latest callback without restarting the timer when the parent re-renders.
+  const commit = useEffectEvent(onQueryCommit);
   useEffect(() => {
     if (text === known.current) return;
     const timer = window.setTimeout(() => {
       known.current = text;
-      onQueryCommit(text);
+      commit(text);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [text, onQueryCommit]);
+  }, [text]);
 
   return (
     <div role="group" aria-label="Project filters" className="flex flex-wrap items-center gap-2">

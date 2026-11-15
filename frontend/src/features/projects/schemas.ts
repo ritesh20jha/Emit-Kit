@@ -24,11 +24,22 @@ export function isRunStatus(value: unknown): value is RunStatus {
   return typeof value === "string" && (RUN_STATUSES as readonly string[]).includes(value);
 }
 
-/** Reads the search params. Empty or unknown values are dropped, so a stale link still opens the list. */
+/**
+ * The router reads each search value as JSON, so a typed `?q=2024` arrives as the number 2024.
+ * Text values are read back as text, and empty ones are dropped.
+ */
+function asText(value: unknown): string | undefined {
+  const text = typeof value === "number" ? String(value) : value;
+  return typeof text === "string" && text !== "" ? text : undefined;
+}
+
+/** Reads the search params. Unknown values are dropped, so a stale link still opens the list. */
 export function parseProjectSearch(search: Record<string, unknown>): ProjectSearch {
   const result: ProjectSearch = {};
-  if (typeof search.q === "string" && search.q !== "") result.q = search.q;
+  const q = asText(search.q);
+  if (q !== undefined) result.q = q;
   if (isRunStatus(search.status)) result.status = search.status;
-  if (typeof search.cursor === "string" && search.cursor !== "") result.cursor = search.cursor;
+  const cursor = asText(search.cursor);
+  if (cursor !== undefined) result.cursor = cursor;
   return result;
 }
