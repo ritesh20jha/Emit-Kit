@@ -99,11 +99,12 @@ export function AppCommands({ orgs, currentOrgId }: AppCommandsProps) {
   const go = (to: string) => void navigate({ to: to as "/" });
   const runAndOpen = (dryRun: boolean) => {
     if (projectId === undefined) return;
-    startRun(projectId, dryRun)
-      .then((runId) => navigate({ to: `/runs/${runId}` as "/" }))
-      .catch((error: unknown) =>
+    // Only a failed start is reported. A rejected navigation must not claim the run did not start.
+    startRun(projectId, dryRun).then(
+      (runId) => navigate({ to: `/runs/${runId}` as "/" }),
+      (error: unknown) =>
         toast.error(error instanceof AppError ? error : { message: "The run could not start. Try again." }),
-      );
+    );
   };
 
   const commands: Command[] = [];

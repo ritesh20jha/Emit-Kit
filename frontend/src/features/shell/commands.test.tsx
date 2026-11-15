@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, useLocation } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import type { MockInstance } from "vitest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { components } from "@/lib/api/generated/schema";
 import { qk } from "@/lib/api/queryKeys";
 import type { Me } from "@/lib/auth/session";
 import { defaultMe } from "@/test/msw/handlers/me";
-import { ThemeProvider } from "@/ui";
+import { server } from "@/test/msw/server";
+import { ThemeProvider, Toaster } from "@/ui";
 import { AppShell } from "./AppShell";
 import { LAST_ORG_KEY } from "./lastOrg";
 
@@ -95,6 +97,7 @@ function Page() {
         <Outlet />
         <output data-testid="where">{useLocation().pathname}</output>
       </AppShell>
+      <Toaster />
     </ThemeProvider>
   );
 }
@@ -178,4 +181,66 @@ test("switch org lists the other orgs, not the current one", async () => {
   await user.click(screen.getByRole("option", { name: "Switch to Globex" }));
 
   await waitFor(() => expect(where()).toHaveTextContent("/orgs/org2"));
+});
+
+/** Answers the start-run POST for p1 with `status` and `body`, and returns the request bodies it received. */
+function stubStartRun(status: number, body: Record<string, unknown>) {
+  const bodies: unknown[] = [];
+  server.use(
+    http.post("/api/v1/projects/p1/runs", async ({ request }) => {
+      bodies.push(await request.json());
+      return HttpResponse.json(body, { status });
+    }),
+  );
+  return bodies;
+}
+
+async function chooseFromPalette(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.keyboard("{Control>}k{/Control}");
+  await user.click(await screen.findByRole("option", { name: label }));
+}
+
+test("Trigger run posts a live run and opens it", async () => {
+  const user = userEvent.setup();
+  const bodies = stubStartRun(201, { id: "r1" });
+  renderAt("/projects/p1", meWithRole("ADMIN"), seedProjectDetail);
+
+  await chooseFromPalette(user, "Trigger run");
+
+  await waitFor(() => expect(where()).toHaveTextContent("/runs/r1"));
+  expect(bodies).toEqual([{ dryRun: false }]);
+});
+
+test("Dry run posts a dry run and opens it", async () => {
+  const user = userEvent.setup();
+  const bodies = stubStartRun(201, { id: "r2" });
+  renderAt("/projects/p1", meWithRole("ADMIN"), seedProjectDetail);
+
+  await chooseFromPalette(user, "Dry run");
+
+  await waitFor(() => expect(where()).toHaveTextContent("/runs/r2"));
+  expect(bodies).toEqual([{ dryRun: true }]);
+});
+
+test("a failed start shows the API error and keeps the user on the page", async () => {
+  const user = userEvent.setup();
+  stubStartRun(403, { type: "about:blank", title: "Forbidden", status: 403, code: "FORBIDDEN" });
+  renderAt("/projects/p1", meWithRole("ADMIN"), seedProjectDetail);
+
+  await chooseFromPalette(user, "Trigger run");
+
+  expect(await screen.findByText("You don't have permission to do this.")).toBeInTheDocument();
+  expect(where()).toHaveTextContent(/^\/projects\/p1$/);
+});
+
+test("? opens the shortcut help, which lists g p for Projects", async () => {
+  const user = userEvent.setup();
+  renderAt("/orgs/org1", meWithRole("ADMIN"));
+
+  await user.keyboard("?");
+
+  const help = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+  const row = within(help).getByText("Projects").closest("li") as HTMLElement;
+  expect(within(row).getByText("g")).toBeInTheDocument();
+  expect(within(row).getByText("p")).toBeInTheDocument();
 });

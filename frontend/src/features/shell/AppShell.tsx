@@ -2,7 +2,16 @@ import { useRouter, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
 import { AppError } from "@/lib/api/appError";
 import { useMe } from "@/lib/auth/session";
-import { CommandPalette, CommandRegistryProvider, type FeedbackError, ErrorState, ShortcutsProvider, Skeleton, useMediaQuery } from "@/ui";
+import {
+  CommandPalette,
+  CommandRegistryProvider,
+  type FeedbackError,
+  ErrorState,
+  ShortcutsHelp,
+  ShortcutsProvider,
+  Skeleton,
+  useMediaQuery,
+} from "@/ui";
 import { AppCommands } from "./AppCommands";
 import { defaultOrgId, lastOrg } from "./lastOrg";
 import { MobileDrawer } from "./MobileDrawer";
@@ -44,6 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <ShortcutsProvider>
         <AppCommands orgs={me.orgs} currentOrgId={nav.currentOrgId} />
         <CommandPalette />
+        <ShortcutsHelp />
         <div className="flex min-h-dvh">
           {!isMobile && (
             <aside className="w-56 shrink-0 border-r border-border">
