@@ -135,6 +135,22 @@ class PRJ06LintDiffIT {
   }
 
   @Test
+  void lint_aliasBomb_returnsParseIssue() throws Exception {
+    // Each level holds two aliases of the level below; 20 levels would expand to over a million
+    // nodes.
+    var yaml = new StringBuilder("openapi: 3.0.3\ninfo: {title: T, version: \"1\"}\npaths: {}\n");
+    yaml.append("x-l0: &l0 {v: 1}\n");
+    for (int i = 1; i <= 20; i++) {
+      yaml.append("x-l%d: &l%d {a: *l%d, b: *l%d}\n".formatted(i, i, i - 1, i - 1));
+    }
+    lint(yaml.toString(), LINTER)
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].ruleId").value("spec-parse"))
+        .andExpect(jsonPath("$[0].severity").value("ERROR"));
+  }
+
+  @Test
   void lint_returnsLineNumbers() throws Exception {
     lint(LINE_SPEC, LINTER)
         .andExpect(status().isOk())
