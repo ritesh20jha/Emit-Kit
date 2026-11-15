@@ -36,8 +36,14 @@ final class JavaTypeRenderer {
   static final String JSON_TYPE_INFO = "com.fasterxml.jackson.annotation.JsonTypeInfo";
   static final String JSON_SUB_TYPES = "com.fasterxml.jackson.annotation.JsonSubTypes";
   static final String JSON_NODE = "com.fasterxml.jackson.databind.JsonNode";
+
   static final String LIST = "java.util.List";
   static final String MAP = "java.util.Map";
+
+  /** Methods every Java object has. A record component or operation with one gets a _. */
+  static final Set<String> OBJECT_METHODS =
+      Set.of(
+          "clone", "finalize", "getClass", "hashCode", "notify", "notifyAll", "toString", "wait");
 
   private static final String INDENT = "  ";
 
@@ -184,6 +190,9 @@ final class JavaTypeRenderer {
       boolean required = props.required().contains(raw);
       String type = type(entry.getValue(), required, ownerName + java.type(raw), scope);
       String member = java.member(raw);
+      if (OBJECT_METHODS.contains(member)) {
+        member = member + "_";
+      }
       claim(rawByMember, member, raw, "properties of " + ownerName);
       if (json) {
         scope.imports.add(JSON_PROPERTY);
@@ -238,8 +247,8 @@ final class JavaTypeRenderer {
 
   private String objectType(Schema schema, String hint, Scope scope) {
     if (hint == null || !isRecord(schema)) {
-      scope.imports.add(MAP);
       Schema extra = schema instanceof ObjectSchema o ? o.additionalProperties() : null;
+      scope.imports.add(MAP);
       return "Map<String, " + (extra == null ? "Object" : type(extra, false, hint, scope)) + ">";
     }
     Scope child = scope.nestedScope();
