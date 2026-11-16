@@ -89,6 +89,13 @@ public class ProjectService {
    * default branch, then creates the project as {@link #createExisting} does. The repository is
    * private unless the request asks for PUBLIC: a null visibility means private.
    *
+   * <p>{@code request.defaultBranch()} is ignored: the project uses the created repository's
+   * default branch.
+   *
+   * <p>If the spec write or a later step fails, the repository stays on the host, because {@link
+   * VcsClient} cannot delete repositories. A retry with the same name then fails with CONFLICT
+   * "Repository name is taken" until the repository is deleted by hand.
+   *
    * @throws AppException as for {@link #createExisting}; CONFLICT with "Repository name is taken"
    *     when the VCS host reports that the name is in use
    */
