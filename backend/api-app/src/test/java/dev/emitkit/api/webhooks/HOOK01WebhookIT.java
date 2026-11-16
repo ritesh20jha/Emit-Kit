@@ -76,15 +76,27 @@ class HOOK01WebhookIT {
     }
   }
 
-  /** Records the projects it is asked to handle, and answers as the HOOK-02 stub does. */
+  /**
+   * Records the projects it is asked to handle, and answers as the HOOK-02 stub does. It can be
+   * told to fail its next call, as a dispatcher whose work broke would.
+   */
   static class RecordingDispatcher extends WebhookDispatcher {
 
     private final List<Project> calls = new ArrayList<>();
+    private boolean failNextCall;
 
     @Override
     public WebhookOutcome handle(Project project, WebhookEvent event) {
       calls.add(project);
+      if (failNextCall) {
+        failNextCall = false;
+        throw new IllegalStateException("dispatcher is down");
+      }
       return super.handle(project, event);
+    }
+
+    void failNextCall() {
+      failNextCall = true;
     }
 
     List<Project> calls() {
@@ -93,6 +105,7 @@ class HOOK01WebhookIT {
 
     void clear() {
       calls.clear();
+      failNextCall = false;
     }
   }
 
@@ -192,6 +205,56 @@ class HOOK01WebhookIT {
     assertThat(dispatcher.calls()).isEmpty();
   }
 
+  @Test
+  void dispatchFailure_releasesClaim() throws Exception {
+    project(FIRST_SECRET);
+    Delivery d1 = delivery("push", FIRST_SECRET);
+    dispatcher.failNextCall();
+
+    Response failed = deliver(d1);
+    Response redelivered = deliver(d1);
+
+    assertThat(failed.status()).isEqualTo(500);
+    assertThat(redelivered.status()).isEqualTo(200);
+    assertThat(redelivered.body()).doesNotContain("duplicate");
+    assertThat(dispatcher.calls()).hasSize(2);
+  }
+
+  @Test
+  void forgedThenGenuine_sameDeliveryId_isDispatched() throws Exception {
+    project(FIRST_SECRET);
+    Delivery forged = delivery("push", WRONG_SECRET);
+    Delivery genuine = resigned(forged, FIRST_SECRET);
+
+    Response rejected = deliver(forged);
+    Response accepted = deliver(genuine);
+
+    assertThat(rejected.status()).isEqualTo(401);
+    assertThat(accepted.status()).isEqualTo(200);
+    assertThat(accepted.body()).doesNotContain("duplicate");
+    assertThat(dispatcher.calls()).hasSize(1);
+  }
+
+  @Test
+  void missingSignatureHeader_401() throws Exception {
+    project(FIRST_SECRET);
+    Delivery unsigned = delivery("push", FIRST_SECRET);
+    byte[] body = unsigned.body().getBytes(StandardCharsets.UTF_8);
+
+    MvcResult result =
+        mvc.perform(
+                post(PATH)
+                    .header("X-GitHub-Event", unsigned.event())
+                    .header("X-GitHub-Delivery", unsigned.deliveryId())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body))
+            .andReturn();
+
+    assertThat(result.getResponse().getStatus()).isEqualTo(401);
+    assertThat(result.getResponse().getContentAsString()).contains("UNAUTHENTICATED");
+    assertThat(dispatcher.calls()).isEmpty();
+  }
+
   /**
    * Connects {@link #repo} in a new organization, with its webhook secret encrypted as the app
    * does.
@@ -248,6 +311,11 @@ class HOOK01WebhookIT {
     MvcResult result = send(delivery).andReturn();
     lastBody = result.getResponse().getContentAsString();
     return new Response(result.getResponse().getStatus(), lastBody);
+  }
+
+  /** The same delivery, with the same id and body, signed with {@code secret}. */
+  private static Delivery resigned(Delivery delivery, String secret) {
+    return new Delivery(delivery.event(), delivery.deliveryId(), delivery.body(), secret);
   }
 
   private String lastBody() {

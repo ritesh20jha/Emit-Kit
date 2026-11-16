@@ -37,6 +37,7 @@
 
 	@sse path_regexp sse ^/api/v1/runs/[^/]+/logs/stream$
 	@api path /api/* /oauth2/* /login/* /webhooks/*
+	@webhooks path /webhooks/*
 
 	# SSE must not be buffered by the proxy. Listed first because @sse is a subset of @api.
 	handle @sse {
@@ -51,6 +52,10 @@
 	}
 
 	handle @api {
+		# GitHub sends at most 25 MB per webhook delivery; a larger body is refused here, not sent to the api.
+		request_body @webhooks {
+			max_size 25MB
+		}
 		reverse_proxy {
 			import upstream
 			transport http {

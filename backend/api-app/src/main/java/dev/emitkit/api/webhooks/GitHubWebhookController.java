@@ -11,6 +11,8 @@ import dev.emitkit.vcs.WebhookVerifier;
 import io.swagger.v3.oas.annotations.Hidden;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -31,6 +33,7 @@ import tools.jackson.databind.json.JsonMapper;
 @RestController
 class GitHubWebhookController {
 
+  private static final Logger LOG = LoggerFactory.getLogger(GitHubWebhookController.class);
   private static final String SECRET_COLUMN = "webhook_secret_enc";
 
   private final WebhookVerifier verifier;
@@ -69,8 +72,9 @@ class GitHubWebhookController {
       @RequestHeader("X-GitHub-Event") String event,
       @RequestHeader("X-GitHub-Delivery") String deliveryId,
       @RequestHeader(value = "X-Hub-Signature-256", required = false) @Nullable String signature) {
-    JsonNode payload = parse(body);
-    Project project = verifiedProject(body, signature, repoFullName(payload));
+    JsonNode payload = parse(body, deliveryId);
+    String repo = repoFullName(payload);
+    Project project = verifiedProject(body, signature, repo, deliveryId);
     // Only a verified delivery is claimed, so a forged one cannot shadow the real redelivery.
     if (!deduper.claim(deliveryId)) {
       return WebhookOutcome.duplicate();
@@ -78,23 +82,37 @@ class GitHubWebhookController {
     WebhookEvent verified = new WebhookEvent(event, deliveryId, payload);
     return switch (event) {
       case "ping" -> WebhookOutcome.pong();
-      case "push", "pull_request" -> dispatcher.handle(project, verified);
+      case "push", "pull_request" -> dispatch(project, verified, deliveryId);
       default -> WebhookOutcome.ignored("event");
     };
   }
 
   /**
+   * Hands a verified push or pull_request to the dispatcher. When the dispatcher fails, the claim
+   * is released first, so that GitHub's redelivery of the same delivery is not answered as a
+   * duplicate of work that never happened.
+   */
+  private WebhookOutcome dispatch(Project project, WebhookEvent event, String deliveryId) {
+    try {
+      return dispatcher.handle(project, event);
+    } catch (RuntimeException e) {
+      deduper.release(deliveryId);
+      throw e;
+    }
+  }
+
+  /**
    * Parses the body. A body that is not JSON cannot name a repository, so it is unauthenticated.
    */
-  private JsonNode parse(byte[] body) {
+  private JsonNode parse(byte[] body, String deliveryId) {
     JsonNode payload;
     try {
       payload = json.readTree(body);
     } catch (JacksonException e) {
-      throw unauthenticated();
+      throw unauthenticated(deliveryId, null);
     }
     if (payload == null) {
-      throw unauthenticated();
+      throw unauthenticated(deliveryId, null);
     }
     return payload;
   }
@@ -109,7 +127,8 @@ class GitHubWebhookController {
    * @throws AppException UNAUTHENTICATED when the delivery names no connected repository, or no
    *     candidate verifies it
    */
-  private Project verifiedProject(byte[] body, @Nullable String signature, @Nullable String repo) {
+  private Project verifiedProject(
+      byte[] body, @Nullable String signature, @Nullable String repo, String deliveryId) {
     List<Project> candidates =
         repo == null
             ? List.of()
@@ -117,7 +136,7 @@ class GitHubWebhookController {
                 .filter(project -> project.getWebhookSecretEnc() != null)
                 .toList();
     if (candidates.isEmpty()) {
-      throw unauthenticated();
+      throw unauthenticated(deliveryId, repo);
     }
     List<CipherItem> items =
         candidates.stream()
@@ -132,10 +151,18 @@ class GitHubWebhookController {
         return candidates.get(i);
       }
     }
-    throw unauthenticated();
+    throw unauthenticated(deliveryId, repo);
   }
 
-  private static AppException unauthenticated() {
+  /**
+   * Logs a rejected delivery and returns the 401 for it. The log names the repository and the
+   * delivery only: never the signature, the secret or the body.
+   */
+  private static AppException unauthenticated(String deliveryId, @Nullable String repo) {
+    LOG.warn(
+        "Rejected webhook delivery {} for repository {}: signature missing or not verified",
+        deliveryId,
+        repo == null ? "unknown" : repo);
     return new AppException(
         ErrorCode.UNAUTHENTICATED, "The webhook signature is missing or does not verify.");
   }

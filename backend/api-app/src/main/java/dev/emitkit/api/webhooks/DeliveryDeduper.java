@@ -30,4 +30,12 @@ public class DeliveryDeduper {
   public boolean claim(String deliveryId) {
     return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(PREFIX + deliveryId, "1", TTL));
   }
+
+  /**
+   * Releases a claim whose delivery was not handled, so that GitHub's redelivery can run it. A
+   * claim that is kept after a failure would answer every redelivery as a duplicate.
+   */
+  public void release(String deliveryId) {
+    redis.delete(PREFIX + deliveryId);
+  }
 }
