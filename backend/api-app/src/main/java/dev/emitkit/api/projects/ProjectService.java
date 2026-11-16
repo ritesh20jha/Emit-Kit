@@ -3,6 +3,7 @@ package dev.emitkit.api.projects;
 import dev.emitkit.api.access.Membership;
 import dev.emitkit.api.access.OrgAccessService;
 import dev.emitkit.api.access.Permission;
+import dev.emitkit.api.common.Page;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.common.id.Ids;
@@ -12,24 +13,32 @@ import dev.emitkit.domain.OutputMode;
 import dev.emitkit.domain.Project;
 import dev.emitkit.domain.ProjectConfigRepository;
 import dev.emitkit.domain.ProjectRepository;
+import dev.emitkit.domain.RunCursor;
+import dev.emitkit.domain.RunStatus;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.Webhook;
 import dev.emitkit.vcs.error.VcsNotFoundException;
+import java.time.Instant;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Creates projects. The database rows are committed before the webhook is registered on the
- * repository, so no database transaction is open during the network call. If the webhook cannot be
- * registered, or its id cannot be saved, the project is removed again.
+ * Creates, lists, deletes and re-hooks projects. The database rows are committed before the webhook
+ * is registered on the repository, so no database transaction is open during a network call. If the
+ * webhook cannot be registered, or its id cannot be saved, the project is removed again.
  */
 @Service
 public class ProjectService {
+
+  private static final int DEFAULT_LIMIT = 20;
+  private static final int MAX_LIMIT = 100;
 
   private static final Logger LOG = LoggerFactory.getLogger(ProjectService.class);
   private static final String SECRET_TABLE = "projects";
@@ -39,6 +48,7 @@ public class ProjectService {
   private final VcsProvider vcsProvider;
   private final ProjectRepository projects;
   private final ProjectConfigRepository configs;
+  private final ProjectListQuery listing;
   private final SecretCipher cipher;
   private final WebhookRegistrar webhooks;
   private final TransactionTemplate transactions;
@@ -48,6 +58,7 @@ public class ProjectService {
       VcsProvider vcsProvider,
       ProjectRepository projects,
       ProjectConfigRepository configs,
+      ProjectListQuery listing,
       SecretCipher cipher,
       WebhookRegistrar webhooks,
       PlatformTransactionManager transactionManager) {
@@ -55,9 +66,47 @@ public class ProjectService {
     this.vcsProvider = vcsProvider;
     this.projects = projects;
     this.configs = configs;
+    this.listing = listing;
     this.cipher = cipher;
     this.webhooks = webhooks;
     this.transactions = new TransactionTemplate(transactionManager);
+  }
+
+  /**
+   * One page of an organization's projects, newest first, with each project's last run.
+   *
+   * @param q a text the repository name must contain, ignoring case; null or blank is no filter
+   * @param status only projects whose last run has this status; null is no filter
+   * @param cursor the token of the previous page, or null for the first page
+   * @param limit the page size, from 1 to 100; null for the default
+   * @throws AppException FORBIDDEN or NOT_FOUND from the access check; VALIDATION_FAILED for a bad
+   *     limit or a malformed cursor
+   */
+  @Transactional(readOnly = true)
+  public Page<ProjectSummary> list(
+      String orgId,
+      @Nullable String q,
+      @Nullable RunStatus status,
+      @Nullable String cursor,
+      @Nullable Integer limit) {
+    orgAccess.require(orgId, Permission.PROJECT_VIEW);
+    int size = limit == null ? DEFAULT_LIMIT : limit;
+    if (size < 1 || size > MAX_LIMIT) {
+      throw new AppException(
+          ErrorCode.VALIDATION_FAILED, "limit must be between 1 and " + MAX_LIMIT);
+    }
+    RunCursor after = cursor == null ? null : decodeCursor(cursor);
+    String filter = q == null || q.isBlank() ? null : q;
+    // One extra row tells whether another page exists.
+    List<ProjectListQuery.Row> found = listing.page(orgId, filter, status, after, size + 1);
+    boolean more = found.size() > size;
+    List<ProjectListQuery.Row> page = more ? found.subList(0, size) : found;
+    String next = null;
+    if (more) {
+      ProjectListQuery.Row last = page.getLast();
+      next = RunCursor.encode(last.createdAt(), last.summary().id());
+    }
+    return new Page<>(page.stream().map(ProjectListQuery.Row::summary).toList(), next);
   }
 
   /**
@@ -101,6 +150,59 @@ public class ProjectService {
       deleteProject(projectId);
       throw e;
     }
+  }
+
+  /**
+   * Deletes a project by marking it deleted. Its runs are kept. The push webhook is removed first,
+   * on a best-effort basis: a failure is logged as a warning and the project is deleted anyway.
+   * Callers check the permission.
+   */
+  public void softDelete(Project project) {
+    Long webhookId = project.getWebhookId();
+    if (webhookId != null) {
+      try {
+        vcsProvider
+            .forProject(project.getCreatedBy())
+            .deleteWebhook(project.getRepoFullName(), webhookId);
+      } catch (RuntimeException e) {
+        LOG.warn(
+            "could not remove webhook {} of project {} on {}; deleting the project anyway",
+            webhookId,
+            project.getId(),
+            project.getRepoFullName(),
+            e);
+      }
+    }
+    transactions.executeWithoutResult(
+        status -> projects.findById(project.getId()).ifPresent(p -> p.markDeleted(Instant.now())));
+  }
+
+  /**
+   * Replaces the project's push webhook with one that has a new secret. The old webhook is removed
+   * first, and a webhook that is already gone is not an error. Callers check the permission.
+   *
+   * @throws AppException the VCS error when the old webhook cannot be removed or the new one cannot
+   *     be registered
+   */
+  public WebhookStatus reRegisterWebhook(Project project) {
+    String projectId = project.getId();
+    String repo = project.getRepoFullName();
+    VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
+    // Encrypted before anything changes on the VCS host, so an encryption failure changes nothing.
+    String secret = webhooks.newSecret();
+    String secretEnc =
+        cipher.encrypt(secret, new SecretContext(SECRET_TABLE, SECRET_COLUMN, projectId));
+    if (project.getWebhookId() != null) {
+      removeOldWebhook(vcs, repo, project.getWebhookId());
+    }
+    Webhook hook = webhooks.register(vcs, repo, secret);
+    try {
+      attachWebhook(projectId, hook.id(), secretEnc);
+    } catch (RuntimeException e) {
+      removeWebhookQuietly(vcs, repo, hook.id(), e);
+      throw e;
+    }
+    return new WebhookStatus(true, hook.id());
   }
 
   /** The separate output repository, checked to exist; null when output stays in the repo. */
@@ -161,6 +263,15 @@ public class ProjectService {
     });
   }
 
+  /** A hook that GitHub no longer has is the state we want, so its absence is not an error. */
+  private static void removeOldWebhook(VcsClient vcs, String repo, long webhookId) {
+    try {
+      vcs.deleteWebhook(repo, webhookId);
+    } catch (VcsNotFoundException alreadyGone) {
+      LOG.debug("webhook {} on {} was already gone", webhookId, repo);
+    }
+  }
+
   private void deleteProject(String projectId) {
     transactions.executeWithoutResult(status -> {
       configs.deleteByProjectId(projectId);
@@ -183,5 +294,13 @@ public class ProjectService {
 
   private static AppException invalid(String detail) {
     return new AppException(ErrorCode.VALIDATION_FAILED, detail);
+  }
+
+  private static RunCursor decodeCursor(String cursor) {
+    try {
+      return RunCursor.decode(cursor);
+    } catch (IllegalArgumentException e) {
+      throw invalid("cursor is malformed");
+    }
   }
 }

@@ -1,5 +1,7 @@
 package dev.emitkit.api.projects;
 
+import dev.emitkit.api.access.Permission;
+import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.common.Page;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
@@ -20,15 +22,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Projects: list, create, read, delete and the push webhook. Only create is implemented so far. */
+/**
+ * Projects: list, create, read, delete and the push webhook. Creating a project for a new
+ * repository is not implemented yet.
+ */
 @RestController
 @Tag(name = "Projects", description = "Projects, their repositories and push webhooks.")
 public class ProjectController {
 
   private final ProjectService projects;
+  private final ProjectAccess projectAccess;
 
-  public ProjectController(ProjectService projects) {
+  public ProjectController(ProjectService projects, ProjectAccess projectAccess) {
     this.projects = projects;
+    this.projectAccess = projectAccess;
   }
 
   @GetMapping("/api/v1/orgs/{orgId}/projects")
@@ -41,7 +48,7 @@ public class ProjectController {
       @Parameter(description = "Only projects whose last run has this status")
           @RequestParam(name = "status", required = false)
           @Nullable RunStatus status) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    return projects.list(orgId, q, status, cursor, limit);
   }
 
   @PostMapping("/api/v1/orgs/{orgId}/projects")
@@ -59,20 +66,20 @@ public class ProjectController {
   @GetMapping("/api/v1/projects/{id}")
   @Operation(summary = "Read one project")
   public ProjectDetail getProject(@PathVariable("id") String id) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    return toDetail(projectAccess.require(id, Permission.PROJECT_VIEW));
   }
 
   @DeleteMapping("/api/v1/projects/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   @Operation(summary = "Delete a project")
   public void deleteProject(@PathVariable("id") String id) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    projects.softDelete(projectAccess.require(id, Permission.PROJECT_DELETE));
   }
 
   @PostMapping("/api/v1/projects/{id}/webhook")
   @Operation(summary = "Register the push webhook on the project's repository")
   public WebhookStatus registerWebhook(@PathVariable("id") String id) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    return projects.reRegisterWebhook(projectAccess.require(id, Permission.CONFIG_EDIT));
   }
 
   private static ProjectDetail toDetail(Project project) {
