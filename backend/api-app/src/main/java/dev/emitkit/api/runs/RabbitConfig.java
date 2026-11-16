@@ -4,6 +4,7 @@ import dev.emitkit.common.messaging.Queues;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
@@ -22,6 +23,14 @@ class RabbitConfig {
     Queue queue = QueueBuilder.durable(Queues.JOBS_QUEUE).build();
     return new Declarables(
         exchange, queue, BindingBuilder.bind(queue).to(exchange).with(Queues.JOBS_ROUTING_KEY));
+  }
+
+  /**
+   * The control fanout that cancel commands go to. Must stay identical to the worker's declaration.
+   */
+  @Bean
+  Declarables controlTopology() {
+    return new Declarables(new FanoutExchange(Queues.CONTROL_EXCHANGE));
   }
 
   /** Trusts the shared message types only, as the worker does. */

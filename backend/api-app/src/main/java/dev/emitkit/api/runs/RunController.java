@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Runs: list, start and read them. Cancel, rerun, approval and lint are still stubs. */
+/** Runs: list, start, read, cancel, rerun and approve them. Lint is still a stub. */
 @RestController
 @Tag(name = "Runs", description = "Generation runs: start, read, cancel, rerun and approve them.")
 public class RunController {
@@ -70,37 +70,50 @@ public class RunController {
   @GetMapping("/api/v1/runs/{runId}")
   @Operation(summary = "Read one run")
   public RunDetail getRun(@PathVariable("runId") String runId) {
-    GenerationRun run = runs.find(runId);
-    try {
-      projectAccess.require(run.getProjectId(), Permission.RUN_VIEW);
-    } catch (AppException e) {
-      // A non-member gets the same answer as an unknown run, so the run's existence stays hidden.
-      if (e.code() == ErrorCode.NOT_FOUND) {
-        throw new AppException(ErrorCode.NOT_FOUND, "run not found");
-      }
-      throw e;
-    }
-    return runs.detail(run);
+    return runs.detail(runWithPermission(runId, Permission.RUN_VIEW));
   }
 
   @PostMapping("/api/v1/runs/{runId}/cancel")
   @Operation(summary = "Cancel a run that has not finished")
   public RunDetail cancelRun(@PathVariable("runId") String runId) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    GenerationRun run = runWithPermission(runId, Permission.RUN_CANCEL);
+    return runs.detail(runs.cancel(run.getId()));
   }
 
   @PostMapping("/api/v1/runs/{runId}/rerun")
   @ResponseStatus(HttpStatus.CREATED)
   @Operation(summary = "Start a new run with the same spec as this one")
-  public RunDetail rerunRun(@PathVariable("runId") String runId) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+  public RunDetail rerunRun(@PathVariable("runId") String runId, @CurrentUser EmitKitUser user) {
+    GenerationRun source = runWithPermission(runId, Permission.RUN_RERUN);
+    return runs.detail(runs.rerun(source.getId(), user.userId()));
   }
 
   @PostMapping("/api/v1/runs/{runId}/approval")
   @Operation(summary = "Approve or reject a run that is awaiting approval")
   public RunDetail decideApproval(
-      @PathVariable("runId") String runId, @Valid @RequestBody ApprovalRequest request) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+      @PathVariable("runId") String runId,
+      @Valid @RequestBody ApprovalRequest request,
+      @CurrentUser EmitKitUser user) {
+    GenerationRun run = runWithPermission(runId, Permission.RUN_APPROVE);
+    return runs.detail(
+        runs.decideApproval(run.getId(), user.userId(), request.decision(), request.comment()));
+  }
+
+  /**
+   * The run, once the caller holds {@code permission} on its project. A non-member gets the same
+   * answer as an unknown run, so the run's existence stays hidden.
+   */
+  private GenerationRun runWithPermission(String runId, Permission permission) {
+    GenerationRun run = runs.find(runId);
+    try {
+      projectAccess.require(run.getProjectId(), permission);
+    } catch (AppException e) {
+      if (e.code() == ErrorCode.NOT_FOUND) {
+        throw new AppException(ErrorCode.NOT_FOUND, "run not found");
+      }
+      throw e;
+    }
+    return run;
   }
 
   @GetMapping("/api/v1/runs/{runId}/lint")

@@ -3,38 +3,57 @@ package dev.emitkit.api.runs;
 import dev.emitkit.api.common.Page;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import dev.emitkit.domain.Decision;
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunRepository;
 import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
+import dev.emitkit.domain.RunApproval;
+import dev.emitkit.domain.RunApprovalRepository;
 import dev.emitkit.domain.RunCursor;
 import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.RunTrigger;
+import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Creates, lists and reads runs. Callers check permissions; webhooks start runs without a user. */
+/**
+ * Creates, lists, reads, cancels, reruns and decides approvals of runs. Callers check permissions;
+ * webhooks start runs without a user.
+ */
 @Service
 public class RunService {
 
   static final int DEFAULT_LIMIT = 20;
   static final int MAX_LIMIT = 100;
 
+  /** The statuses a run can be cancelled from. A finished run cannot be cancelled. */
+  private static final Set<RunStatus> CANCELLABLE =
+      EnumSet.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL);
+
   private final GenerationRunRepository runs;
   private final ProjectConfigRepository configs;
+  private final RunApprovalRepository approvals;
   private final JobPublisher jobs;
+  private final ControlPublisher controls;
   private final RunMapper mapper;
 
   RunService(
       GenerationRunRepository runs,
       ProjectConfigRepository configs,
+      RunApprovalRepository approvals,
       JobPublisher jobs,
+      ControlPublisher controls,
       RunMapper mapper) {
     this.runs = runs;
     this.configs = configs;
+    this.approvals = approvals;
     this.jobs = jobs;
+    this.controls = controls;
     this.mapper = mapper;
   }
 
@@ -89,6 +108,66 @@ public class RunService {
   /** The full view of a run. */
   public RunDetail detail(GenerationRun run) {
     return mapper.toDetail(run);
+  }
+
+  /**
+   * Cancels a run that has not finished. A queued or awaiting-approval run has no worker holding
+   * it, so it is cancelled here; a running one stays RUNNING until its worker sees the flag and
+   * stops.
+   */
+  @Transactional
+  public GenerationRun cancel(String runId) {
+    GenerationRun run = find(runId);
+    if (!CANCELLABLE.contains(run.getStatus())) {
+      throw new AppException(
+          ErrorCode.CONFLICT, "run cannot be cancelled while " + run.getStatus());
+    }
+    run.setCancelRequested(true);
+    if (run.getStatus() != RunStatus.RUNNING) {
+      run.setStatus(RunStatus.CANCELLED);
+      run.setFinishedAt(Instant.now());
+    }
+    controls.cancelAfterCommit(runId);
+    return run;
+  }
+
+  /** Starts a new run from a finished one, on the same config version and dry-run setting. */
+  @Transactional
+  public GenerationRun rerun(String sourceRunId, String userId) {
+    GenerationRun source = find(sourceRunId);
+    if (!source.getStatus().isTerminal()) {
+      throw new AppException(ErrorCode.CONFLICT, "only a finished run can be rerun");
+    }
+    return create(
+        source.getProjectId(), RunTrigger.RERUN, source.isDryRun(), userId, source.getId());
+  }
+
+  /**
+   * Records a reviewer's decision on a run awaiting approval. An approval queues the run again; a
+   * rejection cancels it, with the comment as the failure message.
+   */
+  @Transactional
+  public GenerationRun decideApproval(
+      String runId, String userId, Decision decision, @Nullable String comment) {
+    GenerationRun run = find(runId);
+    if (run.getStatus() != RunStatus.AWAITING_APPROVAL) {
+      throw new AppException(ErrorCode.CONFLICT, "run is not awaiting approval");
+    }
+    Instant now = Instant.now();
+    RunApproval approval =
+        approvals.findByRunId(runId).orElseGet(() -> new RunApproval(null, runId, null));
+    approval.decide(userId, decision, comment, now);
+    approvals.save(approval);
+    if (decision == Decision.APPROVED) {
+      run.setStatus(RunStatus.QUEUED);
+      jobs.publishAfterCommit(runId);
+    } else {
+      String reason = comment == null || comment.isBlank() ? "Rejected" : "Rejected: " + comment;
+      run.setStatus(RunStatus.CANCELLED);
+      run.setFailure(ErrorCode.BREAKING_BLOCKED.name(), reason);
+      run.setFinishedAt(now);
+    }
+    return run;
   }
 
   private String configIdFor(String projectId, RunTrigger trigger, @Nullable String parentRunId) {
