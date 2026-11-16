@@ -2,6 +2,8 @@ package dev.emitkit.api.projects;
 
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasKey;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
@@ -36,6 +38,8 @@ import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.GitBlob;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.vcs.error.VcsConflictException;
+import dev.emitkit.vcs.error.VcsNotFoundException;
 import dev.emitkit.vcs.fake.InMemoryVcsClient;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -167,6 +171,63 @@ class PRJ05SpecIT {
   }
 
   @Test
+  void get_jsonExtensionIgnoresCase() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+    vcs.createRepo("acme", "upper", false);
+    vcs.putFile("acme/upper", "SPEC.JSON", "{}", null, "add spec");
+    Project project = project(acme, octo, "acme/upper", "SPEC.JSON");
+
+    mvc.perform(get("/api/v1/projects/{id}/spec", project.getId()).with(signedInAs(octo)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.format").value("json"));
+  }
+
+  @Test
+  void conflictOnUnchangedFile_isNotSpecConflict() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+    Project project = project(acme, octo, "acme/api", SPEC_PATH);
+    // The provider refuses the write (a branch protection rule, say) while the file is unchanged.
+    vcs.failNext("putFile", new VcsConflictException("branch protection blocks this push"));
+
+    mvc.perform(
+            put("/api/v1/projects/{id}/spec", project.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(saveBody(EDITED, GitBlob.sha(SPEC), null, false)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("VCS_CONFLICT"))
+        .andExpect(jsonPath("$.detail").value("branch protection blocks this push"))
+        .andExpect(jsonPath("$.currentSha").doesNotExist());
+
+    assertThat(vcs.file("acme/api", SPEC_PATH).content()).isEqualTo(SPEC);
+  }
+
+  @Test
+  void conflictThenFileGone_returns404SpecNotFound() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+    Project project = project(acme, octo, "acme/api", SPEC_PATH);
+    vcs.failNext("putFile", new VcsConflictException("stale sha"));
+    // The file is gone when the conflict is checked by reading it again.
+    vcs.failNext("getFile", new VcsNotFoundException("file not found: " + SPEC_PATH));
+
+    mvc.perform(
+            put("/api/v1/projects/{id}/spec", project.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(saveBody(EDITED, GitBlob.sha(SPEC), null, false)))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("SPEC_NOT_FOUND"));
+  }
+
+  @Test
   void save_returnsCommitAndNewSha() throws Exception {
     Organization acme = org("acme");
     User octo = user(1, "octo");
@@ -183,8 +244,10 @@ class PRJ05SpecIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.commitSha").isNotEmpty())
         .andExpect(jsonPath("$.newSha").value(GitBlob.sha(EDITED)))
-        .andExpect(jsonPath("$.runId").doesNotExist())
-        .andExpect(jsonPath("$.runError").doesNotExist());
+        .andExpect(jsonPath("$", hasKey("runId")))
+        .andExpect(jsonPath("$.runId").value(nullValue()))
+        .andExpect(jsonPath("$", hasKey("runError")))
+        .andExpect(jsonPath("$.runError").value(nullValue()));
     assertThat(vcs.file("acme/api", SPEC_PATH).content()).isEqualTo(EDITED);
 
     mvc.perform(

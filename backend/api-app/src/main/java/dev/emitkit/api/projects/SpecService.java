@@ -13,6 +13,7 @@ import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.error.VcsConflictException;
 import dev.emitkit.vcs.error.VcsNotFoundException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
@@ -75,14 +76,28 @@ public class SpecService {
           vcs.putFile(
               repo, path, request.content(), request.sha(), commitMessage(request.message()));
     } catch (VcsConflictException e) {
-      String currentSha = vcs.getFile(repo, path, project.getDefaultBranch()).sha();
-      throw new AppException(
-          ErrorCode.SPEC_CONFLICT,
-          "Someone else changed this file",
-          Map.of("currentSha", currentSha),
-          e);
+      throw saveConflict(vcs, project, request.sha(), e);
     }
     return new SaveSpecResponse(commit.sha(), GitBlob.sha(request.content()), null, null);
+  }
+
+  /**
+   * The error for a write the provider refused. The file is read again: if its sha still equals the
+   * one the save named, nobody changed it, so the provider's own conflict (for example a branch
+   * protection rule) is returned unchanged. Otherwise the file changed and the error carries the
+   * current sha.
+   */
+  private static AppException saveConflict(
+      VcsClient vcs, Project project, String requestedSha, VcsConflictException refusal) {
+    FileContent current = readSpec(vcs, project);
+    if (current.sha().equals(requestedSha)) {
+      return refusal;
+    }
+    return new AppException(
+        ErrorCode.SPEC_CONFLICT,
+        "Someone else changed this file",
+        Map.of("currentSha", current.sha()),
+        refusal);
   }
 
   private static FileContent readSpec(VcsClient vcs, Project project) {
@@ -96,7 +111,7 @@ public class SpecService {
   }
 
   private static String formatOf(String specPath) {
-    return specPath.endsWith(".json") ? "json" : "yaml";
+    return specPath.toLowerCase(Locale.ROOT).endsWith(".json") ? "json" : "yaml";
   }
 
   private static String commitMessage(@Nullable String message) {
