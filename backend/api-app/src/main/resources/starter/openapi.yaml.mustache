@@ -1,0 +1,16 @@
+openapi: 3.1.0
+info:
+  title: "{{title}}"
+  version: 0.1.0
+  description: Starter spec created by EmitKit. Replace it with your API.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags:
+        - health
+      summary: Health check
+      description: Reports whether the service is up.
+      responses:
+        "200":
+          description: The service is up.
