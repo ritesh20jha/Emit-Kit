@@ -54,6 +54,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.AmqpAdmin;
@@ -303,7 +304,8 @@ class RUN02RunActionsIT {
         Future<Integer> first = pool.submit(approveNow);
         Future<Integer> second = pool.submit(approveNow);
         go.countDown();
-        assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 409);
+        assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+            .containsExactlyInAnyOrder(200, 409);
 
         assertThat(generationRuns.findById(run.getId()))
             .hasValueSatisfying(saved -> assertThat(saved.getStatus()).isEqualTo(QUEUED));
@@ -312,6 +314,67 @@ class RUN02RunActionsIT {
         assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
       }
     }
+  }
+
+  @Test
+  void cancelAwaitingApproval_isCancelledAtOnce() throws Exception {
+    Fixture f = fixture();
+    GenerationRun run = awaiting(f);
+
+    mvc.perform(post(CANCEL, run.getId()).with(csrf()).with(signedInAs(f.owner())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+    assertThat(generationRuns.findById(run.getId()))
+        .hasValueSatisfying(saved -> {
+          assertThat(saved.getStatus()).isEqualTo(CANCELLED);
+          assertThat(saved.isCancelRequested()).isTrue();
+          assertThat(saved.getFinishedAt()).isNotNull();
+        });
+  }
+
+  @Test
+  void rerunRunning_409_andNothingQueued() throws Exception {
+    Fixture f = fixture();
+    GenerationRun run = run(f, RUNNING, MANUAL, 1);
+
+    mvc.perform(post(RERUN, run.getId()).with(csrf()).with(signedInAs(f.owner())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+    assertThat(generationRuns.count()).isEqualTo(1);
+    assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
+  }
+
+  /** A user outside the project's org gets NOT_FOUND from every action, and changes nothing. */
+  @Test
+  void nonMember_cancelRerunApprove_getNotFound_andNothingChanges() throws Exception {
+    Fixture f = fixture();
+    GenerationRun run = awaiting(f);
+    User stranger =
+        users.save(new User(null, 9, "stranger", null, null, "https://avatars.example.com/u/9"));
+
+    List<ResultActions> attempts =
+        List.of(
+            mvc.perform(post(CANCEL, run.getId()).with(csrf()).with(signedInAs(stranger))),
+            mvc.perform(post(RERUN, run.getId()).with(csrf()).with(signedInAs(stranger))),
+            decide(stranger, run, "{\"decision\":\"APPROVED\"}"));
+    for (ResultActions attempt : attempts) {
+      attempt
+          .andExpect(status().isNotFound())
+          .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+          .andExpect(jsonPath("$.detail").value("run not found"));
+    }
+
+    assertThat(generationRuns.findAll()).hasSize(1);
+    assertThat(generationRuns.findById(run.getId()))
+        .hasValueSatisfying(saved -> {
+          assertThat(saved.getStatus()).isEqualTo(AWAITING_APPROVAL);
+          assertThat(saved.isCancelRequested()).isFalse();
+        });
+    assertThat(approvals.findByRunId(run.getId()))
+        .hasValueSatisfying(a -> assertThat(a.getDecision()).isNull());
+    assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
   }
 
   /** A signed-in owner of an org, with one project that has a config at version 1. */
