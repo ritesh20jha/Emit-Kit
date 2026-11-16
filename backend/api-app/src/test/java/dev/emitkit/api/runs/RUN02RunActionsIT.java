@@ -49,6 +49,11 @@ import dev.emitkit.domain.UserRepository;
 import dev.emitkit.domain.VersionStrategy;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.AmqpAdmin;
@@ -275,6 +280,38 @@ class RUN02RunActionsIT {
     decide(f.owner(), run, approve)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+    assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 2000))
+        .isEqualTo(new GenerationJob(run.getId(), 0));
+    assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
+  }
+
+  /** Two approvals fired together over several runs: each run gets one 200, one 409 and one job. */
+  @Test
+  void concurrentApprovals_oneWins_oneJob() throws Exception {
+    Fixture f = fixture();
+    String approve = "{\"decision\":\"APPROVED\"}";
+    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+      for (int round = 0; round < 8; round++) {
+        GenerationRun run = awaiting(f);
+        CountDownLatch go = new CountDownLatch(1);
+        Callable<Integer> approveNow =
+            () -> {
+              go.await();
+              return decide(f.owner(), run, approve).andReturn().getResponse().getStatus();
+            };
+        Future<Integer> first = pool.submit(approveNow);
+        Future<Integer> second = pool.submit(approveNow);
+        go.countDown();
+        assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 409);
+
+        assertThat(generationRuns.findById(run.getId()))
+            .hasValueSatisfying(saved -> assertThat(saved.getStatus()).isEqualTo(QUEUED));
+        assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 2000))
+            .isEqualTo(new GenerationJob(run.getId(), 0));
+        assertThat(rabbit.receiveAndConvert(Queues.JOBS_QUEUE, 1000)).isNull();
+      }
+    }
   }
 
   /** A signed-in owner of an org, with one project that has a config at version 1. */

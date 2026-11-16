@@ -117,7 +117,7 @@ public class RunService {
    */
   @Transactional
   public GenerationRun cancel(String runId) {
-    GenerationRun run = find(runId);
+    GenerationRun run = lockRun(runId);
     if (!CANCELLABLE.contains(run.getStatus())) {
       throw new AppException(
           ErrorCode.CONFLICT, "run cannot be cancelled while " + run.getStatus());
@@ -149,7 +149,7 @@ public class RunService {
   @Transactional
   public GenerationRun decideApproval(
       String runId, String userId, Decision decision, @Nullable String comment) {
-    GenerationRun run = find(runId);
+    GenerationRun run = lockRun(runId);
     if (run.getStatus() != RunStatus.AWAITING_APPROVAL) {
       throw new AppException(ErrorCode.CONFLICT, "run is not awaiting approval");
     }
@@ -168,6 +168,15 @@ public class RunService {
       run.setFinishedAt(now);
     }
     return run;
+  }
+
+  /**
+   * The run with its row locked until the transaction ends. Cancel and approval take this lock
+   * before they check the status, so a second caller waits and then sees the first one's result.
+   */
+  private GenerationRun lockRun(String runId) {
+    return runs.findByIdForUpdate(runId)
+        .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "run not found"));
   }
 
   private String configIdFor(String projectId, RunTrigger trigger, @Nullable String parentRunId) {
