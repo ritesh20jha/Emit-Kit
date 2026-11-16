@@ -30,6 +30,7 @@ import dev.emitkit.domain.UserRepository;
 import dev.emitkit.spec.lint.SpecLinter;
 import dev.emitkit.spec.parse.SpecParser;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.vcs.error.VcsAuthException;
 import dev.emitkit.vcs.fake.InMemoryVcsClient;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -118,7 +119,10 @@ class PRJ02CreateNewRepoIT {
           assertThat(repo.fullName()).isEqualTo("acme/pets-api");
           assertThat(repo.isPrivate()).isTrue();
         });
-    assertThat(vcs.file("acme/pets-api", "openapi.yaml").content())
+    String stored = vcs.file("acme/pets-api", "openapi.yaml").content();
+    assertThat(stored)
+        .contains("title: \"pets-api\"")
+        .contains("operationId: getHealth")
         .isEqualTo(ProjectService.starterSpec("pets-api"));
 
     Project saved = onlyProject(acme);
@@ -182,13 +186,141 @@ class PRJ02CreateNewRepoIT {
     assertThat(vcs.webhooks("acme/pets-api")).isEmpty();
   }
 
-  /** A create body for mode NEW. {@code visibility} is a JSON value: a quoted string, or null. */
+  @Test
+  void visibilityPrivate_createsPrivateRepo() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+
+    mvc.perform(
+            post(PROJECTS, acme.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(newBody("acme/pets-api", "\"PRIVATE\"")))
+        .andExpect(status().isCreated());
+
+    assertThat(vcs.listRepos())
+        .singleElement()
+        .satisfies(repo -> assertThat(repo.isPrivate()).isTrue());
+  }
+
+  @Test
+  void specPathNotYaml_rejectedBeforeRepoCreated() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+
+    mvc.perform(
+            post(PROJECTS, acme.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(newBody("acme/pets-api", "openapi.json", "null")))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+    assertThat(vcs.calls("createRepo")).isEmpty();
+    assertThat(projects.count()).isZero();
+  }
+
+  @Test
+  void specPathWithDotDotSegment_rejectedBeforeRepoCreated() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+
+    for (String path :
+        new String[] {"../x.yaml", "/openapi.yaml", "api/", "a//b.yaml", "./b.yaml"}) {
+      mvc.perform(
+              post(PROJECTS, acme.getId())
+                  .with(csrf())
+                  .with(signedInAs(octo))
+                  .contentType("application/json")
+                  .content(newBody("acme/pets-api", path, "null")))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    assertThat(vcs.calls("createRepo")).isEmpty();
+    assertThat(projects.count()).isZero();
+  }
+
+  @Test
+  void nestedSpecPath_isAccepted() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+
+    mvc.perform(
+            post(PROJECTS, acme.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(newBody("acme/pets-api", "api/openapi.yml", "null")))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.specPath").value("api/openapi.yml"));
+
+    assertThat(vcs.file("acme/pets-api", "api/openapi.yml").content())
+        .isEqualTo(ProjectService.starterSpec("pets-api"));
+  }
+
+  @Test
+  void viewerCannotCreateNewRepo() throws Exception {
+    Organization acme = org("acme");
+    User viewer = user(1, "viewer");
+    member(acme, viewer, Role.VIEWER);
+
+    mvc.perform(
+            post(PROJECTS, acme.getId())
+                .with(csrf())
+                .with(signedInAs(viewer))
+                .contentType("application/json")
+                .content(newBody("acme/pets-api", "null")))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+    assertThat(vcs.calls("createRepo")).isEmpty();
+    assertThat(projects.count()).isZero();
+  }
+
+  @Test
+  void webhookRegistrationFails_noRowsKept() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+    vcs.failNext("registerWebhook", new VcsAuthException("no hook scope"));
+
+    mvc.perform(
+            post(PROJECTS, acme.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(newBody("acme/pets-api", "null")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("VCS_AUTH"));
+
+    assertThat(projects.count()).isZero();
+    assertThat(configs.count()).isZero();
+    // Known limitation: the repository and its starter spec stay on the host, since VcsClient has
+    // no deleteRepo. A retry with the same name then gets CONFLICT.
+    assertThat(vcs.listRepos())
+        .singleElement()
+        .satisfies(repo -> assertThat(repo.fullName()).isEqualTo("acme/pets-api"));
+  }
+
+  /** A create body for mode NEW with the starter spec path. {@code visibility} is a JSON value. */
   private static String newBody(String repo, String visibility) {
+    return newBody(repo, "openapi.yaml", visibility);
+  }
+
+  /** A create body for mode NEW. {@code visibility} is a JSON value: a quoted string, or null. */
+  private static String newBody(String repo, String specPath, String visibility) {
     return """
-    {"mode":"NEW","repo":"%s","specPath":"openapi.yaml","defaultBranch":"main",\
+    {"mode":"NEW","repo":"%s","specPath":"%s","defaultBranch":"main",\
     "visibility":%s,"outputMode":"APPEND","outputRepo":null}\
     """
-        .formatted(repo, visibility);
+        .formatted(repo, specPath, visibility);
   }
 
   private Project onlyProject(Organization org) {

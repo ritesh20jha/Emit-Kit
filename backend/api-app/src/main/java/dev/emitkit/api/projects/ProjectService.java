@@ -23,6 +23,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -101,6 +103,7 @@ public class ProjectService {
    */
   public Project createNew(String orgId, CreateProjectRequest request) {
     Admission admission = admit(orgId, request);
+    requireNewSpecPath(request.specPath());
     VcsClient vcs = admission.vcs();
     VcsRepo created = createRepo(vcs, request);
     String name = request.repo().split("/", 2)[1];
@@ -257,6 +260,25 @@ public class ProjectService {
 
   private static AppException invalid(String detail) {
     return new AppException(ErrorCode.VALIDATION_FAILED, detail);
+  }
+
+  /**
+   * Checks a spec path before the repository is created, so a bad path cannot leave a repository
+   * behind. The path must end in .yaml or .yml (any case), must not start or end with '/', and must
+   * not have an empty, '.' or '..' segment. Only mode NEW checks this, because the starter spec is
+   * written at this path.
+   */
+  private static void requireNewSpecPath(String path) {
+    String lower = path.toLowerCase(Locale.ROOT);
+    boolean yaml = lower.endsWith(".yaml") || lower.endsWith(".yml");
+    boolean clean =
+        Arrays.stream(path.split("/", -1))
+            .noneMatch(segment -> segment.isEmpty() || segment.equals(".") || segment.equals(".."));
+    if (!yaml || !clean) {
+      throw invalid(
+          "specPath must be a .yaml or .yml file path with no empty, '.' or '..' segments: "
+              + path);
+    }
   }
 
   /**
