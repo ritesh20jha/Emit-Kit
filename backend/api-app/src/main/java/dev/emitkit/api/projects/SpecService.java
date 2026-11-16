@@ -1,12 +1,10 @@
 package dev.emitkit.api.projects;
 
-import dev.emitkit.api.access.Membership;
-import dev.emitkit.api.access.OrgAccessService;
 import dev.emitkit.api.access.Permission;
+import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.Project;
-import dev.emitkit.domain.ProjectRepository;
 import dev.emitkit.vcs.CommitRef;
 import dev.emitkit.vcs.FileContent;
 import dev.emitkit.vcs.GitBlob;
@@ -22,7 +20,8 @@ import org.springframework.stereotype.Service;
 /**
  * Reads and saves the API spec file of a project on its default branch. The repository is the only
  * store: no database row changes. A save names the blob sha it replaces, so a save based on an
- * older read is refused with a conflict that carries the current sha.
+ * older read is refused with a conflict that carries the current sha. Reads and writes use the
+ * project's creator token, as the worker does.
  */
 @Service
 public class SpecService {
@@ -31,17 +30,13 @@ public class SpecService {
   static final int MAX_SPEC_BYTES = 2 * 1024 * 1024;
 
   static final String DEFAULT_MESSAGE = "Update API spec (EmitKit)";
-  private static final String PROJECT_NOT_FOUND = "project not found";
 
-  private final OrgAccessService orgAccess;
+  private final ProjectAccess projectAccess;
   private final VcsProvider vcsProvider;
-  private final ProjectRepository projects;
 
-  public SpecService(
-      OrgAccessService orgAccess, VcsProvider vcsProvider, ProjectRepository projects) {
-    this.orgAccess = orgAccess;
+  public SpecService(ProjectAccess projectAccess, VcsProvider vcsProvider) {
+    this.projectAccess = projectAccess;
     this.vcsProvider = vcsProvider;
-    this.projects = projects;
   }
 
   /**
@@ -52,9 +47,8 @@ public class SpecService {
    *     not on the default branch
    */
   public SpecResponse get(String projectId) {
-    Project project = findProject(projectId);
-    Membership member = requireMember(project, Permission.SPEC_VIEW);
-    VcsClient vcs = vcsProvider.forProject(member.userId());
+    Project project = projectAccess.require(projectId, Permission.SPEC_VIEW);
+    VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
     FileContent file = readSpec(vcs, project);
     return new SpecResponse(file.content(), file.sha(), formatOf(project.getSpecPath()));
   }
@@ -68,12 +62,11 @@ public class SpecService {
    *     file changed since the request's sha was read, with the current sha in {@code currentSha}
    */
   public SaveSpecResponse save(String projectId, SaveSpecRequest request) {
-    Project project = findProject(projectId);
-    Membership member = requireMember(project, Permission.SPEC_EDIT);
+    Project project = projectAccess.require(projectId, Permission.SPEC_EDIT);
     if (request.content().getBytes(StandardCharsets.UTF_8).length > MAX_SPEC_BYTES) {
       throw new AppException(ErrorCode.SPEC_TOO_LARGE, "spec is larger than 2 MB");
     }
-    VcsClient vcs = vcsProvider.forProject(member.userId());
+    VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
     String repo = project.getRepoFullName();
     String path = project.getSpecPath();
     CommitRef commit;
@@ -90,29 +83,6 @@ public class SpecService {
           e);
     }
     return new SaveSpecResponse(commit.sha(), GitBlob.sha(request.content()), null, null);
-  }
-
-  private Project findProject(String projectId) {
-    return projects
-        .findById(projectId)
-        .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, PROJECT_NOT_FOUND));
-  }
-
-  /**
-   * The caller's membership with the permission. A non-member gets the same NOT_FOUND as a missing
-   * project, as {@link dev.emitkit.api.access.ProjectAccess} gives, so the 404 does not reveal
-   * whether the project exists. ProjectAccess returns only the project, and the save needs the
-   * caller's user id, hence this variant.
-   */
-  private Membership requireMember(Project project, Permission permission) {
-    try {
-      return orgAccess.require(project.getOrgId(), permission);
-    } catch (AppException e) {
-      if (e.code() == ErrorCode.NOT_FOUND) {
-        throw new AppException(ErrorCode.NOT_FOUND, PROJECT_NOT_FOUND);
-      }
-      throw e;
-    }
   }
 
   private static FileContent readSpec(VcsClient vcs, Project project) {

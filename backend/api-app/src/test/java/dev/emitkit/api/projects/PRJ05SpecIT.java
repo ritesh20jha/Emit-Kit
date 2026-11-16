@@ -3,6 +3,11 @@ package dev.emitkit.api.projects;
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -236,6 +241,54 @@ class PRJ05SpecIT {
 
     assertNoSaveReachedVcs();
     assertThat(vcs.file("acme/api", SPEC_PATH).content()).isEqualTo(SPEC);
+  }
+
+  @Test
+  void editorNotCreator_usesCreatorToken() throws Exception {
+    Organization acme = org("acme");
+    User creator = user(1, "creator");
+    member(acme, creator, Role.ADMIN);
+    User editor = user(2, "editor");
+    member(acme, editor, Role.EDITOR);
+    Project project = project(acme, creator, "acme/api", SPEC_PATH);
+    // Only the creator's token yields a client; any other caller's token makes the request fail.
+    doThrow(new IllegalStateException("not the creator's token"))
+        .when(vcsProvider)
+        .forProject(anyString());
+    doReturn(vcs).when(vcsProvider).forProject(creator.getId());
+
+    mvc.perform(get("/api/v1/projects/{id}/spec", project.getId()).with(signedInAs(editor)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.sha").value(GitBlob.sha(SPEC)));
+
+    mvc.perform(
+            put("/api/v1/projects/{id}/spec", project.getId())
+                .with(csrf())
+                .with(signedInAs(editor))
+                .contentType("application/json")
+                .content(saveBody(EDITED, GitBlob.sha(SPEC), null, false)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.newSha").value(GitBlob.sha(EDITED)));
+
+    assertThat(vcs.file("acme/api", SPEC_PATH).content()).isEqualTo(EDITED);
+    verify(vcsProvider, times(2)).forProject(creator.getId());
+    verify(vcsProvider, never()).forProject(editor.getId());
+  }
+
+  @Test
+  void nonMember_gets404() throws Exception {
+    Organization acme = org("acme");
+    User creator = user(1, "creator");
+    member(acme, creator, Role.ADMIN);
+    User outsider = user(2, "outsider");
+    Project project = project(acme, creator, "acme/api", SPEC_PATH);
+
+    mvc.perform(get("/api/v1/projects/{id}/spec", project.getId()).with(signedInAs(outsider)))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+        .andExpect(jsonPath("$.detail").value("project not found"));
+
+    assertThat(vcs.calls("getFile")).isEmpty();
   }
 
   /** Only the fixture write from {@link #resetData()} has reached the VCS, so no save did. */
