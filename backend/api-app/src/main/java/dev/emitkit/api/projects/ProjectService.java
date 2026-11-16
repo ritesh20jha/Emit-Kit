@@ -1,5 +1,6 @@
 package dev.emitkit.api.projects;
 
+import com.samskivert.mustache.Mustache;
 import dev.emitkit.api.access.Membership;
 import dev.emitkit.api.access.OrgAccessService;
 import dev.emitkit.api.access.Permission;
@@ -19,10 +20,19 @@ import dev.emitkit.domain.RunCursor;
 import dev.emitkit.domain.RunStatus;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.vcs.VcsRepo;
 import dev.emitkit.vcs.Webhook;
+import dev.emitkit.vcs.error.VcsConflictException;
 import dev.emitkit.vcs.error.VcsNotFoundException;
 import java.time.Instant;
 import java.util.List;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +55,7 @@ public class ProjectService {
   private static final Logger LOG = LoggerFactory.getLogger(ProjectService.class);
   private static final String SECRET_TABLE = "projects";
   private static final String SECRET_COLUMN = "webhook_secret_enc";
+  private static final String STARTER_TEMPLATE = "/starter/openapi.yaml.mustache";
 
   /** Runs that have not finished. A deleted project's runs in these states are stopped. */
   private static final List<RunStatus> IN_FLIGHT =
@@ -128,22 +139,72 @@ public class ProjectService {
    *     default branch; the VCS error when the webhook cannot be registered
    */
   public Project createExisting(String orgId, CreateProjectRequest request) {
+    Admission admission = admit(orgId, request);
+    requireSpec(admission.vcs(), request.repo(), request.specPath(), request.defaultBranch());
+    return link(orgId, admission, request, request.repo(), request.defaultBranch());
+  }
+
+  /**
+   * Creates a repository on the VCS host with a starter OpenAPI spec at the spec path on its
+   * default branch, then creates the project as {@link #createExisting} does. The repository is
+   * private unless the request asks for PUBLIC: a null visibility means private.
+   *
+   * <p>{@code request.defaultBranch()} is ignored: the project uses the created repository's
+   * default branch.
+   *
+   * <p>If the spec write or a later step fails, the repository stays on the host, because {@link
+   * VcsClient} cannot delete repositories. A retry with the same name then fails with CONFLICT
+   * "Repository name is taken" until the repository is deleted by hand.
+   *
+   * @throws AppException as for {@link #createExisting}; CONFLICT with "Repository name is taken"
+   *     when the VCS host reports that the name is in use
+   */
+  public Project createNew(String orgId, CreateProjectRequest request) {
+    Admission admission = admit(orgId, request);
+    requireNewSpecPath(request.specPath());
+    VcsClient vcs = admission.vcs();
+    VcsRepo created = createRepo(vcs, request);
+    String name = request.repo().split("/", 2)[1];
+    vcs.putFile(
+        created.fullName(),
+        request.specPath(),
+        starterSpec(name),
+        null,
+        "Add starter OpenAPI spec (EmitKit)");
+    return link(orgId, admission, request, created.fullName(), created.defaultBranch());
+  }
+
+  /** The checks before any create: access, a free repo name, and a visible output repo. */
+  private Admission admit(String orgId, CreateProjectRequest request) {
     Membership member = orgAccess.require(orgId, Permission.PROJECT_CREATE);
-    String userId = member.userId();
-    String repo = request.repo();
-    if (projects.existsByOrgIdAndRepoFullName(orgId, repo)) {
+    if (projects.existsByOrgIdAndRepoFullName(orgId, request.repo())) {
       throw new AppException(ErrorCode.CONFLICT, "Project already exists for this repo");
     }
-    VcsClient vcs = vcsProvider.forProject(userId);
-    String outputRepo = checkedOutputRepo(vcs, request);
-    requireSpec(vcs, repo, request.specPath(), request.defaultBranch());
+    VcsClient vcs = vcsProvider.forProject(member.userId());
+    return new Admission(member.userId(), vcs, checkedOutputRepo(vcs, request));
+  }
 
+  /** What {@link #admit} establishes for the rest of a create. */
+  private record Admission(String userId, VcsClient vcs, @Nullable String outputRepo) {}
+
+  /**
+   * Saves the project rows, registers the push webhook and attaches its id. Shared by both creates.
+   * Failures after the rows are saved remove the webhook, if one was registered, and the rows.
+   */
+  private Project link(
+      String orgId,
+      Admission admission,
+      CreateProjectRequest request,
+      String repo,
+      String defaultBranch) {
+    VcsClient vcs = admission.vcs();
     // The secret is encrypted before anything is written, so a failure here leaves nothing behind.
     String projectId = Ids.newUlid();
     String secret = webhooks.newSecret();
     String secretEnc =
         cipher.encrypt(secret, new SecretContext(SECRET_TABLE, SECRET_COLUMN, projectId));
-    insertProject(projectId, orgId, request, outputRepo, userId);
+    insertProject(
+        projectId, orgId, request, repo, defaultBranch, admission.outputRepo(), admission.userId());
 
     Webhook hook;
     try {
@@ -242,6 +303,19 @@ public class ProjectService {
     }
     return new WebhookStatus(true, hook.id());
   }
+   /**   
+   * Creates the repository. Only a name clash from the VCS host is mapped to CONFLICT; any other
+   * failure passes through unchanged. A null visibility means private.
+   */
+  private static VcsRepo createRepo(VcsClient vcs, CreateProjectRequest request) {
+    String[] parts = request.repo().split("/", 2);
+    boolean isPrivate = request.visibility() != CreateProjectRequest.Visibility.PUBLIC;
+    try {
+      return vcs.createRepo(parts[0], parts[1], isPrivate);
+    } catch (VcsConflictException e) {
+      throw new AppException(ErrorCode.CONFLICT, "Repository name is taken");
+    }
+  }
 
   /** The separate output repository, checked to exist; null when output stays in the repo. */
   private static @Nullable String checkedOutputRepo(VcsClient vcs, CreateProjectRequest request) {
@@ -271,6 +345,8 @@ public class ProjectService {
       String projectId,
       String orgId,
       CreateProjectRequest request,
+      String repo,
+      String defaultBranch,
       @Nullable String outputRepo,
       String userId) {
     transactions.executeWithoutResult(status -> {
@@ -278,9 +354,9 @@ public class ProjectService {
           new Project(
               projectId,
               orgId,
-              request.repo(),
+              repo,
               request.specPath(),
-              request.defaultBranch(),
+              defaultBranch,
               request.outputMode(),
               userId);
       project.setOutputRepoFullName(outputRepo);
@@ -355,6 +431,47 @@ public class ProjectService {
       return RunCursor.decode(cursor);
     } catch (IllegalArgumentException e) {
       throw invalid("cursor is malformed");
+    }
+  }
+  /**
+   * Checks a spec path before the repository is created, so a bad path cannot leave a repository
+   * behind. The path must end in .yaml or .yml (any case), must not start or end with '/', and must
+   * not have an empty, '.' or '..' segment. Only mode NEW checks this, because the starter spec is
+   * written at this path.
+   */
+  private static void requireNewSpecPath(String path) {
+    String lower = path.toLowerCase(Locale.ROOT);
+    boolean yaml = lower.endsWith(".yaml") || lower.endsWith(".yml");
+    boolean clean =
+        Arrays.stream(path.split("/", -1))
+            .noneMatch(segment -> segment.isEmpty() || segment.equals(".") || segment.equals(".."));
+    if (!yaml || !clean) {
+      throw invalid(
+          "specPath must be a .yaml or .yml file path with no empty, '.' or '..' segments: "
+              + path);
+    }
+  }
+
+  /**
+   * The starter spec for a new repository, titled with the repo name. The name is escaped for a
+   * double-quoted YAML string; HTML escaping is off because the output is YAML, not HTML.
+   */
+  static String starterSpec(String repoName) {
+    String title = repoName.replace("\\", "\\\\").replace("\"", "\\\"");
+    return Mustache.compiler()
+        .escapeHTML(false)
+        .compile(readStarterTemplate())
+        .execute(Map.of("title", title));
+  }
+
+  private static String readStarterTemplate() {
+    try (InputStream in = ProjectService.class.getResourceAsStream(STARTER_TEMPLATE)) {
+      if (in == null) {
+        throw new IllegalStateException("missing resource " + STARTER_TEMPLATE);
+      }
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
     }
   }
 }

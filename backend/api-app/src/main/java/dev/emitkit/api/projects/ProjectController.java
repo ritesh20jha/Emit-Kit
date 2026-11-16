@@ -57,8 +57,7 @@ public class ProjectController {
   public ProjectDetail createProject(
       @PathVariable("orgId") String orgId, @Valid @RequestBody CreateProjectRequest request) {
     if (request.mode() == CreateProjectRequest.Mode.NEW) {
-      throw new AppException(
-          ErrorCode.NOT_IMPLEMENTED, "creating a new repository is not implemented");
+      return toDetail(projects.createNew(orgId, request));
     }
     return toDetail(projects.createExisting(orgId, request));
   }
