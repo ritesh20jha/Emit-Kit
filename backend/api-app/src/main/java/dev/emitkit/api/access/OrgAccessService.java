@@ -41,12 +41,15 @@ public class OrgAccessService {
     return new Membership(orgId, userId, member.getRole());
   }
 
-  private static String currentUserId() {
+  /**
+   * The id of the signed-in user. The security chain answers 401 before a service runs, so a
+   * missing principal is a wiring bug and fails with IllegalStateException.
+   */
+  public static String currentUserId() {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication != null && authentication.getPrincipal() instanceof EmitKitUser user) {
       return user.userId();
     }
-    // The security chain answers 401 before a controller runs, so this is a wiring bug.
     throw new IllegalStateException("no EmitKitUser principal on the security context");
   }
 }
