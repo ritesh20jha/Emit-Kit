@@ -42,6 +42,12 @@ emitkit:
     base-url: http://localhost:5173
   # The address GitHub reaches this API at; webhooks are registered at {public-url}/webhooks/github.
   public-url: ${EMITKIT_PUBLIC_URL:http://localhost:8080}
+  # Artifact store (RustFS in the local stack); the defaults match deploy/compose.
+  storage:
+    endpoint: ${EMITKIT_STORAGE_ENDPOINT:http://localhost:9000}
+    bucket: ${EMITKIT_STORAGE_BUCKET:emitkit-artifacts}
+    access-key: ${EMITKIT_STORAGE_ACCESS_KEY:emitkit}
+    secret-key: ${EMITKIT_STORAGE_SECRET_KEY:emitkit-secret}
 springdoc:
   default-produces-media-type: application/json
 management:

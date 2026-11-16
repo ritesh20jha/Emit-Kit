@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId/index'
 import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
 
@@ -27,6 +28,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrgsOrgIdIndexRoute = AppOrgsOrgIdIndexRouteImport.update({
+  id: '/orgs/$orgId/',
+  path: '/orgs/$orgId/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrgsOrgIdMembersRoute = AppOrgsOrgIdMembersRouteImport.update({
@@ -45,12 +51,14 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/': typeof AppIndexRoute
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -59,12 +67,23 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/orgs/$orgId/members' | '/orgs/$orgId/settings'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/orgs/$orgId/members'
+    | '/orgs/$orgId/settings'
+    | '/orgs/$orgId/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/' | '/orgs/$orgId/members' | '/orgs/$orgId/settings'
+  to:
+    | '/login'
+    | '/'
+    | '/orgs/$orgId/members'
+    | '/orgs/$orgId/settings'
+    | '/orgs/$orgId'
   id:
     | '__root__'
     | '/_app'
@@ -72,6 +91,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/orgs/$orgId/members'
     | '/_app/orgs/$orgId/settings'
+    | '/_app/orgs/$orgId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -102,6 +122,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/orgs/$orgId/': {
+      id: '/_app/orgs/$orgId/'
+      path: '/orgs/$orgId'
+      fullPath: '/orgs/$orgId/'
+      preLoaderRoute: typeof AppOrgsOrgIdIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/orgs/$orgId/members': {
       id: '/_app/orgs/$orgId/members'
       path: '/orgs/$orgId/members'
@@ -123,12 +150,14 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppOrgsOrgIdMembersRoute: typeof AppOrgsOrgIdMembersRoute
   AppOrgsOrgIdSettingsRoute: typeof AppOrgsOrgIdSettingsRoute
+  AppOrgsOrgIdIndexRoute: typeof AppOrgsOrgIdIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppOrgsOrgIdMembersRoute: AppOrgsOrgIdMembersRoute,
   AppOrgsOrgIdSettingsRoute: AppOrgsOrgIdSettingsRoute,
+  AppOrgsOrgIdIndexRoute: AppOrgsOrgIdIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
