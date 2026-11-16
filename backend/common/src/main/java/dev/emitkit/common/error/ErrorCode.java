@@ -19,6 +19,8 @@ public enum ErrorCode {
   VCS_AUTH(401),
   VCS_RATE_LIMITED(429),
   SECRETS_UNAVAILABLE(503),
+  /** Authentication of the caller failed. The SPA treats this as the end of the session. */
+  UNAUTHENTICATED(401),
   FORBIDDEN(403),
   NOT_FOUND(404),
   VALIDATION_FAILED(400),

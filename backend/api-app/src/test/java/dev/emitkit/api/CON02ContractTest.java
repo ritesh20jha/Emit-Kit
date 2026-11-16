@@ -19,10 +19,15 @@ import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.runs.RunService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
+import dev.emitkit.api.webhooks.DeliveryDeduper;
+import dev.emitkit.api.webhooks.WebhookDispatcher;
+import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
+import dev.emitkit.domain.ProjectRepository;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.vcs.WebhookVerifier;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -85,6 +90,11 @@ class CON02ContractTest {
   @MockitoBean private SpecHistoryService specHistory;
   @MockitoBean private ProjectAccess projectAccess;
   @MockitoBean private RunService runService;
+  @MockitoBean private WebhookVerifier webhookVerifier;
+  @MockitoBean private ProjectRepository projects;
+  @MockitoBean private SecretCipher secretCipher;
+  @MockitoBean private DeliveryDeduper deliveryDeduper;
+  @MockitoBean private WebhookDispatcher webhookDispatcher;
 
   @Test
   @WithMockUser
@@ -129,6 +139,8 @@ class CON02ContractTest {
     "GET,/api/v1/projects/p1,",
     "DELETE,/api/v1/projects/p1,",
     "POST,/api/v1/projects/p1/webhook,",
+    "GET,/api/v1/projects/p1/config,",
+    "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'",
     "GET,/api/v1/projects/p1/spec,",
     "PUT,/api/v1/projects/p1/spec,'{\"content\":\"openapi: 3.1.0\",\"sha\":\"abc\",\"generate\":true}'"
   })

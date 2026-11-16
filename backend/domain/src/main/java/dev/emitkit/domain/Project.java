@@ -7,14 +7,17 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * A repository that EmitKit generates SDKs for. Maps to {@code projects}. The same repository can
- * exist in several organizations, but only once per organization.
+ * exist in several organizations, but only once per organization among the projects not deleted. A
+ * deleted project is hidden from every query made through this entity; its runs are kept.
  */
 @Entity
 @Table(name = "projects")
+@SQLRestriction("deleted_at IS NULL")
 public class Project extends BaseEntity {
 
   @Column(name = "org_id", nullable = false, length = 26)
@@ -44,6 +47,9 @@ public class Project extends BaseEntity {
 
   @Column(name = "created_by", nullable = false, length = 26)
   private String createdBy;
+
+  @Column(name = "deleted_at")
+  private Instant deletedAt;
 
   @CreationTimestamp
   @Column(name = "created_at", nullable = false, updatable = false)
@@ -124,6 +130,11 @@ public class Project extends BaseEntity {
 
   public String getCreatedBy() {
     return createdBy;
+  }
+
+  /** Marks the project deleted as of {@code at}. The row stays, so its runs keep their project. */
+  public void markDeleted(Instant at) {
+    this.deletedAt = at;
   }
 
   public Instant getCreatedAt() {

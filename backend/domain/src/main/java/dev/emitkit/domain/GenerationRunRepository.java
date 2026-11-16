@@ -2,6 +2,7 @@ package dev.emitkit.domain;
 
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.PageRequest;
@@ -57,6 +58,9 @@ public interface GenerationRunRepository extends JpaRepository<GenerationRun, St
     }
     return findPageAfter(projectId, status, trigger, after.createdAt(), after.id(), page);
   }
+
+  /** A project's runs in any of the given statuses. */
+  List<GenerationRun> findByProjectIdAndStatusIn(String projectId, Collection<RunStatus> statuses);
 
   Optional<GenerationRun> findFirstByProjectIdAndStatusAndDryRunFalseOrderByCreatedAtDescIdDesc(
       String projectId, RunStatus status);

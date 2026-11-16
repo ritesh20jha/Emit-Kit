@@ -19,10 +19,15 @@ import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.runs.RunService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
+import dev.emitkit.api.webhooks.DeliveryDeduper;
+import dev.emitkit.api.webhooks.WebhookDispatcher;
+import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.domain.OrgMemberRepository;
 import dev.emitkit.domain.OrganizationRepository;
+import dev.emitkit.domain.ProjectRepository;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.vcs.WebhookVerifier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -80,6 +85,11 @@ class CON01ContractTest {
   @MockitoBean private SpecHistoryService specHistory;
   @MockitoBean private ProjectAccess projectAccess;
   @MockitoBean private RunService runService;
+  @MockitoBean private WebhookVerifier webhookVerifier;
+  @MockitoBean private ProjectRepository projects;
+  @MockitoBean private SecretCipher secretCipher;
+  @MockitoBean private DeliveryDeduper deliveryDeduper;
+  @MockitoBean private WebhookDispatcher webhookDispatcher;
 
   @Test
   @WithMockUser
