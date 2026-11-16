@@ -219,10 +219,6 @@ public class GenerationRun extends BaseEntity {
     return sdkVersion;
   }
 
-  public void setSdkVersion(String sdkVersion) {
-    this.sdkVersion = sdkVersion;
-  }
-
   public ChangeType getChangeType() {
     return changeType;
   }

@@ -12,7 +12,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * One page of an organization's projects with their last-run fields. A single statement reads each
- * project's newest run and newest released version through lateral joins, so the list costs one
+ * project's newest run and newest released version (from {@code sdk_versions}, which only records
+ * successful non-dry runs that changed the version) through lateral joins, so the list costs one
  * round trip however many projects it has.
  */
 @Component
@@ -26,7 +27,7 @@ class ProjectListQuery {
       select p.id, p.repo_full_name, p.created_at,
              last_run.status as last_run_status,
              last_run.created_at as last_run_at,
-             released.sdk_version as current_version
+             released.version as current_version
         from projects p
         left join lateral (
              select r.status, r.created_at
@@ -35,10 +36,10 @@ class ProjectListQuery {
               order by r.created_at desc, r.id desc
               limit 1) last_run on true
         left join lateral (
-             select r.sdk_version
-               from generation_runs r
-              where r.project_id = p.id and r.sdk_version is not null and not r.dry_run
-              order by r.created_at desc, r.id desc
+             select v.version
+               from sdk_versions v
+              where v.project_id = p.id
+              order by v.created_at desc, v.id desc
               limit 1) released on true
        where p.org_id = :orgId
          and p.deleted_at is null

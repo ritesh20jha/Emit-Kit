@@ -4,7 +4,9 @@ import static dev.emitkit.domain.Role.ADMIN;
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -26,6 +28,7 @@ import dev.emitkit.api.RedisTestConfig;
 import dev.emitkit.api.auth.EmitKitUser;
 import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
+import dev.emitkit.domain.ChangeType;
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunLogRepository;
 import dev.emitkit.domain.GenerationRunRepository;
@@ -44,10 +47,13 @@ import dev.emitkit.domain.Role;
 import dev.emitkit.domain.RoleSource;
 import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.RunTrigger;
+import dev.emitkit.domain.SdkVersion;
+import dev.emitkit.domain.SdkVersionRepository;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.error.VcsAuthException;
+import dev.emitkit.vcs.error.VcsConflictException;
 import dev.emitkit.vcs.error.VcsServerException;
 import dev.emitkit.vcs.fake.InMemoryVcsClient;
 import java.time.Instant;
@@ -69,6 +75,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -119,10 +126,12 @@ class PRJ03ProjectCrudIT {
   @Autowired private ProjectConfigRepository configs;
   @Autowired private GenerationRunRepository generationRuns;
   @Autowired private GenerationRunLogRepository logs;
+  @Autowired private SdkVersionRepository sdkVersions;
   @Autowired private LintResultRepository lintResults;
   @Autowired private SecretCipher cipher;
 
   @MockitoBean private VcsProvider vcsProvider;
+  @MockitoSpyBean private WebhookRegistrar webhooks;
 
   private InMemoryVcsClient vcs;
   private @Nullable ListAppender<ILoggingEvent> captured;
@@ -131,6 +140,7 @@ class PRJ03ProjectCrudIT {
   void resetData() {
     logs.deleteAll();
     lintResults.deleteAll();
+    sdkVersions.deleteAllInBatch();
     generationRuns.deleteAllInBatch();
     configs.deleteAll();
     // Raw SQL, so soft-deleted rows go too; the entity hides them from its own queries.
@@ -306,6 +316,67 @@ class PRJ03ProjectCrudIT {
   }
 
   @Test
+  void reRegister_registerFails_keepsWebhookThatAnotherRequestStored() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, ADMIN);
+    createExisting(acme, octo, REPO);
+    Project project = onlyProject(acme);
+    long concurrent = 4242L;
+    // Another re-register stores its live webhook while this one is registering, then this one
+    // fails.
+    doAnswer(
+            invocation -> {
+              jdbc.sql("update projects set webhook_id = :hook where id = :id")
+                  .param("hook", concurrent)
+                  .param("id", project.getId())
+                  .update();
+              throw new VcsConflictException("hook already exists");
+            })
+        .when(webhooks)
+        .register(any(), anyString(), anyString());
+
+    mvc.perform(post(WEBHOOK, project.getId()).with(csrf()).with(signedInAs(octo)))
+        .andExpect(status().isConflict());
+
+    mvc.perform(get(PROJECT, project.getId()).with(signedInAs(octo)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.webhook.registered").value(true))
+        .andExpect(jsonPath("$.webhook.webhookId").value(concurrent));
+    assertThat(projects.findById(project.getId()).orElseThrow().getWebhookSecretEnc()).isNotNull();
+  }
+
+  @Test
+  void delete_cancelsInFlightRuns() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, ADMIN);
+    Project project = saveProject(acme, octo, REPO);
+    ProjectConfig config = configs.save(DefaultConfig.version1(project.getId(), octo.getId()));
+    GenerationRun queued = run(project, config, RunStatus.QUEUED, BASE);
+    GenerationRun running = run(project, config, RunStatus.RUNNING, BASE.plusSeconds(1));
+    GenerationRun awaiting = run(project, config, RunStatus.AWAITING_APPROVAL, BASE.plusSeconds(2));
+    GenerationRun success = run(project, config, RunStatus.SUCCESS, BASE.plusSeconds(3));
+
+    mvc.perform(delete(PROJECT, project.getId()).with(csrf()).with(signedInAs(octo)))
+        .andExpect(status().isNoContent());
+
+    assertThat(generationRuns.findAll()).hasSize(4);
+    GenerationRun cancelledQueued = generationRuns.findById(queued.getId()).orElseThrow();
+    assertThat(cancelledQueued.getStatus()).isEqualTo(RunStatus.CANCELLED);
+    assertThat(cancelledQueued.getFinishedAt()).isNotNull();
+    GenerationRun cancelledAwaiting = generationRuns.findById(awaiting.getId()).orElseThrow();
+    assertThat(cancelledAwaiting.getStatus()).isEqualTo(RunStatus.CANCELLED);
+    GenerationRun stopping = generationRuns.findById(running.getId()).orElseThrow();
+    assertThat(stopping.getStatus()).isEqualTo(RunStatus.RUNNING);
+    assertThat(stopping.isCancelRequested()).isTrue();
+    GenerationRun finished = generationRuns.findById(success.getId()).orElseThrow();
+    assertThat(finished.getStatus()).isEqualTo(RunStatus.SUCCESS);
+    assertThat(finished.isCancelRequested()).isFalse();
+    assertThat(finished.getFinishedAt()).isNull();
+  }
+
+  @Test
   void list_paginatesAndFilters() throws Exception {
     Organization acme = org("acme");
     User octo = user(1, "octo");
@@ -357,14 +428,19 @@ class PRJ03ProjectCrudIT {
     User octo = user(1, "octo");
     member(acme, octo, ADMIN);
     Project api = saveProject(acme, octo, "acme/api");
-    Project dry = saveProject(acme, octo, "acme/dry");
     saveProject(acme, octo, "acme/idle");
-    ProjectConfig apiConfig = configs.save(DefaultConfig.version1(api.getId(), octo.getId()));
-    ProjectConfig dryConfig = configs.save(DefaultConfig.version1(dry.getId(), octo.getId()));
-    run(api, apiConfig, false, RunStatus.SUCCESS, BASE, "1.0.0");
-    run(api, apiConfig, false, RunStatus.FAILED, BASE.plusSeconds(60), null);
-    run(dry, dryConfig, false, RunStatus.SUCCESS, BASE, "1.1.0");
-    run(dry, dryConfig, true, RunStatus.SUCCESS, BASE.plusSeconds(60), "2.0.0");
+    ProjectConfig config = configs.save(DefaultConfig.version1(api.getId(), octo.getId()));
+    release(api, run(api, config, RunStatus.SUCCESS, BASE), "1.0.0", BASE);
+    release(
+        api,
+        run(api, config, RunStatus.SUCCESS, BASE.plusSeconds(30)),
+        "1.1.0",
+        BASE.plusSeconds(30));
+    // A run that failed after it calculated a version never released it, so it is not current.
+    GenerationRun failed = run(api, config, RunStatus.FAILED, BASE.plusSeconds(60));
+    jdbc.sql("update generation_runs set sdk_version = '9.9.9' where id = :id")
+        .param("id", failed.getId())
+        .update();
 
     String body =
         mvc.perform(get(PROJECTS, acme.getId()).with(signedInAs(octo)))
@@ -376,11 +452,7 @@ class PRJ03ProjectCrudIT {
     Map<String, Object> apiItem = item(body, "acme/api");
     assertThat(apiItem.get("lastRunStatus")).isEqualTo("FAILED");
     assertThat(Instant.parse((String) apiItem.get("lastRunAt"))).isEqualTo(BASE.plusSeconds(60));
-    assertThat(apiItem.get("currentVersion")).isEqualTo("1.0.0");
-
-    Map<String, Object> dryItem = item(body, "acme/dry");
-    assertThat(dryItem.get("lastRunStatus")).isEqualTo("SUCCESS");
-    assertThat(dryItem.get("currentVersion")).isEqualTo("1.1.0");
+    assertThat(apiItem.get("currentVersion")).isEqualTo("1.1.0");
 
     Map<String, Object> idleItem = item(body, "acme/idle");
     assertThat(idleItem.get("lastRunStatus")).isNull();
@@ -446,19 +518,19 @@ class PRJ03ProjectCrudIT {
     return appender;
   }
 
-  private void run(
-      Project project,
-      ProjectConfig config,
-      boolean dryRun,
-      RunStatus status,
-      Instant createdAt,
-      @Nullable String sdkVersion) {
+  private GenerationRun run(
+      Project project, ProjectConfig config, RunStatus status, Instant createdAt) {
     GenerationRun run =
         new GenerationRun(
-            null, project.getId(), config.getId(), RunTrigger.MANUAL, dryRun, createdAt);
+            null, project.getId(), config.getId(), RunTrigger.MANUAL, false, createdAt);
     run.setStatus(status);
-    run.setSdkVersion(sdkVersion);
-    generationRuns.save(run);
+    return generationRuns.save(run);
+  }
+
+  /** Records {@code version} as released by {@code run}, as the finalize step does. */
+  private void release(Project project, GenerationRun run, String version, Instant at) {
+    sdkVersions.saveAndFlush(
+        new SdkVersion(null, project.getId(), version, run.getId(), ChangeType.MINOR, "", at));
   }
 
   private boolean isSoftDeleted(String projectId) {

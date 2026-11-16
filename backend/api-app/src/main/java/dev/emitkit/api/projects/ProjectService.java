@@ -9,6 +9,8 @@ import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.common.id.Ids;
 import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
+import dev.emitkit.domain.GenerationRun;
+import dev.emitkit.domain.GenerationRunRepository;
 import dev.emitkit.domain.OutputMode;
 import dev.emitkit.domain.Project;
 import dev.emitkit.domain.ProjectConfigRepository;
@@ -44,10 +46,15 @@ public class ProjectService {
   private static final String SECRET_TABLE = "projects";
   private static final String SECRET_COLUMN = "webhook_secret_enc";
 
+  /** Runs that have not finished. A deleted project's runs in these states are stopped. */
+  private static final List<RunStatus> IN_FLIGHT =
+      List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL);
+
   private final OrgAccessService orgAccess;
   private final VcsProvider vcsProvider;
   private final ProjectRepository projects;
   private final ProjectConfigRepository configs;
+  private final GenerationRunRepository runs;
   private final ProjectListQuery listing;
   private final SecretCipher cipher;
   private final WebhookRegistrar webhooks;
@@ -58,6 +65,7 @@ public class ProjectService {
       VcsProvider vcsProvider,
       ProjectRepository projects,
       ProjectConfigRepository configs,
+      GenerationRunRepository runs,
       ProjectListQuery listing,
       SecretCipher cipher,
       WebhookRegistrar webhooks,
@@ -66,6 +74,7 @@ public class ProjectService {
     this.vcsProvider = vcsProvider;
     this.projects = projects;
     this.configs = configs;
+    this.runs = runs;
     this.listing = listing;
     this.cipher = cipher;
     this.webhooks = webhooks;
@@ -173,8 +182,27 @@ public class ProjectService {
             e);
       }
     }
-    transactions.executeWithoutResult(
-        status -> projects.findById(project.getId()).ifPresent(p -> p.markDeleted(Instant.now())));
+    Instant now = Instant.now();
+    transactions.executeWithoutResult(status -> {
+      projects.findById(project.getId()).ifPresent(p -> p.markDeleted(now));
+      cancelInFlightRuns(project.getId(), now);
+    });
+  }
+
+  /**
+   * A deleted project's runs can no longer be reached by the worker, so the ones that have not
+   * finished are stopped here: queued and awaiting-approval runs are cancelled, and running ones
+   * are asked to stop.
+   */
+  private void cancelInFlightRuns(String projectId, Instant now) {
+    for (GenerationRun run : runs.findByProjectIdAndStatusIn(projectId, IN_FLIGHT)) {
+      if (run.getStatus() == RunStatus.RUNNING) {
+        run.setCancelRequested(true);
+      } else {
+        run.setStatus(RunStatus.CANCELLED);
+        run.setFinishedAt(now);
+      }
+    }
   }
 
   /**
@@ -192,17 +220,17 @@ public class ProjectService {
     String secret = webhooks.newSecret();
     String secretEnc =
         cipher.encrypt(secret, new SecretContext(SECRET_TABLE, SECRET_COLUMN, projectId));
-    boolean hadOldWebhook = project.getWebhookId() != null;
-    if (hadOldWebhook) {
-      removeOldWebhook(vcs, repo, project.getWebhookId());
+    Long oldWebhookId = project.getWebhookId();
+    if (oldWebhookId != null) {
+      removeOldWebhook(vcs, repo, oldWebhookId);
     }
     Webhook hook;
     try {
       hook = webhooks.register(vcs, repo, secret);
     } catch (RuntimeException e) {
       // The old hook is already gone on the VCS host, so the stored id would point at nothing.
-      if (hadOldWebhook) {
-        clearWebhookQuietly(projectId, e);
+      if (oldWebhookId != null) {
+        clearWebhookQuietly(projectId, oldWebhookId, e);
       }
       throw e;
     }
@@ -262,19 +290,15 @@ public class ProjectService {
   }
 
   /**
-   * Forgets a webhook that is no longer on the VCS host, so the project does not report it as
-   * registered. Best effort: a failed clear is logged and added to {@code failure}, which is the
-   * error the caller reports.
+   * Forgets the webhook {@code deadWebhookId}, which is no longer on the VCS host, so the project
+   * does not report it as registered. Only that id is cleared: a concurrent re-register may have
+   * stored a live webhook since, and that one stays. Best effort: a failed clear is logged and
+   * added to {@code failure}, which is the error the caller reports.
    */
-  private void clearWebhookQuietly(String projectId, RuntimeException failure) {
+  private void clearWebhookQuietly(String projectId, long deadWebhookId, RuntimeException failure) {
     try {
-      transactions.executeWithoutResult(status ->
-          projects
-              .findById(projectId)
-              .ifPresent(p -> {
-                p.setWebhookId(null);
-                p.setWebhookSecretEnc(null);
-              }));
+      transactions.executeWithoutResult(
+          status -> projects.clearWebhookIfStill(projectId, deadWebhookId));
     } catch (RuntimeException cleanup) {
       LOG.warn("could not clear the dead webhook of project {}", projectId, cleanup);
       failure.addSuppressed(cleanup);
