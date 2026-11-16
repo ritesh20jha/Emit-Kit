@@ -69,7 +69,7 @@ public class RewrapJob {
     forEachPage(
         column,
         page -> {
-          List<Row> stale = belowLatest(page, latest);
+          List<Row> stale = belowLatest(column, page, latest);
           if (stale.isEmpty()) {
             return;
           }
@@ -86,7 +86,7 @@ public class RewrapJob {
 
   private long countBelow(EncryptedColumn column, int latest) {
     AtomicLong count = new AtomicLong();
-    forEachPage(column, page -> count.addAndGet(belowLatest(page, latest).size()));
+    forEachPage(column, page -> count.addAndGet(belowLatest(column, page, latest).size()));
     return count.get();
   }
 
@@ -123,19 +123,24 @@ public class RewrapJob {
         .update();
   }
 
-  private static List<Row> belowLatest(List<Row> page, int latest) {
-    return page.stream().filter(row -> versionOf(row.ciphertext()) < latest).toList();
+  private static List<Row> belowLatest(EncryptedColumn column, List<Row> page, int latest) {
+    return page.stream().filter(row -> versionOf(column, row) < latest).toList();
   }
 
   private static SecretContext contextOf(EncryptedColumn column, Row row) {
     return new SecretContext(column.table(), column.column(), row.id());
   }
 
-  /** The key version in a ciphertext prefix, such as 2 for {@code vault:v2:...}. */
-  private static int versionOf(String ciphertext) {
-    Matcher matcher = VERSION_PREFIX.matcher(ciphertext);
+  /**
+   * The key version in a ciphertext prefix, such as 2 for {@code vault:v2:...}. The error names the
+   * row, never its value.
+   */
+  private static int versionOf(EncryptedColumn column, Row row) {
+    Matcher matcher = VERSION_PREFIX.matcher(row.ciphertext());
     if (!matcher.find()) {
-      throw new IllegalStateException("ciphertext has no key version prefix");
+      throw new IllegalStateException(
+          "no key version prefix in %s.%s for row %s"
+              .formatted(column.table(), column.column(), row.id()));
     }
     return Integer.parseInt(matcher.group(1));
   }

@@ -5,8 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.springframework.vault.authentication.TokenAuthentication;
@@ -20,6 +25,8 @@ import org.testcontainers.vault.VaultContainer;
 class VaultTransitCipherIT {
 
   private static final String KEY = "emitkit-secrets";
+  private static final String POLICY = "emitkit-api";
+  private static final String POLICY_PATH = "deploy/compose/vault/policies/emitkit-api.hcl";
 
   @Container static VaultContainer<?> vault = newVault();
 
@@ -111,9 +118,35 @@ class VaultTransitCipherIT {
             "write -f transit/keys/" + KEY + " type=aes256-gcm96 derived=true");
   }
 
+  /** The cipher under test uses the api's restricted policy, so a call outside it fails. */
   private static VaultTransitCipher cipherFor(VaultContainer<?> container) {
     var endpoint = VaultEndpoint.from(URI.create(container.getHttpHostAddress()));
-    var template = new VaultTemplate(endpoint, new TokenAuthentication("root"));
+    var root = new VaultTemplate(endpoint, new TokenAuthentication("root"));
+    var template = new VaultTemplate(endpoint, new TokenAuthentication(restrictedToken(root)));
     return new VaultTransitCipher(template.opsForTransit(), KEY);
+  }
+
+  /** The api's own policy file, read from the repository so the test cannot drift from it. */
+  private static String policyText() {
+    for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
+      Path file = dir.resolve(POLICY_PATH);
+      if (Files.exists(file)) {
+        try {
+          return Files.readString(file);
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }
+    }
+    throw new IllegalStateException(POLICY_PATH + " not found above the working directory");
+  }
+
+  /** A token with only the api's policy, as the deployed AppRole gets. Setup stays on root. */
+  private static String restrictedToken(VaultTemplate root) {
+    root.write("sys/policies/acl/" + POLICY, Map.of("policy", policyText()));
+    return (String)
+        root.write("auth/token/create", Map.of("policies", List.of(POLICY), "no_parent", true))
+            .getAuth()
+            .get("client_token");
   }
 }

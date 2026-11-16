@@ -36,6 +36,8 @@ public interface SecretCipher {
 
   /**
    * The key version that new encryptions use. Ciphertexts with a lower version can be re-wrapped.
+   * Implementations derive it from an encryption, so the caller needs no read access to the key
+   * itself.
    *
    * @throws SecretBackendException if the secret backend is unreachable, sealed or failing
    */

@@ -15,13 +15,18 @@ import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
 import dev.emitkit.common.secret.VaultTransitCipher;
 import dev.emitkit.domain.storage.ArtifactStorage;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -59,6 +64,8 @@ import org.testcontainers.vault.VaultContainer;
 class OPS03JobsIT {
 
   private static final String KEY = "emitkit-secrets";
+  private static final String POLICY = "emitkit-api";
+  private static final String POLICY_PATH = "deploy/compose/vault/policies/emitkit-api.hcl";
   private static final String PLAINTEXT = "whsec_ops03_plaintext";
   private static final String OWNER = "01OPS03OWNER0000000000001";
   private static final String ORG = "01OPS03ORG00000000000001";
@@ -294,7 +301,7 @@ class OPS03JobsIT {
   }
 
   private void rotateKey() {
-    vaultTemplate().opsForTransit().rotate(KEY);
+    rootTemplate().opsForTransit().rotate(KEY);
   }
 
   private HttpResponse<String> post(int port, String path) throws Exception {
@@ -313,10 +320,41 @@ class OPS03JobsIT {
     return UUID.randomUUID().toString().replace("-", "").substring(0, 26);
   }
 
-  private static VaultTemplate vaultTemplate() {
+  private static VaultTemplate rootTemplate() {
     return new VaultTemplate(
         VaultEndpoint.from(URI.create(vault.getHttpHostAddress())),
         new TokenAuthentication("root"));
+  }
+
+  /** The cipher under test uses the api's restricted policy, so a call outside it fails. */
+  private static VaultTemplate restrictedTemplate() {
+    return new VaultTemplate(
+        VaultEndpoint.from(URI.create(vault.getHttpHostAddress())),
+        new TokenAuthentication(restrictedToken(rootTemplate())));
+  }
+
+  /** The api's own policy file, read from the repository so the test cannot drift from it. */
+  private static String policyText() {
+    for (Path dir = Path.of("").toAbsolutePath(); dir != null; dir = dir.getParent()) {
+      Path file = dir.resolve(POLICY_PATH);
+      if (Files.exists(file)) {
+        try {
+          return Files.readString(file);
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }
+    }
+    throw new IllegalStateException(POLICY_PATH + " not found above the working directory");
+  }
+
+  /** A token with only the api's policy, as the deployed AppRole gets. Setup stays on root. */
+  private static String restrictedToken(VaultTemplate root) {
+    root.write("sys/policies/acl/" + POLICY, Map.of("policy", policyText()));
+    return (String)
+        root.write("auth/token/create", Map.of("policies", List.of(POLICY), "no_parent", true))
+            .getAuth()
+            .get("client_token");
   }
 
   private static VaultContainer<?> newVault() {
@@ -333,7 +371,7 @@ class OPS03JobsIT {
 
     @Bean
     SecretCipher secretCipher() {
-      return new VaultTransitCipher(vaultTemplate().opsForTransit(), KEY);
+      return new VaultTransitCipher(restrictedTemplate().opsForTransit(), KEY);
     }
   }
 }
