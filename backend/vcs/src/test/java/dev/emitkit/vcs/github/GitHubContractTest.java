@@ -78,6 +78,49 @@ class GitHubContractTest extends VcsClientContractTest {
             .whenScenarioStateIs("written")
             .willReturn(aResponse().withStatus(409)));
 
+    // Writes on branch b1 (not the default branch) read and write b1's own copy of the file. b1
+    // starts with main's content; its first write holds "v2", so the old blob sha goes stale.
+    String originalSha = GitBlob.sha(OPENAPI_CONTENT);
+    stubFor(
+        get(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withQueryParam("ref", equalTo("b1"))
+            .inScenario("b1 file")
+            .whenScenarioStateIs(Scenario.STARTED)
+            .atPriority(1)
+            .willReturn(okJson(file("b3BlbmFwaTogMy4xLjA=", 14, originalSha))));
+    stubFor(
+        get(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withQueryParam("ref", equalTo("b1"))
+            .inScenario("b1 file")
+            .whenScenarioStateIs("written")
+            .atPriority(1)
+            .willReturn(okJson(file("djI=", 2, GitBlob.sha("v2")))));
+    stubFor(
+        put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withRequestBody(matchingJsonPath("$.branch", equalTo("b1")))
+            .withRequestBody(matchingJsonPath("$.sha", equalTo(originalSha)))
+            .inScenario("b1 file")
+            .whenScenarioStateIs(Scenario.STARTED)
+            .willSetStateTo("written")
+            .atPriority(1)
+            .willReturn(
+                okJson(
+                    "{\"content\":{\"sha\":\"b1sha\"},\"commit\":{\"sha\":\"b1commit\","
+                        + "\"html_url\":\"https://github.com/acme/api/commit/b1commit\"}}")));
+    stubFor(
+        put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withRequestBody(matchingJsonPath("$.branch", equalTo("b1")))
+            .withRequestBody(matchingJsonPath("$.sha", equalTo(originalSha)))
+            .inScenario("b1 file")
+            .whenScenarioStateIs("written")
+            .atPriority(1)
+            .willReturn(aResponse().withStatus(409)));
+    stubFor(
+        put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withRequestBody(matchingJsonPath("$.branch", equalTo("nope")))
+            .atPriority(1)
+            .willReturn(json(404, "{\"message\":\"Branch nope not found\"}")));
+
     // Branches main, b0, b1 and b2 all point at HEAD; the others are missing.
     for (String branch : List.of("main", "b0", "b1", "b2")) {
       stubFor(
@@ -180,6 +223,13 @@ class GitHubContractTest extends VcsClientContractTest {
   private static MappingBuilder createRef(String ref) {
     return post(urlPathEqualTo("/repos/acme/api/git/refs"))
         .withRequestBody(matchingJsonPath("$.ref", equalTo(ref)));
+  }
+
+  /** A file as the contents API returns it: base64 content, its size and its blob sha. */
+  private static String file(String base64, int size, String sha) {
+    return ("{\"type\":\"file\",\"encoding\":\"base64\",\"size\":%d,\"name\":\"openapi.yaml\","
+            + "\"path\":\"openapi.yaml\",\"sha\":\"%s\",\"content\":\"%s\"}")
+        .formatted(size, sha, base64);
   }
 
   private static ResponseDefinitionBuilder json(int status, String body) {

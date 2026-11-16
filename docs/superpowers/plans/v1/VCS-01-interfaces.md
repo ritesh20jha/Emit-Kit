@@ -53,8 +53,8 @@ public abstract class VcsClientContractTest {
   @Test void getFile_missing_throwsNotFound() { assertThatThrownBy(() -> client().getFile("acme/api", "nope.yaml", "main")).isInstanceOf(VcsNotFoundException.class); }
   @Test void putFile_withStaleSha_throwsConflict() {
     var f = client().getFile("acme/api", "openapi.yaml", "main");
-    client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m");
-    assertThatThrownBy(() -> client().putFile("acme/api", "openapi.yaml", "v3", f.sha(), "m")).isInstanceOf(VcsConflictException.class);
+    client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m", "main");
+    assertThatThrownBy(() -> client().putFile("acme/api", "openapi.yaml", "v3", f.sha(), "m", "main")).isInstanceOf(VcsConflictException.class);
   }
   @Test void commitTree_thenListBlobShas() {
     client().createBranch("acme/api", "b1", head());

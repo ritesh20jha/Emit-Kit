@@ -122,7 +122,7 @@ class PRJ05SpecIT {
     vcs = new InMemoryVcsClient();
     when(vcsProvider.forProject(anyString())).thenReturn(vcs);
     vcs.createRepo("acme", "api", false);
-    vcs.putFile("acme/api", SPEC_PATH, SPEC, null, "add spec");
+    vcs.putFile("acme/api", SPEC_PATH, SPEC, null, "add spec", "main");
   }
 
   @Test
@@ -139,7 +139,7 @@ class PRJ05SpecIT {
         .andExpect(jsonPath("$.format").value("yaml"));
 
     vcs.createRepo("acme", "json", false);
-    vcs.putFile("acme/json", "openapi.json", "{}", null, "add spec");
+    vcs.putFile("acme/json", "openapi.json", "{}", null, "add spec", "main");
     Project jsonProject = project(acme, octo, "acme/json", "openapi.json");
 
     mvc.perform(get("/api/v1/projects/{id}/spec", jsonProject.getId()).with(signedInAs(octo)))
@@ -176,7 +176,7 @@ class PRJ05SpecIT {
     User octo = user(1, "octo");
     member(acme, octo, Role.ADMIN);
     vcs.createRepo("acme", "upper", false);
-    vcs.putFile("acme/upper", "SPEC.JSON", "{}", null, "add spec");
+    vcs.putFile("acme/upper", "SPEC.JSON", "{}", null, "add spec", "main");
     Project project = project(acme, octo, "acme/upper", "SPEC.JSON");
 
     mvc.perform(get("/api/v1/projects/{id}/spec", project.getId()).with(signedInAs(octo)))
@@ -307,6 +307,34 @@ class PRJ05SpecIT {
   }
 
   @Test
+  void trackedBranchDiffersFromRepoDefault_savesToTrackedBranch() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, Role.ADMIN);
+    String develop = "openapi: 3.1.0\ninfo:\n  title: Dogs\n  version: 2.0.0\npaths: {}\n";
+    vcs.createBranch("acme/api", "develop", vcs.branchHead("acme/api", "main"));
+    vcs.putFile("acme/api", SPEC_PATH, develop, GitBlob.sha(SPEC), "develop edit", "develop");
+    Project project = project(acme, octo, "acme/api", SPEC_PATH, "develop");
+
+    mvc.perform(get("/api/v1/projects/{id}/spec", project.getId()).with(signedInAs(octo)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.content").value(develop))
+        .andExpect(jsonPath("$.sha").value(GitBlob.sha(develop)));
+
+    mvc.perform(
+            put("/api/v1/projects/{id}/spec", project.getId())
+                .with(csrf())
+                .with(signedInAs(octo))
+                .contentType("application/json")
+                .content(saveBody(EDITED, GitBlob.sha(develop), null, false)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.newSha").value(GitBlob.sha(EDITED)));
+
+    assertThat(vcs.getFile("acme/api", SPEC_PATH, "develop").content()).isEqualTo(EDITED);
+    assertThat(vcs.file("acme/api", SPEC_PATH).content()).isEqualTo(SPEC);
+  }
+
+  @Test
   void editorNotCreator_usesCreatorToken() throws Exception {
     Organization acme = org("acme");
     User creator = user(1, "creator");
@@ -361,7 +389,7 @@ class PRJ05SpecIT {
 
   /** Another signed-in user saves the file, so the sha the first user read is stale. */
   private void otherUserSaves(String content, String expectedSha) {
-    vcs.putFile("acme/api", SPEC_PATH, content, expectedSha, "someone else's edit");
+    vcs.putFile("acme/api", SPEC_PATH, content, expectedSha, "someone else's edit", "main");
   }
 
   private static String saveBody(String content, String sha, String message, boolean generate) {
@@ -369,8 +397,13 @@ class PRJ05SpecIT {
   }
 
   private Project project(Organization org, User user, String repo, String specPath) {
+    return project(org, user, repo, specPath, "main");
+  }
+
+  private Project project(
+      Organization org, User user, String repo, String specPath, String branch) {
     return projects.save(
-        new Project(null, org.getId(), repo, specPath, "main", OutputMode.APPEND, user.getId()));
+        new Project(null, org.getId(), repo, specPath, branch, OutputMode.APPEND, user.getId()));
   }
 
   private static RequestPostProcessor signedInAs(User user) {

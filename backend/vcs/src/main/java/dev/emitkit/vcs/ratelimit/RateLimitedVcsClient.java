@@ -82,9 +82,9 @@ public final class RateLimitedVcsClient implements VcsClient {
 
   @Override
   public CommitRef putFile(
-      String repo, String path, String content, String expectedSha, String message) {
+      String repo, String path, String content, String expectedSha, String message, String branch) {
     guard();
-    return delegate.putFile(repo, path, content, expectedSha, message);
+    return delegate.putFile(repo, path, content, expectedSha, message, branch);
   }
 
   @Override

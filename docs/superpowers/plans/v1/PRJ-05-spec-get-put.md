@@ -21,7 +21,7 @@
 
 - **Produces:**
 - `GET` → `getFile(repo, specPath, defaultBranch)`; `format` from extension (`.json` → json, else yaml).
-- `PUT` → size ≤ 2 MB (`SPEC_TOO_LARGE`), then `putFile(..., expectedSha = request.sha, message = request.message ?: "Update API spec (EmitKit)")`; `VcsConflictException` → `AppException(SPEC_CONFLICT, "Someone else changed this file", extra = {currentSha})` where `currentSha` is fetched after the conflict.
+- `PUT` → size ≤ 2 MB (`SPEC_TOO_LARGE`), then `putFile(..., expectedSha = request.sha, message = request.message ?: "Update API spec (EmitKit)", branch = project.defaultBranch)`; `VcsConflictException` → `AppException(SPEC_CONFLICT, "Someone else changed this file", extra = {currentSha})` where `currentSha` is fetched after the conflict.
 - `generate` is handled in RUN-05; here it is accepted and ignored.
 
 ## Tasks

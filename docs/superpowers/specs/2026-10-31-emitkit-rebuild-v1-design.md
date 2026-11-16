@@ -308,7 +308,7 @@ public interface VcsClient {
   List<VcsOrg> listOrgs(); List<VcsRepo> listRepos();
   VcsRepo createRepo(String org, String name, boolean isPrivate);
   FileContent getFile(String repo, String path, String ref);          // content + sha
-  CommitRef putFile(String repo, String path, String content, String expectedSha, String message);
+  CommitRef putFile(String repo, String path, String content, String expectedSha, String message, String branch);  // writes on branch; expectedSha is that branch's blob
   void createBranch(String repo, String name, String fromSha);
   void deleteBranch(String repo, String name);                         // cancel cleanup
   Map<String, String> listBlobShas(String repo, String ref, String pathPrefix);   // path → git blob sha (one tree call)

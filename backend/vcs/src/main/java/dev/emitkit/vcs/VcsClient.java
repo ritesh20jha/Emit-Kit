@@ -20,10 +20,12 @@ public interface VcsClient {
   FileContent getFile(String repo, String path, String ref);
 
   /**
-   * Writes a file on the default branch. {@code expectedSha} is the blob sha the write replaces; it
-   * must match the current blob sha or the write fails with a conflict.
+   * Writes a file on {@code branch}, which is required and must exist. {@code expectedSha} is the
+   * blob sha of the file on that branch that the write replaces; it must match or the write fails
+   * with a conflict. A missing branch or file fails with not-found.
    */
-  CommitRef putFile(String repo, String path, String content, String expectedSha, String message);
+  CommitRef putFile(
+      String repo, String path, String content, String expectedSha, String message, String branch);
 
   /**
    * Creates {@code name} pointing at the commit {@code fromSha}. If the branch already points there

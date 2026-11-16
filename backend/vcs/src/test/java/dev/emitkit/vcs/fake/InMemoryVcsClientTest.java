@@ -22,7 +22,7 @@ class InMemoryVcsClientTest extends VcsClientContractTest {
   void seed() {
     fake = new InMemoryVcsClient();
     fake.createRepo("acme", "api", false);
-    fake.putFile("acme/api", "openapi.yaml", OPENAPI_CONTENT, null, "init");
+    fake.putFile("acme/api", "openapi.yaml", OPENAPI_CONTENT, null, "init", "main");
   }
 
   @Override

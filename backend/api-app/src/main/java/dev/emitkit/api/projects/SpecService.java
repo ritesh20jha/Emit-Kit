@@ -74,7 +74,12 @@ public class SpecService {
     try {
       commit =
           vcs.putFile(
-              repo, path, request.content(), request.sha(), commitMessage(request.message()));
+              repo,
+              path,
+              request.content(),
+              request.sha(),
+              commitMessage(request.message()),
+              project.getDefaultBranch());
     } catch (VcsConflictException e) {
       throw saveConflict(vcs, project, request.sha(), e);
     }

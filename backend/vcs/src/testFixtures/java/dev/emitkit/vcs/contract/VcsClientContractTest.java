@@ -42,9 +42,39 @@ public abstract class VcsClientContractTest {
   @Test
   protected void putFile_withStaleSha_throwsConflict() {
     var f = client().getFile("acme/api", "openapi.yaml", "main");
-    client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m");
-    assertThatThrownBy(() -> client().putFile("acme/api", "openapi.yaml", "v3", f.sha(), "m"))
+    client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m", "main");
+    assertThatThrownBy(
+            () -> client().putFile("acme/api", "openapi.yaml", "v3", f.sha(), "m", "main"))
         .isInstanceOf(VcsConflictException.class);
+  }
+
+  @Test
+  protected void putFile_onTrackedBranch_changesOnlyThatBranch() {
+    client().createBranch("acme/api", "b1", mainHead());
+    var onB1 = client().getFile("acme/api", "openapi.yaml", "b1");
+    client().putFile("acme/api", "openapi.yaml", "v2", onB1.sha(), "m", "b1");
+    assertThat(client().getFile("acme/api", "openapi.yaml", "b1").content()).isEqualTo("v2");
+    assertThat(client().getFile("acme/api", "openapi.yaml", "main").content())
+        .isEqualTo(OPENAPI_CONTENT);
+  }
+
+  @Test
+  protected void putFile_staleShaOnTrackedBranch_throwsConflict() {
+    client().createBranch("acme/api", "b1", mainHead());
+    var onB1 = client().getFile("acme/api", "openapi.yaml", "b1");
+    client().putFile("acme/api", "openapi.yaml", "v2", onB1.sha(), "m", "b1");
+    // b1 has moved on, so its old blob sha no longer matches, whatever main holds.
+    assertThatThrownBy(
+            () -> client().putFile("acme/api", "openapi.yaml", "v3", onB1.sha(), "m", "b1"))
+        .isInstanceOf(VcsConflictException.class);
+  }
+
+  @Test
+  protected void putFile_missingBranch_throwsNotFound() {
+    var f = client().getFile("acme/api", "openapi.yaml", "main");
+    assertThatThrownBy(
+            () -> client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m", "nope"))
+        .isInstanceOf(VcsNotFoundException.class);
   }
 
   @Test
@@ -88,7 +118,7 @@ public abstract class VcsClientContractTest {
   protected void createBranch_atDifferentSha_throwsConflict() {
     client().createBranch("acme/api", "b2", mainHead());
     var f = client().getFile("acme/api", "openapi.yaml", "main");
-    String newHead = client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m").sha();
+    String newHead = client().putFile("acme/api", "openapi.yaml", "v2", f.sha(), "m", "main").sha();
     assertThatThrownBy(() -> client().createBranch("acme/api", "b2", newHead))
         .isInstanceOf(VcsConflictException.class);
   }
