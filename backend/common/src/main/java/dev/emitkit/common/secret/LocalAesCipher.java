@@ -77,6 +77,17 @@ public final class LocalAesCipher implements SecretCipher {
     return items.stream().map(item -> decrypt(item.ciphertext(), item.ctx())).toList();
   }
 
+  /** Local ciphertexts have a single key version, so nothing is ever re-wrapped. */
+  @Override
+  public int latestKeyVersion() {
+    return 1;
+  }
+
+  @Override
+  public List<String> rewrapBatch(List<CipherItem> items) {
+    return items.stream().map(CipherItem::ciphertext).toList();
+  }
+
   private static byte[] aad(SecretContext ctx) {
     return ctx.encoded().getBytes(StandardCharsets.UTF_8);
   }

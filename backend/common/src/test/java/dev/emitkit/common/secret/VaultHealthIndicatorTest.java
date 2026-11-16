@@ -98,5 +98,15 @@ class VaultHealthIndicatorTest {
     public List<String> decryptBatch(List<CipherItem> items) {
       return List.of();
     }
+
+    @Override
+    public int latestKeyVersion() {
+      return 1;
+    }
+
+    @Override
+    public List<String> rewrapBatch(List<CipherItem> items) {
+      return List.of();
+    }
   }
 }
