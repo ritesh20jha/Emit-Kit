@@ -15,6 +15,7 @@ import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ProjectService;
+import dev.emitkit.api.projects.SpecService;
 import dev.emitkit.api.runs.RunService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
@@ -73,6 +74,7 @@ class CON01ContractTest {
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
   @MockitoBean private ProjectService projectService;
+  @MockitoBean private SpecService specService;
   @MockitoBean private VcsProvider vcsProvider;
   @MockitoBean private LintRateLimiter lintRateLimiter;
   @MockitoBean private SpecHistoryService specHistory;
