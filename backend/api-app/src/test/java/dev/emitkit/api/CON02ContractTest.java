@@ -16,6 +16,7 @@ import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ConfigService;
 import dev.emitkit.api.projects.ProjectService;
+import dev.emitkit.api.projects.SpecService;
 import dev.emitkit.api.runs.RunService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
@@ -85,6 +86,7 @@ class CON02ContractTest {
   @MockitoBean private StringRedisTemplate redis;
   @MockitoBean private ConfigService configService;
   @MockitoBean private ProjectService projectService;
+  @MockitoBean private SpecService specService;
   @MockitoBean private VcsProvider vcsProvider;
   @MockitoBean private LintRateLimiter lintRateLimiter;
   @MockitoBean private SpecHistoryService specHistory;
@@ -140,9 +142,7 @@ class CON02ContractTest {
     "DELETE,/api/v1/projects/p1,",
     "POST,/api/v1/projects/p1/webhook,",
     "GET,/api/v1/projects/p1/config,",
-    "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'",
-    "GET,/api/v1/projects/p1/spec,",
-    "PUT,/api/v1/projects/p1/spec,'{\"content\":\"openapi: 3.1.0\",\"sha\":\"abc\",\"generate\":true}'"
+    "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'"
   })
   void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
     MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());

@@ -169,7 +169,7 @@ class RateLimitedVcsClientTest {
             client::listRepos,
             () -> client.createRepo("acme", "api", false),
             () -> client.getFile("acme/api", "f", "main"),
-            () -> client.putFile("acme/api", "f", "x", null, "m"),
+            () -> client.putFile("acme/api", "f", "x", null, "m", "main"),
             () -> client.createBranch("acme/api", "b", "sha"),
             () -> client.branchHead("acme/api", "main"),
             () -> client.deleteBranch("acme/api", "b"),

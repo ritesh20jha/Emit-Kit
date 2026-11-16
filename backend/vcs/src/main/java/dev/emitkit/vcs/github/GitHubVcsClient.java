@@ -142,10 +142,18 @@ final class GitHubVcsClient implements VcsClient {
 
   @Override
   public CommitRef putFile(
-      String repo, String path, String content, String expectedSha, String message) {
+      String repo, String path, String content, String expectedSha, String message, String branch) {
+    // A null branch would be left out of the request, and GitHub would write to the default branch.
+    Objects.requireNonNull(branch, "branch");
     try {
       GHContentBuilder write =
-          github.getRepository(repo).createContent().path(path).content(content).message(message);
+          github
+              .getRepository(repo)
+              .createContent()
+              .path(path)
+              .content(content)
+              .message(message)
+              .branch(branch);
       if (expectedSha != null) {
         write = write.sha(expectedSha);
       }

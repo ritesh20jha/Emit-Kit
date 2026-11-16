@@ -97,11 +97,12 @@ class GitHubVcsClientFilesTest {
         put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
             .willReturn(okJson(body("commit.json"))));
 
-    assertThat(client.putFile("acme/api", "openapi.yaml", "v2", "sha1", "m"))
+    assertThat(client.putFile("acme/api", "openapi.yaml", "v2", "sha1", "m", "release"))
         .isEqualTo(new CommitRef("c0ffee", "https://github.com/acme/api/commit/c0ffee"));
     verify(
         putRequestedFor(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
-            .withRequestBody(matchingJsonPath("$.sha", equalTo("sha1"))));
+            .withRequestBody(matchingJsonPath("$.sha", equalTo("sha1")))
+            .withRequestBody(matchingJsonPath("$.branch", equalTo("release"))));
   }
 
   @Test
@@ -110,8 +111,20 @@ class GitHubVcsClientFilesTest {
         put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
             .willReturn(aResponse().withStatus(409)));
 
-    assertThatThrownBy(() -> client.putFile("acme/api", "openapi.yaml", "v2", "stale", "m"))
+    assertThatThrownBy(() -> client.putFile("acme/api", "openapi.yaml", "v2", "stale", "m", "main"))
         .isInstanceOf(VcsConflictException.class);
+  }
+
+  @Test
+  void putFile_nullBranch_isRejectedBeforeAnyRequest() {
+    stubFor(
+        put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .willReturn(okJson(body("commit.json"))));
+
+    assertThatThrownBy(() -> client.putFile("acme/api", "openapi.yaml", "v2", "sha1", "m", null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("branch");
+    verify(0, putRequestedFor(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml")));
   }
 
   @Test

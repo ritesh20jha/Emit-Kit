@@ -1,7 +1,5 @@
 package dev.emitkit.api.projects;
 
-import dev.emitkit.common.error.AppException;
-import dev.emitkit.common.error.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -15,18 +13,24 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The API spec of a project: read and save. Snapshots and diffs are in {@code
- * dev.emitkit.api.spec}. Bodies are stubs for now.
+ * The API spec of a project: read and save, held in the project's repository. Snapshots and diffs
+ * are in {@code dev.emitkit.api.spec}.
  */
 @RestController
 @RequestMapping("/api/v1/projects/{id}/spec")
 @Tag(name = "Project spec", description = "The API spec of a project, its snapshots and diffs.")
 public class ProjectSpecController {
 
+  private final SpecService specs;
+
+  public ProjectSpecController(SpecService specs) {
+    this.specs = specs;
+  }
+
   @GetMapping
   @Operation(summary = "Read the current spec of a project")
   public SpecResponse getSpec(@PathVariable("id") String id) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    return specs.get(id);
   }
 
   @PutMapping
@@ -41,6 +45,6 @@ public class ProjectSpecController {
   })
   public SaveSpecResponse saveSpec(
       @PathVariable("id") String id, @Valid @RequestBody SaveSpecRequest request) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    return specs.save(id, request);
   }
 }

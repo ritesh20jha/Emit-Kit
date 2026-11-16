@@ -22,12 +22,22 @@ class InMemoryVcsClientTest extends VcsClientContractTest {
   void seed() {
     fake = new InMemoryVcsClient();
     fake.createRepo("acme", "api", false);
-    fake.putFile("acme/api", "openapi.yaml", OPENAPI_CONTENT, null, "init");
+    fake.putFile("acme/api", "openapi.yaml", OPENAPI_CONTENT, null, "init", "main");
   }
 
   @Override
   protected VcsClient client() {
     return fake;
+  }
+
+  @Test
+  void putFile_nullBranch_isRejectedAndWritesNothing() {
+    String sha = fake.file("acme/api", "openapi.yaml").sha();
+
+    assertThatThrownBy(() -> fake.putFile("acme/api", "openapi.yaml", "v2", sha, "m", null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("branch");
+    assertThat(fake.file("acme/api", "openapi.yaml").content()).isEqualTo(OPENAPI_CONTENT);
   }
 
   @Test

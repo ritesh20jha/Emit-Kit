@@ -21,7 +21,7 @@
 ## Interfaces
 
 - **Produces:**
-- `createNew`: `createRepo(owner, name, visibility == PRIVATE)` → `putFile(repo, specPath, starter, null, "Add starter OpenAPI spec (EmitKit)")` → same as `createExisting` from step 3.
+- `createNew`: `createRepo(owner, name, visibility == PRIVATE)` → `putFile(repo, specPath, starter, null, "Add starter OpenAPI spec (EmitKit)", defaultBranch)` → same as `createExisting` from step 3.
 - Starter spec: `openapi: 3.1.0`, `info.title` = repo name, `info.version: 0.1.0`, one `GET /health` operation with `operationId: getHealth`, tag `health` — passes every ERROR lint rule.
 - Repo name taken (GitHub 422) → `AppException(CONFLICT, "Repository name is taken")`.
 
