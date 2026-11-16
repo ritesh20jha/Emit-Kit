@@ -12,6 +12,7 @@ import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
@@ -120,9 +121,9 @@ public class ConfigService {
     String id = Ids.newUlid();
     int version = previous == null ? 1 : previous.getVersion() + 1;
     var config = new ProjectConfig(id, projectId, version, request.versionStrategy(), userId);
-    config.setOutputs(new ArrayList<>(request.outputs()));
-    List<String> languages = request.sdkLanguages();
-    config.setSdkLanguages(languages == null ? new ArrayList<>() : new ArrayList<>(languages));
+    config.setOutputs(new ArrayList<>(new LinkedHashSet<>(request.outputs())));
+    List<String> languages = request.sdkLanguages() == null ? List.of() : request.sdkLanguages();
+    config.setSdkLanguages(new ArrayList<>(new LinkedHashSet<>(languages)));
     config.setOutputDir(request.outputDir());
     config.setNpmScope(nullIfBlank(request.npmScope()));
     config.setPypiName(nullIfBlank(request.pypiName()));
@@ -130,9 +131,9 @@ public class ConfigService {
     config.setMavenArtifactId(nullIfBlank(request.mavenArtifactId()));
     config.setBreakingGate(request.breakingGate());
     config.setLintFailOn(request.lintFailOn());
-    if (request.aiProvider() != null) {
-      config.setAiProvider(request.aiProvider());
-    }
+    String provider = request.aiProvider();
+    config.setAiProvider(
+        provider == null || provider.isBlank() ? ConfigValidator.DEFAULT_PROVIDER : provider);
     config.setAiModel(nullIfBlank(request.aiModel()));
     config.setAiApiKeyEnc(apiKeyEnc(request.aiApiKey(), previous, id));
     configs.saveAndFlush(config);

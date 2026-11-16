@@ -38,6 +38,7 @@ import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.domain.VersionStrategy;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,6 +51,8 @@ import java.util.concurrent.Future;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -238,14 +241,87 @@ class PRJ04ConfigIT {
     assertThat(versions()).hasSize(1);
   }
 
-  @Test
-  void outputDirWithDotDot_400() throws Exception {
-    putConfig(octo, changes("outputDir", "generated/../secrets/"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-        .andExpect(jsonPath("$.errors[0].field").value("outputDir"));
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "generated/../secrets/",
+        "../x/",
+        "./generated/",
+        "a//b/",
+        "a/./b/",
+        "a\\b/",
+        "a\\..\\b/",
+        "/abs/",
+        "noSlash"
+      })
+  void outputDirRules_400(String outputDir) throws Exception {
+    assertThat(errorsOf(putConfig(octo, changes("outputDir", outputDir))).fields())
+        .containsOnly("outputDir");
 
     assertThat(versions()).hasSize(1);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {".emitkit/", "gen/sdk/"})
+  void outputDirValidPaths_saved(String outputDir) throws Exception {
+    putConfig(octo, changes("outputDir", outputDir))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outputDir").value(outputDir));
+  }
+
+  @Test
+  void aiProvider_onlyGeminiIsSupported() throws Exception {
+    for (String provider : new String[] {"openai", "Gemini"}) {
+      assertThat(errorsOf(putConfig(octo, changes("aiProvider", provider))).fields())
+          .containsOnly("aiProvider");
+    }
+    assertThat(versions()).hasSize(1);
+
+    putConfig(octo, changes("aiProvider", "gemini"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.aiProvider").value("gemini"));
+  }
+
+  @Test
+  void blankAiProvider_storedAsGemini() throws Exception {
+    putConfig(octo, changes("aiProvider", null))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.aiProvider").value("gemini"));
+    putConfig(octo, changes("aiProvider", "  "))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.aiProvider").value("gemini"));
+
+    assertThat(latest().getAiProvider()).isEqualTo("gemini");
+  }
+
+  @Test
+  void nullListElements_400() throws Exception {
+    assertThat(errorsOf(putConfig(octo, changes("outputs", Arrays.asList("SDK", null)))).fields())
+        .containsOnly("outputs");
+    assertThat(
+            errorsOf(putConfig(octo, changes("sdkLanguages", Arrays.asList("typescript", null))))
+                .fields())
+        .containsOnly("sdkLanguages");
+
+    assertThat(versions()).hasSize(1);
+  }
+
+  @Test
+  void duplicateListElements_storedOnceInFirstOrder() throws Exception {
+    putConfig(
+            octo,
+            changes(
+                "outputs", List.of("SDK", "SDK"),
+                "sdkLanguages", List.of("typescript", "typescript", "python"),
+                "pypiName", "emitkit-pets"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outputs.length()").value(1))
+        .andExpect(jsonPath("$.sdkLanguages[0]").value("typescript"))
+        .andExpect(jsonPath("$.sdkLanguages[1]").value("python"))
+        .andExpect(jsonPath("$.sdkLanguages.length()").value(2));
+
+    assertThat(latest().getSdkLanguages()).containsExactly("typescript", "python");
+    assertThat(latest().getOutputs()).containsExactly(OutputKind.SDK);
   }
 
   @Test
