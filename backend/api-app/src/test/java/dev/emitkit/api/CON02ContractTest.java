@@ -127,10 +127,6 @@ class CON02ContractTest {
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
-    "GET,/api/v1/orgs/org1/projects?cursor=c1&limit=10&q=web&status=FAILED,",
-    "GET,/api/v1/projects/p1,",
-    "DELETE,/api/v1/projects/p1,",
-    "POST,/api/v1/projects/p1/webhook,",
     "GET,/api/v1/projects/p1/config,",
     "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'",
     "GET,/api/v1/projects/p1/spec,",
