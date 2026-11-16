@@ -174,6 +174,7 @@ public final class InMemoryVcsClient implements VcsClient {
   @Override
   public synchronized CommitRef putFile(
       String repo, String path, String content, String expectedSha, String message, String branch) {
+    Objects.requireNonNull(branch, "branch");
     recordCall("putFile", repo);
     Repo r = repo(repo);
     Map<String, String> files = new HashMap<>(branchFiles(r, branch));

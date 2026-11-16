@@ -116,6 +116,18 @@ class GitHubVcsClientFilesTest {
   }
 
   @Test
+  void putFile_nullBranch_isRejectedBeforeAnyRequest() {
+    stubFor(
+        put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .willReturn(okJson(body("commit.json"))));
+
+    assertThatThrownBy(() -> client.putFile("acme/api", "openapi.yaml", "v2", "sha1", "m", null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("branch");
+    verify(0, putRequestedFor(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml")));
+  }
+
+  @Test
   void unauthorized_isAuthException() {
     stubFor(
         get(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))

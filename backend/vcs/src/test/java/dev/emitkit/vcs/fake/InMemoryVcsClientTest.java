@@ -31,6 +31,16 @@ class InMemoryVcsClientTest extends VcsClientContractTest {
   }
 
   @Test
+  void putFile_nullBranch_isRejectedAndWritesNothing() {
+    String sha = fake.file("acme/api", "openapi.yaml").sha();
+
+    assertThatThrownBy(() -> fake.putFile("acme/api", "openapi.yaml", "v2", sha, "m", null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("branch");
+    assertThat(fake.file("acme/api", "openapi.yaml").content()).isEqualTo(OPENAPI_CONTENT);
+  }
+
+  @Test
   void failNext_failsOnlyTheNextCall() {
     var error = new VcsRateLimitException("slow down", Instant.parse("2026-11-02T10:00:00Z"));
     fake.failNext(error);

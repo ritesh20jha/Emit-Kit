@@ -65,6 +65,7 @@ class GitHubContractTest extends VcsClientContractTest {
     // The first write succeeds and moves the file on; a second write with the old sha conflicts.
     stubFor(
         put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withRequestBody(matchingJsonPath("$.branch", equalTo("main")))
             .inScenario("stale-sha")
             .whenScenarioStateIs(Scenario.STARTED)
             .willSetStateTo("written")
@@ -74,6 +75,7 @@ class GitHubContractTest extends VcsClientContractTest {
                         + "\"html_url\":\"https://github.com/acme/api/commit/c0ffee\"}}")));
     stubFor(
         put(urlPathEqualTo("/repos/acme/api/contents/openapi.yaml"))
+            .withRequestBody(matchingJsonPath("$.branch", equalTo("main")))
             .inScenario("stale-sha")
             .whenScenarioStateIs("written")
             .willReturn(aResponse().withStatus(409)));
