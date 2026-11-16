@@ -14,6 +14,7 @@ import dev.emitkit.api.auth.LoginSuccessHandler;
 import dev.emitkit.api.config.SecurityConfig;
 import dev.emitkit.api.error.ProblemDetailsAdvice;
 import dev.emitkit.api.orgs.OrgSyncService;
+import dev.emitkit.api.projects.ConfigService;
 import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.runs.RunService;
 import dev.emitkit.api.spec.LintRateLimiter;
@@ -71,10 +72,6 @@ class CON02ContractTest {
       "{\"mode\":\"EXISTING\",\"repo\":\"acme/widgets\",\"specPath\":\"openapi.yaml\","
           + "\"defaultBranch\":\"main\",\"outputMode\":\"APPEND\"}";
 
-  private static final String CONFIG =
-      "{\"outputs\":[\"SDK\"],\"outputDir\":\"generated\",\"versionStrategy\":\"EMITKIT_MANAGED\","
-          + "\"breakingGate\":\"BLOCK\",\"lintFailOn\":\"ERROR\"}";
-
   @Autowired private MockMvc mvc;
 
   // SecurityConfig and the controllers depend on these, and this slice does not load them.
@@ -86,6 +83,7 @@ class CON02ContractTest {
   @MockitoBean private OrgAccessService orgAccess;
   @MockitoBean private OrgSyncService orgSync;
   @MockitoBean private StringRedisTemplate redis;
+  @MockitoBean private ConfigService configService;
   @MockitoBean private ProjectService projectService;
   @MockitoBean private VcsProvider vcsProvider;
   @MockitoBean private LintRateLimiter lintRateLimiter;
@@ -137,6 +135,10 @@ class CON02ContractTest {
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
+    "GET,/api/v1/orgs/org1/projects?cursor=c1&limit=10&q=web&status=FAILED,",
+    "GET,/api/v1/projects/p1,",
+    "DELETE,/api/v1/projects/p1,",
+    "POST,/api/v1/projects/p1/webhook,",
     "GET,/api/v1/projects/p1/config,",
     "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'",
     "GET,/api/v1/projects/p1/spec,",

@@ -28,4 +28,38 @@ public record ConfigRequest(
     @NotNull LintFailOn lintFailOn,
     @Schema(types = {"string", "null"}) @Nullable String aiProvider,
     @Schema(types = {"string", "null"}) @Nullable String aiModel,
-    @Schema(types = {"string", "null"}) @Nullable String aiApiKey) {}
+    @Schema(types = {"string", "null"}) @Nullable String aiApiKey) {
+
+  /** Prints every component except the API key, which shows only whether one was sent. */
+  @Override
+  public String toString() {
+    return "ConfigRequest["
+        + "outputs="
+        + outputs
+        + ", sdkLanguages="
+        + sdkLanguages
+        + ", outputDir="
+        + outputDir
+        + ", npmScope="
+        + npmScope
+        + ", pypiName="
+        + pypiName
+        + ", mavenGroupId="
+        + mavenGroupId
+        + ", mavenArtifactId="
+        + mavenArtifactId
+        + ", versionStrategy="
+        + versionStrategy
+        + ", breakingGate="
+        + breakingGate
+        + ", lintFailOn="
+        + lintFailOn
+        + ", aiProvider="
+        + aiProvider
+        + ", aiModel="
+        + aiModel
+        + ", aiApiKey="
+        + (aiApiKey == null ? "null" : "[REDACTED]")
+        + "]";
+  }
+}
