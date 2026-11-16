@@ -20,6 +20,7 @@ dependencies {
     // spring-amqp marks Jackson optional, so the JSON converter needs it at runtime; its constructor
     // overloads reference JsonMapper, so it is also needed at compile time.
     implementation(libs.jackson.databind)
+    implementation(libs.jmustache)
     implementation(libs.shedlock.spring)
     implementation(libs.shedlock.provider.jdbc.template)
 
