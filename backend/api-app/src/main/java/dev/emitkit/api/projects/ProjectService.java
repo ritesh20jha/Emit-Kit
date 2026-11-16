@@ -192,10 +192,20 @@ public class ProjectService {
     String secret = webhooks.newSecret();
     String secretEnc =
         cipher.encrypt(secret, new SecretContext(SECRET_TABLE, SECRET_COLUMN, projectId));
-    if (project.getWebhookId() != null) {
+    boolean hadOldWebhook = project.getWebhookId() != null;
+    if (hadOldWebhook) {
       removeOldWebhook(vcs, repo, project.getWebhookId());
     }
-    Webhook hook = webhooks.register(vcs, repo, secret);
+    Webhook hook;
+    try {
+      hook = webhooks.register(vcs, repo, secret);
+    } catch (RuntimeException e) {
+      // The old hook is already gone on the VCS host, so the stored id would point at nothing.
+      if (hadOldWebhook) {
+        clearWebhookQuietly(projectId, e);
+      }
+      throw e;
+    }
     try {
       attachWebhook(projectId, hook.id(), secretEnc);
     } catch (RuntimeException e) {
@@ -249,6 +259,26 @@ public class ProjectService {
       projects.save(project);
       configs.save(DefaultConfig.version1(projectId, userId));
     });
+  }
+
+  /**
+   * Forgets a webhook that is no longer on the VCS host, so the project does not report it as
+   * registered. Best effort: a failed clear is logged and added to {@code failure}, which is the
+   * error the caller reports.
+   */
+  private void clearWebhookQuietly(String projectId, RuntimeException failure) {
+    try {
+      transactions.executeWithoutResult(status ->
+          projects
+              .findById(projectId)
+              .ifPresent(p -> {
+                p.setWebhookId(null);
+                p.setWebhookSecretEnc(null);
+              }));
+    } catch (RuntimeException cleanup) {
+      LOG.warn("could not clear the dead webhook of project {}", projectId, cleanup);
+      failure.addSuppressed(cleanup);
+    }
   }
 
   private Project attachWebhook(String projectId, long webhookId, String secretEnc) {

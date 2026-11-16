@@ -3,6 +3,7 @@ package dev.emitkit.api.projects;
 import static dev.emitkit.domain.Role.ADMIN;
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -46,6 +47,7 @@ import dev.emitkit.domain.RunTrigger;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.vcs.error.VcsAuthException;
 import dev.emitkit.vcs.error.VcsServerException;
 import dev.emitkit.vcs.fake.InMemoryVcsClient;
 import java.time.Instant;
@@ -270,6 +272,36 @@ class PRJ03ProjectCrudIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.registered").value(true));
 
+    assertThat(vcs.webhooks(REPO)).hasSize(1);
+  }
+
+  @Test
+  void reRegister_registerFails_clearsDeadWebhook() throws Exception {
+    Organization acme = org("acme");
+    User octo = user(1, "octo");
+    member(acme, octo, ADMIN);
+    createExisting(acme, octo, REPO);
+    Project project = onlyProject(acme);
+    vcs.failNext("registerWebhook", new VcsAuthException("no hook scope"));
+
+    mvc.perform(post(WEBHOOK, project.getId()).with(csrf()).with(signedInAs(octo)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("VCS_AUTH"));
+
+    assertThat(vcs.webhooks(REPO)).isEmpty();
+    mvc.perform(get(PROJECT, project.getId()).with(signedInAs(octo)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.webhook.registered").value(false))
+        .andExpect(jsonPath("$.webhook.webhookId").value(nullValue()));
+
+    mvc.perform(post(WEBHOOK, project.getId()).with(csrf()).with(signedInAs(octo)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.registered").value(true));
+
+    mvc.perform(get(PROJECT, project.getId()).with(signedInAs(octo)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.webhook.registered").value(true))
+        .andExpect(jsonPath("$.webhook.webhookId").isNumber());
     assertThat(vcs.webhooks(REPO)).hasSize(1);
   }
 
