@@ -20,6 +20,11 @@ final class ConfigValidator {
   private static final Set<String> LANGUAGES = Set.of("typescript", "python", "java");
   private static final Pattern NPM_SCOPE = Pattern.compile("^[a-z0-9-~][a-z0-9-._~]*$");
 
+  /** The widths of the project_configs columns in V2__projects.sql. */
+  private static final int TEXT_MAX = 255;
+
+  private static final int PROVIDER_MAX = 32;
+
   private ConfigValidator() {}
 
   /**
@@ -32,6 +37,13 @@ final class ConfigValidator {
     List<Map<String, String>> errors = new ArrayList<>();
     checkSdk(request, errors);
     checkOutputDir(request.outputDir(), errors);
+    checkLength(errors, "outputDir", request.outputDir(), TEXT_MAX);
+    checkLength(errors, "npmScope", request.npmScope(), TEXT_MAX);
+    checkLength(errors, "pypiName", request.pypiName(), TEXT_MAX);
+    checkLength(errors, "mavenGroupId", request.mavenGroupId(), TEXT_MAX);
+    checkLength(errors, "mavenArtifactId", request.mavenArtifactId(), TEXT_MAX);
+    checkLength(errors, "aiProvider", request.aiProvider(), PROVIDER_MAX);
+    checkLength(errors, "aiModel", request.aiModel(), TEXT_MAX);
     if (!errors.isEmpty()) {
       throw new AppException(
           ErrorCode.VALIDATION_FAILED,
@@ -87,6 +99,14 @@ final class ConfigValidator {
     }
     if (!outputDir.endsWith("/")) {
       error(errors, "outputDir", "outputDir must end with a slash.");
+    }
+  }
+
+  /** A value longer than its column is refused here, not by the database. */
+  private static void checkLength(
+      List<Map<String, String>> errors, String field, @Nullable String value, int max) {
+    if (value != null && value.codePointCount(0, value.length()) > max) {
+      error(errors, field, field + " must be at most " + max + " characters.");
     }
   }
 

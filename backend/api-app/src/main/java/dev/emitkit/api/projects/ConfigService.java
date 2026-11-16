@@ -10,6 +10,7 @@ import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
 import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,14 @@ public class ConfigService {
 
   private static final String SECRET_TABLE = "project_configs";
   private static final String SECRET_COLUMN = "ai_api_key_enc";
+
+  /**
+   * SQLSTATE of a unique violation, and the default name Postgres gives UNIQUE(project_id,
+   * version).
+   */
+  private static final String UNIQUE_VIOLATION = "23505";
+
+  private static final String VERSION_KEY = "project_configs_project_id_version_key";
 
   private final ProjectAccess projectAccess;
   private final ProjectConfigRepository configs;
@@ -78,12 +87,31 @@ public class ConfigService {
     try {
       return transactions.execute(status -> append(projectId, request, userId));
     } catch (DataIntegrityViolationException e) {
+      if (!isVersionClash(e)) {
+        throw e;
+      }
       throw new AppException(
           ErrorCode.CONFLICT,
           "The config was saved by another request; reload and try again.",
           Map.of(),
           e);
     }
+  }
+
+  /**
+   * True when the failure is the unique (project_id, version) key, which a concurrent save hits.
+   * Any other integrity failure is a different problem and is not reported as a conflict.
+   */
+  static boolean isVersionClash(Throwable failure) {
+    for (Throwable t = failure; t != null; t = t.getCause()) {
+      if (t instanceof SQLException sql
+          && UNIQUE_VIOLATION.equals(sql.getSQLState())
+          && sql.getMessage() != null
+          && sql.getMessage().contains(VERSION_KEY)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Inserts the next version. Runs inside the transaction opened by {@link #save}. */

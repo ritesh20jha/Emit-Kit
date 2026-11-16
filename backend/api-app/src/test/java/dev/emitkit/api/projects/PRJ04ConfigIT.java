@@ -5,6 +5,7 @@ import static dev.emitkit.domain.Role.EDITOR;
 import static dev.emitkit.domain.Role.VIEWER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -35,6 +36,7 @@ import dev.emitkit.domain.ProjectRepository;
 import dev.emitkit.domain.RoleSource;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
+import dev.emitkit.domain.VersionStrategy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -55,6 +57,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -243,6 +246,44 @@ class PRJ04ConfigIT {
         .andExpect(jsonPath("$.errors[0].field").value("outputDir"));
 
     assertThat(versions()).hasSize(1);
+  }
+
+  @Test
+  void overlongFields_400_atTheColumnLimit_saved() throws Exception {
+    String atLimit = "a".repeat(254) + "/";
+    putConfig(octo, changes("outputDir", atLimit)).andExpect(status().isOk());
+
+    String overLimit = "a".repeat(255) + "/";
+    assertThat(errorsOf(putConfig(octo, changes("outputDir", overLimit))).fields())
+        .containsExactly("outputDir");
+    assertThat(errorsOf(putConfig(octo, changes("aiProvider", "a".repeat(33)))).fields())
+        .containsExactly("aiProvider");
+
+    assertThat(versions()).hasSize(2);
+  }
+
+  /** A concurrent save's unique clash is told apart from other integrity failures. */
+  @Test
+  void versionClash_isRecognised_otherIntegrityErrorsAreNot() {
+    Throwable clash =
+        catchThrowable(() ->
+            configs.saveAndFlush(
+                new ProjectConfig(
+                    null, project.getId(), 1, VersionStrategy.EMITKIT_MANAGED, octo.getId())));
+    assertThat(clash).isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(ConfigService.isVersionClash(clash)).isTrue();
+
+    Throwable missingProject =
+        catchThrowable(() ->
+            configs.saveAndFlush(
+                new ProjectConfig(
+                    null,
+                    "01MISSINGPROJECT0000000000",
+                    1,
+                    VersionStrategy.EMITKIT_MANAGED,
+                    octo.getId())));
+    assertThat(missingProject).isInstanceOf(DataIntegrityViolationException.class);
+    assertThat(ConfigService.isVersionClash(missingProject)).isFalse();
   }
 
   @Test
