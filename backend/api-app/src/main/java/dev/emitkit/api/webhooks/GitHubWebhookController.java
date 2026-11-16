@@ -36,6 +36,9 @@ class GitHubWebhookController {
   private static final Logger LOG = LoggerFactory.getLogger(GitHubWebhookController.class);
   private static final String SECRET_COLUMN = "webhook_secret_enc";
 
+  /** The longest request-supplied value written to the log, in code points. */
+  private static final int LOG_VALUE_MAX = 100;
+
   private final WebhookVerifier verifier;
   private final ProjectRepository projects;
   private final SecretCipher cipher;
@@ -161,9 +164,25 @@ class GitHubWebhookController {
   private static AppException unauthenticated(String deliveryId, @Nullable String repo) {
     LOG.warn(
         "Rejected webhook delivery {} for repository {}: signature missing or not verified",
-        deliveryId,
-        repo == null ? "unknown" : repo);
+        forLog(deliveryId),
+        forLog(repo));
     return new AppException(
         ErrorCode.UNAUTHENTICATED, "The webhook signature is missing or does not verify.");
+  }
+
+  /**
+   * Makes a request-supplied value safe for one log line. Control characters, separators and line
+   * breaks, CR and LF among them, become '_'. A value longer than {@link #LOG_VALUE_MAX} code
+   * points is cut and marked with an ellipsis. A null value is "unknown".
+   */
+  static String forLog(@Nullable String value) {
+    if (value == null) {
+      return "unknown";
+    }
+    String clean = value.replaceAll("[\\p{Cc}\\p{Zl}\\p{Zp}]", "_");
+    if (clean.codePointCount(0, clean.length()) <= LOG_VALUE_MAX) {
+      return clean;
+    }
+    return clean.substring(0, clean.offsetByCodePoints(0, LOG_VALUE_MAX)) + "…";
   }
 }

@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import dev.emitkit.api.GitHubTestCredentials;
 import dev.emitkit.api.PostgresTestConfig;
 import dev.emitkit.api.RedisTestConfig;
@@ -31,6 +34,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -311,6 +315,42 @@ class HOOK01WebhookIT {
     MvcResult result = send(delivery).andReturn();
     lastBody = result.getResponse().getContentAsString();
     return new Response(result.getResponse().getStatus(), lastBody);
+  }
+
+  @Test
+  void rejectedDelivery_logsSanitizedValues() throws Exception {
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    Logger logger = (Logger) LoggerFactory.getLogger(GitHubWebhookController.class);
+    logger.addAppender(appender);
+    try {
+      // The JSON escapes decode to a CR, an LF and a 200-character tail: a forged log line.
+      String hostileRepo = "acme/x\\r\\nFORGED" + "y".repeat(200);
+      String body = "{\"repository\":{\"full_name\":\"" + hostileRepo + "\"}}";
+      mvc.perform(
+              post(PATH)
+                  .header("X-GitHub-Event", "push")
+                  .header("X-GitHub-Delivery", "id\tbad-" + UUID.randomUUID())
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(body.getBytes(StandardCharsets.UTF_8)))
+          .andExpect(status().isUnauthorized());
+
+      String line =
+          appender.list.stream()
+              .map(ILoggingEvent::getFormattedMessage)
+              .filter(message -> message.startsWith("Rejected webhook delivery"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(line)
+          .doesNotContain("\r")
+          .doesNotContain("\n")
+          .doesNotContain("\t")
+          .contains("for repository acme/x__FORGED" + "y".repeat(86) + "…")
+          .doesNotContain("y".repeat(87))
+          .contains("id_bad-");
+    } finally {
+      logger.detachAppender(appender);
+    }
   }
 
   /** The same delivery, with the same id and body, signed with {@code secret}. */
