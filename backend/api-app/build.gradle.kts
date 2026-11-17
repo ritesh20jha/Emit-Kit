@@ -21,6 +21,7 @@ dependencies {
     // overloads reference JsonMapper, so it is also needed at compile time.
     implementation(libs.jackson.databind)
     implementation(libs.jmustache)
+    implementation(libs.java.diff.utils)
     implementation(libs.shedlock.spring)
     implementation(libs.shedlock.provider.jdbc.template)
 

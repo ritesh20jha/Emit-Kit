@@ -170,7 +170,8 @@ public class ProjectService {
         request.specPath(),
         starterSpec(name),
         null,
-        "Add starter OpenAPI spec (EmitKit)");
+        "Add starter OpenAPI spec (EmitKit)",
+        created.defaultBranch());
     return link(orgId, admission, request, created.fullName(), created.defaultBranch());
   }
 

@@ -18,7 +18,9 @@ import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ConfigService;
 import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.projects.SpecService;
+import dev.emitkit.api.runs.RunFilesService;
 import dev.emitkit.api.runs.RunService;
+import dev.emitkit.api.runs.VersionService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
 import dev.emitkit.api.webhooks.DeliveryDeduper;
@@ -89,6 +91,8 @@ class CON03ContractTest {
   @MockitoBean private SpecHistoryService specHistory;
   @MockitoBean private ProjectAccess projectAccess;
   @MockitoBean private RunService runService;
+  @MockitoBean private RunFilesService runFilesService;
+  @MockitoBean private VersionService versionService;
   @MockitoBean private WebhookVerifier webhookVerifier;
   @MockitoBean private ProjectRepository projects;
   @MockitoBean private SecretCipher secretCipher;
@@ -119,15 +123,7 @@ class CON03ContractTest {
   /** The body column is empty for requests that carry none. */
   @ParameterizedTest
   @WithMockUser
-  @CsvSource({
-    "GET,/api/v1/runs/r1/logs?afterSeq=10,",
-    "GET,/api/v1/runs/r1/logs/stream,",
-    "GET,/api/v1/runs/r1/files,",
-    "GET,/api/v1/runs/r1/files/src/openapi.yaml?diff=true,",
-    "GET,/api/v1/runs/r1/artifact,",
-    "GET,/api/v1/runs/r1/lint,",
-    "GET,/api/v1/projects/p1/versions,"
-  })
+  @CsvSource({"GET,/api/v1/runs/r1/logs?afterSeq=10,", "GET,/api/v1/runs/r1/logs/stream,"})
   void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
     MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());
     if (body != null) {

@@ -1,5 +1,7 @@
 package dev.emitkit.api.runs;
 
+import dev.emitkit.api.access.Permission;
+import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.common.Page;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
@@ -41,6 +43,7 @@ public class RunService {
   private final JobPublisher jobs;
   private final ControlPublisher controls;
   private final RunMapper mapper;
+  private final ProjectAccess projectAccess;
 
   RunService(
       GenerationRunRepository runs,
@@ -48,13 +51,15 @@ public class RunService {
       RunApprovalRepository approvals,
       JobPublisher jobs,
       ControlPublisher controls,
-      RunMapper mapper) {
+      RunMapper mapper,
+      ProjectAccess projectAccess) {
     this.runs = runs;
     this.configs = configs;
     this.approvals = approvals;
     this.jobs = jobs;
     this.controls = controls;
     this.mapper = mapper;
+    this.projectAccess = projectAccess;
   }
 
   /** Queues a run on the project's latest config, or on the parent's config for a rerun. */
@@ -103,6 +108,23 @@ public class RunService {
   public GenerationRun find(String runId) {
     return runs.findById(runId)
         .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, "run not found"));
+  }
+
+  /**
+   * The run, once the caller holds {@code permission} on its project. A non-member gets the same
+   * answer as an unknown run, so the run's existence stays hidden.
+   */
+  public GenerationRun require(String runId, Permission permission) {
+    GenerationRun run = find(runId);
+    try {
+      projectAccess.require(run.getProjectId(), permission);
+    } catch (AppException e) {
+      if (e.code() == ErrorCode.NOT_FOUND) {
+        throw new AppException(ErrorCode.NOT_FOUND, "run not found");
+      }
+      throw e;
+    }
+    return run;
   }
 
   /** The full view of a run. */

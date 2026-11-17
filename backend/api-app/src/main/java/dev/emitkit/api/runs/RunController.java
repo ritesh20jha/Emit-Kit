@@ -5,8 +5,6 @@ import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.auth.CurrentUser;
 import dev.emitkit.api.auth.EmitKitUser;
 import dev.emitkit.api.common.Page;
-import dev.emitkit.common.error.AppException;
-import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.RunTrigger;
@@ -26,17 +24,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Runs: list, start, read, cancel, rerun and approve them. Lint is still a stub. */
+/** Runs: list, start, read, cancel, rerun, approve them, and read their lint findings. */
 @RestController
 @Tag(name = "Runs", description = "Generation runs: start, read, cancel, rerun and approve them.")
 public class RunController {
 
   private final RunService runs;
   private final ProjectAccess projectAccess;
+  private final RunFilesService runFiles;
 
-  public RunController(RunService runs, ProjectAccess projectAccess) {
+  public RunController(RunService runs, ProjectAccess projectAccess, RunFilesService runFiles) {
     this.runs = runs;
     this.projectAccess = projectAccess;
+    this.runFiles = runFiles;
   }
 
   @GetMapping("/api/v1/projects/{id}/runs")
@@ -70,13 +70,13 @@ public class RunController {
   @GetMapping("/api/v1/runs/{runId}")
   @Operation(summary = "Read one run")
   public RunDetail getRun(@PathVariable("runId") String runId) {
-    return runs.detail(runWithPermission(runId, Permission.RUN_VIEW));
+    return runs.detail(runs.require(runId, Permission.RUN_VIEW));
   }
 
   @PostMapping("/api/v1/runs/{runId}/cancel")
   @Operation(summary = "Cancel a run that has not finished")
   public RunDetail cancelRun(@PathVariable("runId") String runId) {
-    GenerationRun run = runWithPermission(runId, Permission.RUN_CANCEL);
+    GenerationRun run = runs.require(runId, Permission.RUN_CANCEL);
     return runs.detail(runs.cancel(run.getId()));
   }
 
@@ -84,7 +84,7 @@ public class RunController {
   @ResponseStatus(HttpStatus.CREATED)
   @Operation(summary = "Start a new run with the same spec as this one")
   public RunDetail rerunRun(@PathVariable("runId") String runId, @CurrentUser EmitKitUser user) {
-    GenerationRun source = runWithPermission(runId, Permission.RUN_RERUN);
+    GenerationRun source = runs.require(runId, Permission.RUN_RERUN);
     return runs.detail(runs.rerun(source.getId(), user.userId()));
   }
 
@@ -94,31 +94,14 @@ public class RunController {
       @PathVariable("runId") String runId,
       @Valid @RequestBody ApprovalRequest request,
       @CurrentUser EmitKitUser user) {
-    GenerationRun run = runWithPermission(runId, Permission.RUN_APPROVE);
+    GenerationRun run = runs.require(runId, Permission.RUN_APPROVE);
     return runs.detail(
         runs.decideApproval(run.getId(), user.userId(), request.decision(), request.comment()));
-  }
-
-  /**
-   * The run, once the caller holds {@code permission} on its project. A non-member gets the same
-   * answer as an unknown run, so the run's existence stays hidden.
-   */
-  private GenerationRun runWithPermission(String runId, Permission permission) {
-    GenerationRun run = runs.find(runId);
-    try {
-      projectAccess.require(run.getProjectId(), permission);
-    } catch (AppException e) {
-      if (e.code() == ErrorCode.NOT_FOUND) {
-        throw new AppException(ErrorCode.NOT_FOUND, "run not found");
-      }
-      throw e;
-    }
-    return run;
   }
 
   @GetMapping("/api/v1/runs/{runId}/lint")
   @Operation(summary = "List the lint issues found in the spec of a run")
   public List<LintIssue> listRunLint(@PathVariable("runId") String runId) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    return runFiles.lint(runId);
   }
 }
