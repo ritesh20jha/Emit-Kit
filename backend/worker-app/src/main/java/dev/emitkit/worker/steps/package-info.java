@@ -1,5 +1,2 @@
-/**
- * The pipeline steps that do the work of a run (FETCH_SPEC, PARSE_SPEC, RUN_GENERATORS), and the
- * work directory they share. Each step is a Spring bean that the pipeline runner calls in order.
- */
+/** Steps of a run (FETCH_SPEC, PARSE_SPEC, RUN_GENERATORS) and the work dir they share. */
 package dev.emitkit.worker.steps;

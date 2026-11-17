@@ -9,7 +9,6 @@ dependencies {
     implementation(project(":spec-engine"))
     implementation(project(":generators:core"))
     implementation(project(":ai"))
-    // The generators run inside RunGenerators; GeneratorRegistry constructs each one.
     implementation(project(":generators:workflows"))
     implementation(project(":generators:typescript-sdk"))
     implementation(project(":generators:python-sdk"))

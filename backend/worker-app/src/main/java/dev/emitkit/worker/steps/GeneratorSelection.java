@@ -36,9 +36,6 @@ final class GeneratorSelection {
     return List.copyOf(selected);
   }
 
-  /**
-   * @throws AppException {@code GENERATOR_ERROR} for a language that is not a known SDK
-   */
   private static Set<GeneratorId> sdkGenerators(List<String> languages) {
     Set<GeneratorId> result = EnumSet.noneOf(GeneratorId.class);
     for (String language : languages) {

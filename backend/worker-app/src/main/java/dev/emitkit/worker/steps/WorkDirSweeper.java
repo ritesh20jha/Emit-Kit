@@ -63,7 +63,6 @@ public final class WorkDirSweeper {
   private void sweepRun(Path dir, Instant cutoff) {
     String runId = dir.getFileName().toString();
     try {
-      // An unreadable time keeps the directory.
       if (!Files.isDirectory(dir) || Files.getLastModifiedTime(dir).toInstant().isAfter(cutoff)) {
         return;
       }

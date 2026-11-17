@@ -435,8 +435,7 @@ class WRK01PipelineRunnerTest {
           return new StepResult.Continue("SYNTAX_CHECK-out");
         });
 
-    // SYNTAX_CHECK fails once after the regenerate; the stale outputs of the later steps are
-    // cleared.
+    // SYNTAX_CHECK fails once; the stale outputs of the later steps are cleared.
     assertThatThrownBy(() -> runner().run(runId)).isInstanceOf(TransientException.class);
     assertThat(order).containsExactly(RUN_GENERATORS, SYNTAX_CHECK);
     assertThat(StepOutputs.has(reload().getStepOutputs(), SYNTAX_CHECK)).isFalse();
@@ -636,7 +635,6 @@ class WRK01PipelineRunnerTest {
 
     @Test
     void aiSetupFails_docsStillGenerateWithoutAi() {
-      // No model on the config and none configured by default: the docs assistant cannot be built.
       defaultModel = null;
       configure(List.of(OutputKind.DOCS), List.of(), AI_KEY);
 
@@ -651,7 +649,6 @@ class WRK01PipelineRunnerTest {
 
     @Test
     void unsafeGeneratorPath_failsRunWithoutWritingOutsideFiles() {
-      // GeneratedFile rejects the path inside the generator, so the run fails naming the generator.
       behaviour.put(
           GeneratorId.CLI,
           ctx -> List.of(new GeneratedFile("../escaped.txt", "x", FileKind.GENERATED)));

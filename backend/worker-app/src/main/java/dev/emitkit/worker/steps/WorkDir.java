@@ -71,9 +71,7 @@ public final class WorkDir {
     }
   }
 
-  /**
-   * Replaces the run's files and records {@code generationId}. A failed disk write is transient.
-   */
+  /** Replaces the run's files and records {@code generationId}. */
   public void write(String runId, String generationId, List<GeneratedFile> files) {
     Path dir = of(runId);
     Path filesDir = dir.resolve(FILES);
