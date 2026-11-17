@@ -35,7 +35,6 @@ import dev.emitkit.gen.core.GeneratorId;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.ApiModelJson;
 import dev.emitkit.spec.model.Info;
-import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.worker.pipeline.CancellationRegistry;
 import dev.emitkit.worker.pipeline.CancelledException;
 import dev.emitkit.worker.pipeline.PipelineRunner;
@@ -136,7 +135,7 @@ class WRK06RunGeneratorsTest {
   @BeforeEach
   void seed() {
     n = SEQUENCE.incrementAndGet();
-    repoName = "petstore-" + n;
+    repoName = "PetStore-" + n;
     cancellation = new CancellationRegistry(runs);
   }
 
@@ -166,7 +165,7 @@ class WRK06RunGeneratorsTest {
     assertThat(ctx.version()).isEqualTo(SDK_VERSION);
     assertThat(ctx.outputDir()).isEqualTo(".emitkit/");
     assertThat(ctx.sdkLanguages()).containsExactly("typescript", "python");
-    assertThat(ctx.names().npmName()).isEqualTo(repoName);
+    assertThat(ctx.names().npmName()).isEqualTo("petstore-" + n);
   }
 
   @Test
@@ -304,7 +303,8 @@ class WRK06RunGeneratorsTest {
         runs,
         projects,
         configs,
-        vcsUnused(),
+        // The stub steps never ask for VCS, and the runner resolves the provider lazily.
+        null,
         transactions,
         cancellation,
         id -> logger,
@@ -410,17 +410,6 @@ class WRK06RunGeneratorsTest {
 
   private GenerationRun reload(String runId) {
     return runs.findById(runId).orElseThrow();
-  }
-
-  /** The runner only calls the VCS provider when a step asks for it; none does here. */
-  private VcsProvider vcsUnused() {
-    return (VcsProvider)
-        Proxy.newProxyInstance(
-            getClass().getClassLoader(),
-            new Class<?>[] {VcsProvider.class},
-            (proxy, method, args) -> {
-              throw new UnsupportedOperationException(method.getName());
-            });
   }
 
   /** Boots JPA, Flyway and the cipher against the container, with the domain's entities. */

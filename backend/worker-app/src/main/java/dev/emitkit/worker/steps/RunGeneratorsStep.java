@@ -28,6 +28,7 @@ import dev.emitkit.worker.pipeline.StepResult;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -153,10 +154,17 @@ public final class RunGeneratorsStep implements PipelineStep {
     String repo = project.getRepoFullName();
     return new PackageNames(
         config.getNpmScope(),
-        repo.substring(repo.lastIndexOf('/') + 1),
+        npmName(repo.substring(repo.lastIndexOf('/') + 1)),
         config.getPypiName(),
         config.getMavenGroupId(),
         config.getMavenArtifactId());
+  }
+
+  /** Lowercases, replaces characters npm rejects, and drops a leading dot or underscore. */
+  private static String npmName(String repoName) {
+    String name =
+        repoName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._~-]", "-").replaceAll("^[._]+", "");
+    return name.isEmpty() ? "sdk" : name;
   }
 
   /**
@@ -198,9 +206,9 @@ public final class RunGeneratorsStep implements PipelineStep {
         }
       }
     } catch (InterruptedException e) {
-      // An interrupted step stops like a cancelled one: the run stays RUNNING for redelivery.
+      // Not a user cancel (that comes from checkCancelled). A shutdown interrupt is retried.
       Thread.currentThread().interrupt();
-      throw new CancelledException(ctx.run().getId());
+      throw new TransientException(ErrorCode.INTERNAL, "interrupted while generating", Map.of(), e);
     }
     return done;
   }

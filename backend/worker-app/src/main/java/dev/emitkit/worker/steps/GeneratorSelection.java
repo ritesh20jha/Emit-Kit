@@ -1,13 +1,5 @@
 package dev.emitkit.worker.steps;
 
-import static dev.emitkit.gen.core.GeneratorId.CLI;
-import static dev.emitkit.gen.core.GeneratorId.DOCS;
-import static dev.emitkit.gen.core.GeneratorId.JAVA_SDK;
-import static dev.emitkit.gen.core.GeneratorId.MCP;
-import static dev.emitkit.gen.core.GeneratorId.PY_SDK;
-import static dev.emitkit.gen.core.GeneratorId.TS_SDK;
-import static dev.emitkit.gen.core.GeneratorId.WORKFLOWS;
-
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.OutputKind;
@@ -23,7 +15,13 @@ final class GeneratorSelection {
 
   /** The SDK languages as stored in {@code project_configs.sdk_languages}. */
   private static final Map<String, GeneratorId> SDK_LANGUAGES =
-      Map.of("typescript", TS_SDK, "python", PY_SDK, "java", JAVA_SDK);
+      Map.of(
+          "typescript",
+          GeneratorId.TS_SDK,
+          "python",
+          GeneratorId.PY_SDK,
+          "java",
+          GeneratorId.JAVA_SDK);
 
   private GeneratorSelection() {}
 
@@ -39,11 +37,11 @@ final class GeneratorSelection {
       switch (output) {
         case SDK -> {
           selected.addAll(sdkGenerators(sdkLanguages));
-          selected.add(WORKFLOWS);
+          selected.add(GeneratorId.WORKFLOWS);
         }
-        case CLI -> selected.add(CLI);
-        case MCP -> selected.add(MCP);
-        case DOCS -> selected.add(DOCS);
+        case CLI -> selected.add(GeneratorId.CLI);
+        case MCP -> selected.add(GeneratorId.MCP);
+        case DOCS -> selected.add(GeneratorId.DOCS);
       }
     }
     return List.copyOf(selected);
