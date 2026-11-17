@@ -60,6 +60,22 @@ public final class WorkDir {
     return dir;
   }
 
+  /** The directory holding the run's files, at their repo-relative paths. */
+  public Path filesDir(String runId) {
+    return of(runId).resolve(FILES);
+  }
+
+  /** The manifest of the run's last write. A missing manifest is transient, as for a lost write. */
+  public List<Entry> manifest(String runId) {
+    try {
+      String json = Files.readString(of(runId).resolve(MANIFEST), StandardCharsets.UTF_8);
+      return List.of(JSON.readValue(json, Entry[].class));
+    } catch (IOException e) {
+      throw new TransientException(
+          ErrorCode.STORAGE_ERROR, "file manifest unreadable", Map.of(), e);
+    }
+  }
+
   public Optional<String> generation(String runId) {
     Path marker = of(runId).resolve(GENERATION);
     try {

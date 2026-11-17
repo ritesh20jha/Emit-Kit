@@ -18,7 +18,7 @@ public final class RunContext {
   private final RunLogger log;
   private final CancellationRegistry cancellation;
 
-  RunContext(
+  public RunContext(
       GenerationRun run,
       Project project,
       ProjectConfig config,
