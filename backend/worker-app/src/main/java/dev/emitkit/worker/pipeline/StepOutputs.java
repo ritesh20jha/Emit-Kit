@@ -8,7 +8,7 @@ import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 /** The step outputs of a run: a JSON object from step name to the output that step saved. */
-final class StepOutputs {
+public final class StepOutputs {
 
   private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -17,7 +17,7 @@ final class StepOutputs {
   /**
    * Returns {@code json} with {@code output} saved under {@code step}, replacing any earlier one.
    */
-  static String with(String json, StepName step, @Nullable Object output) {
+  public static String with(String json, StepName step, @Nullable Object output) {
     ObjectNode root = parse(json);
     if (output == null) {
       root.putNull(step.name());
@@ -33,7 +33,7 @@ final class StepOutputs {
   }
 
   /** The output saved under {@code step}, deserialized as {@code type}. Empty if none was saved. */
-  static <T> Optional<T> read(String json, StepName step, Class<T> type) {
+  public static <T> Optional<T> read(String json, StepName step, Class<T> type) {
     JsonNode node = parse(json).get(step.name());
     return node == null ? Optional.empty() : Optional.ofNullable(JSON.treeToValue(node, type));
   }

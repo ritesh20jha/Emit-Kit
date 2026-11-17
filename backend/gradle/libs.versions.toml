@@ -55,6 +55,7 @@ spring-security-test = { module = "org.springframework.security:spring-security-
 spring-boot-starter-session-data-redis = { module = "org.springframework.boot:spring-boot-starter-session-data-redis" }
 spring-boot-starter-oauth2-client = { module = "org.springframework.boot:spring-boot-starter-oauth2-client" }
 spring-data-redis = { module = "org.springframework.data:spring-data-redis" }
+spring-boot-starter-data-redis = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
 lettuce-core = { module = "io.lettuce:lettuce-core" }
 spring-boot-starter-amqp = { module = "org.springframework.boot:spring-boot-starter-amqp" }
 spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
