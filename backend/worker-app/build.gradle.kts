@@ -17,12 +17,16 @@ dependencies {
     implementation(libs.docker.java.core)
     implementation(libs.docker.java.transport.httpclient5)
     implementation(libs.commons.compress)
+    // StringRedisTemplate for the VCS quota store. Boot autoconfigures it from this starter.
+    implementation(libs.spring.boot.starter.data.redis)
 
     testImplementation(libs.spring.boot.test)
     testImplementation(libs.spring.boot.testcontainers)
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.rabbitmq)
     testImplementation(libs.testcontainers.postgresql)
+    // InMemoryVcsClient, the VCS fake the step tests run against.
+    testImplementation(testFixtures(project(":vcs")))
 }
 
 // The convention plugin disables bootJar until a main class exists; worker-app has one now.
