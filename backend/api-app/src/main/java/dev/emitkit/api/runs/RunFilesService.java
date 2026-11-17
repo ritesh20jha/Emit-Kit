@@ -49,11 +49,6 @@ public class RunFilesService {
 
   private static final String ARTIFACT_EXPIRED = "Artifact expired or not created";
 
-  /**
-   * The zipped artifact of a run: its size, and the stream of its bytes, which the caller closes.
-   */
-  public record ArtifactDownload(long sizeBytes, InputStream bytes) {}
-
   private final RunService runs;
   private final RunArtifactRepository artifacts;
   private final LintResultRepository lintResults;
@@ -113,14 +108,14 @@ public class RunFilesService {
     return new FileView(path, entry.status(), null, unifiedDiff(path, base, content));
   }
 
-  /** The zipped artifact of a run, as a size and a stream the caller must close. */
-  public ArtifactDownload download(String runId) {
+  /** The zipped artifact of a run, as a stream the caller must close. */
+  public InputStream download(String runId) {
     GenerationRun run = runs.require(runId, Permission.RUN_VIEW);
     RunArtifact artifact =
         artifacts
             .findByRunId(run.getId())
             .orElseThrow(() -> new AppException(ErrorCode.NOT_FOUND, ARTIFACT_EXPIRED));
-    return new ArtifactDownload(artifact.getSizeBytes(), open(artifact));
+    return open(artifact);
   }
 
   /** The lint findings of a run. The stored findings keep no line, so every issue has none. */
@@ -172,7 +167,9 @@ public class RunFilesService {
         if (entry.getName().equals(path)) {
           byte[] bytes = zip.readNBytes(MAX_FILE_BYTES + 1);
           if (bytes.length > MAX_FILE_BYTES) {
-            throw new AppException(ErrorCode.FILE_TOO_LARGE, "file is larger than 1 MiB");
+            throw new AppException(
+                ErrorCode.VALIDATION_FAILED,
+                "file too large to preview; download the artifact instead");
           }
           return new String(bytes, StandardCharsets.UTF_8);
         }

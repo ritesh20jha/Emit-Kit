@@ -1,6 +1,5 @@
 package dev.emitkit.api.runs;
 
-import dev.emitkit.api.runs.RunFilesService.ArtifactDownload;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -59,16 +58,15 @@ public class RunFilesController {
   @Operation(summary = "Download the zipped output of a run")
   public ResponseEntity<StreamingResponseBody> getArtifact(@PathVariable("runId") String runId) {
     // Opened before the body is returned, so a missing artifact is a problem response.
-    ArtifactDownload download = files.download(runId);
+    InputStream zip = files.download(runId);
     StreamingResponseBody body =
         out -> {
-          try (InputStream in = download.bytes()) {
-            in.transferTo(out);
+          try (zip) {
+            zip.transferTo(out);
           }
         };
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType("application/zip"))
-        .contentLength(download.sizeBytes())
         .header(
             HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"emitkit-" + runId + ".zip\"")
         .body(body);

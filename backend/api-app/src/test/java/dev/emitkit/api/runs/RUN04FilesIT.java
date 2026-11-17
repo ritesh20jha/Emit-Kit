@@ -15,6 +15,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -83,6 +84,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomiz
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -242,8 +244,10 @@ class RUN04FilesIT {
     GenerationRun big = run(f.project(), f.owner());
     seedArtifact(big, Map.of("big.ts", huge), List.of(entry("big.ts", huge, FileStatus.ADDED)));
     mvc.perform(get(FILE + "/big.ts", big.getId()).with(signedInAs(f.owner())))
-        .andExpect(status().isPayloadTooLarge())
-        .andExpect(jsonPath("$.code").value("FILE_TOO_LARGE"));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        .andExpect(
+            jsonPath("$.detail").value("file too large to preview; download the artifact instead"));
 
     // A path outside the manifest is a 404.
     mvc.perform(
@@ -294,8 +298,9 @@ class RUN04FilesIT {
 
   /**
    * Traversal, backslash and encoded-separator paths never reach the run. The request firewall
-   * answers most of them with a bare 400 before the controller runs; the path check behind it
-   * refuses the rest, and is asserted directly because MockMvc collapses a doubled slash.
+   * rejects them, and the rejected-request handler answers with problem+json VALIDATION_FAILED. The
+   * path check behind it refuses the rest, and is asserted directly because MockMvc collapses a
+   * doubled slash.
    */
   @Test
   void pathTraversal_400() throws Exception {
@@ -310,7 +315,9 @@ class RUN04FilesIT {
             "sdk/%2e%2e/secret",
             "sdk%2F..%2Fsecret")) {
       mvc.perform(get(FILE + "/" + bad, run.getId()).with(signedInAs(f.owner())))
-          .andExpect(status().isBadRequest());
+          .andExpect(status().isBadRequest())
+          .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+          .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
     assertThat(vcs.calls("getFile")).isEmpty();
 
