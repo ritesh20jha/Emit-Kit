@@ -41,10 +41,18 @@ import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
 import dev.emitkit.worker.pipeline.StepOutputs;
 import dev.emitkit.worker.pipeline.StepResult;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -108,6 +116,7 @@ class WRK03FetchParseTest {
   private Organization org;
   private String repo;
   private String projectId;
+  private String configId;
   private String runId;
 
   @BeforeEach
@@ -262,6 +271,41 @@ class WRK03FetchParseTest {
   }
 
   @Test
+  void concurrentRunsWithSameContent_shareOneSnapshot() throws Exception {
+    queueRun(repo, SPEC_PATH);
+    commit(SPEC_PATH, SPEC);
+    String otherRunId = queueAnotherRun();
+    // Both runs look up the hash and find nothing before either one inserts. The barrier holds
+    // each insert until the other run has done its lookup, so the race is forced, not timed.
+    CyclicBarrier bothLookedUp = new CyclicBarrier(2);
+    AtomicInteger inserts = new AtomicInteger();
+    PipelineRunner runner = runner(racingSnapshots(bothLookedUp, inserts));
+
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+      Future<?> first = pool.submit(() -> runner.run(runId));
+      Future<?> second = pool.submit(() -> runner.run(otherRunId));
+      first.get(60, TimeUnit.SECONDS);
+      second.get(60, TimeUnit.SECONDS);
+    } finally {
+      pool.shutdownNow();
+    }
+
+    String snapshotId =
+        snapshots
+            .findByProjectIdAndContentHash(projectId, new SpecParser().parse(SPEC).contentHash())
+            .orElseThrow()
+            .getId();
+    assertThat(snapshots.findByProjectIdOrderByCreatedAtDesc(projectId)).hasSize(1);
+    assertThat(reload(runId).getSpecSnapshotId()).isEqualTo(snapshotId);
+    assertThat(reload(otherRunId).getSpecSnapshotId()).isEqualTo(snapshotId);
+    // Both runs inserted, so the second insert lost the race and was retried.
+    assertThat(inserts.get()).isEqualTo(2);
+    assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.RUNNING);
+    assertThat(reload(otherRunId).getStatus()).isEqualTo(RunStatus.RUNNING);
+  }
+
+  @Test
   void fetchAndParse_storeSnapshot_andKeepOnlyTheCommitInFetchOutput() {
     queueRun(repo, SPEC_PATH);
     String head = commit(SPEC_PATH, SPEC);
@@ -299,16 +343,21 @@ class WRK03FetchParseTest {
             new ProjectConfig(
                 null, project.getId(), 1, VersionStrategy.EMITKIT_MANAGED, creator.getId()));
     projectId = project.getId();
-    runId =
-        runs.saveAndFlush(
-                new GenerationRun(
-                    null,
-                    project.getId(),
-                    config.getId(),
-                    RunTrigger.MANUAL,
-                    false,
-                    Instant.parse("2026-11-01T10:00:00Z")))
-            .getId();
+    configId = config.getId();
+    runId = queueAnotherRun();
+  }
+
+  /** Queues one more run of the project queued by {@link #queueRun}, and returns its id. */
+  private String queueAnotherRun() {
+    return runs.saveAndFlush(
+            new GenerationRun(
+                null,
+                projectId,
+                configId,
+                RunTrigger.MANUAL,
+                false,
+                Instant.parse("2026-11-01T10:00:00Z")))
+        .getId();
   }
 
   /** Commits one file on the default branch of the test repo and returns the new head sha. */
@@ -318,9 +367,13 @@ class WRK03FetchParseTest {
 
   /** A runner with the two real steps and scripted no-op steps for the other nine. */
   private PipelineRunner runner() {
+    return runner(snapshots);
+  }
+
+  private PipelineRunner runner(SpecSnapshotRepository snapshotRepo) {
     List<PipelineStep> steps = new ArrayList<>();
     steps.add(new FetchSpecStep(runs, transactions));
-    steps.add(new ParseSpecStep(runs, snapshots, transactions));
+    steps.add(new ParseSpecStep(runs, snapshotRepo, transactions));
     for (StepName name : StepName.values()) {
       if (name != FETCH_SPEC && name != PARSE_SPEC) {
         steps.add(noOp(name));
@@ -386,7 +439,35 @@ class WRK03FetchParseTest {
   }
 
   private GenerationRun reload() {
-    return runs.findById(runId).orElseThrow();
+    return reload(runId);
+  }
+
+  private GenerationRun reload(String id) {
+    return runs.findById(id).orElseThrow();
+  }
+
+  /**
+   * The snapshot repository with a barrier on each insert. The barrier waits for the other run's
+   * lookup first. Counts the inserts, and unwraps reflective calls so the step sees the real
+   * exception.
+   */
+  private SpecSnapshotRepository racingSnapshots(
+      CyclicBarrier bothLookedUp, AtomicInteger inserts) {
+    return (SpecSnapshotRepository)
+        Proxy.newProxyInstance(
+            getClass().getClassLoader(),
+            new Class<?>[] {SpecSnapshotRepository.class},
+            (proxy, method, args) -> {
+              if (method.getName().equals("save") || method.getName().equals("saveAndFlush")) {
+                inserts.incrementAndGet();
+                bothLookedUp.await(30, TimeUnit.SECONDS);
+              }
+              try {
+                return method.invoke(snapshots, args);
+              } catch (InvocationTargetException e) {
+                throw e.getCause();
+              }
+            });
   }
 
   /** A document with {@code count} operations, each referring to a schema that does not exist. */

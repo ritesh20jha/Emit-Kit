@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -107,21 +108,36 @@ public class ParseSpecStep implements PipelineStep {
   }
 
   /**
+   * Stores the snapshot and points the run at it. When a concurrent run stores the same content
+   * first, this run's insert fails on the unique key. That transaction has rolled back, and the
+   * winner's has committed, so one retry finds the winner's row. A second failure propagates.
+   */
+  private @Nullable String save(
+      String runId, String projectId, String hash, @Nullable SpecSnapshot fresh, String commitSha) {
+    try {
+      return storeAndPoint(runId, projectId, hash, fresh, commitSha);
+    } catch (DataIntegrityViolationException e) {
+      return storeAndPoint(runId, projectId, hash, fresh, commitSha);
+    }
+  }
+
+  /**
    * In one transaction: stores {@code fresh} unless the hash is already stored, points the run at
    * the snapshot, and replaces the FETCH_SPEC output with its commit alone. Returns null, and
    * writes nothing, if the run has become terminal.
    */
-  private @Nullable String save(
+  private @Nullable String storeAndPoint(
       String runId, String projectId, String hash, @Nullable SpecSnapshot fresh, String commitSha) {
     return transactions.execute(tx ->
         runs.findByIdForUpdate(runId)
             .filter(run -> !run.getStatus().isTerminal())
             .map(run -> {
+              // saveAndFlush, so a unique-key violation surfaces inside this transaction.
               String id =
                   snapshots
                       .findByProjectIdAndContentHash(projectId, hash)
-                      .orElseGet(
-                          () -> snapshots.save(Objects.requireNonNull(fresh, "fresh snapshot")))
+                      .orElseGet(() ->
+                          snapshots.saveAndFlush(Objects.requireNonNull(fresh, "fresh snapshot")))
                       .getId();
               run.setSpecSnapshotId(id);
               run.setStepOutputs(
