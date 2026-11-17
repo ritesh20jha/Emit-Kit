@@ -22,6 +22,8 @@ dependencies {
     implementation(libs.spring.boot.data.redis)
     implementation(libs.spring.data.redis)
     implementation(libs.lettuce.core)
+    // StringRedisTemplate for the VCS quota store. Boot autoconfigures it from this starter.
+    implementation(libs.spring.boot.starter.data.redis)
 
     testImplementation(libs.spring.boot.test)
     testImplementation(libs.spring.boot.testcontainers)
@@ -29,6 +31,8 @@ dependencies {
     testImplementation(libs.testcontainers.rabbitmq)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.awaitility)
+    // InMemoryVcsClient, the VCS fake the step tests run against.
+    testImplementation(testFixtures(project(":vcs")))
 }
 
 // The convention plugin disables bootJar until a main class exists; worker-app has one now.

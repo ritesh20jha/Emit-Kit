@@ -134,6 +134,10 @@ public class GenerationRun extends BaseEntity {
     return specSnapshotId;
   }
 
+  public void setSpecSnapshotId(String specSnapshotId) {
+    this.specSnapshotId = specSnapshotId;
+  }
+
   public RunTrigger getTrigger() {
     return trigger;
   }
@@ -213,6 +217,10 @@ public class GenerationRun extends BaseEntity {
 
   public String getCommitSha() {
     return commitSha;
+  }
+
+  public void setCommitSha(String commitSha) {
+    this.commitSha = commitSha;
   }
 
   public String getSdkVersion() {
