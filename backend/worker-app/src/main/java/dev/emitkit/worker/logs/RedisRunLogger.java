@@ -13,6 +13,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -30,6 +31,9 @@ final class RedisRunLogger implements RunLogger {
   /** Longest line kept: 8192 chars, the 8 KB per-line limit for text that is mostly ASCII. */
   private static final int MAX_LINE_CHARS = 8192;
 
+  /** Lines held while the database is unavailable. Past this, the oldest line is dropped. */
+  static final int MAX_BUFFERED_LINES = 10_000;
+
   private static final String MASK = "****";
   private static final Logger LOG = LoggerFactory.getLogger(RedisRunLogger.class);
   private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -38,6 +42,7 @@ final class RedisRunLogger implements RunLogger {
   private final String channel;
   private final GenerationRunLogRepository logs;
   private final StringRedisTemplate redis;
+  private final int maxBufferedLines;
   private final List<String> secrets = new ArrayList<>();
   private final List<GenerationRunLog> buffer = new ArrayList<>();
   private int nextSeq;
@@ -47,12 +52,17 @@ final class RedisRunLogger implements RunLogger {
 
   /** {@code lastSeq} is the highest seq already saved for the run, or 0. */
   RedisRunLogger(
-      String runId, int lastSeq, GenerationRunLogRepository logs, StringRedisTemplate redis) {
+      String runId,
+      int lastSeq,
+      GenerationRunLogRepository logs,
+      StringRedisTemplate redis,
+      int maxBufferedLines) {
     this.runId = runId;
     this.channel = "run-logs:" + runId;
     this.nextSeq = lastSeq + 1;
     this.logs = logs;
     this.redis = redis;
+    this.maxBufferedLines = maxBufferedLines;
   }
 
   /** Starts the periodic flush on {@code executor}. It stops when {@link #done} is called. */
@@ -90,42 +100,88 @@ final class RedisRunLogger implements RunLogger {
     this.step = step;
   }
 
+  /**
+   * Saves the buffer in one batch. If the batch is rejected because one line is bad, the lines are
+   * saved one at a time, and only the rejected ones are dropped. Any other failure, such as the
+   * database being down, leaves the buffer as it is and throws.
+   */
   @Override
   public synchronized void flush() {
     if (buffer.isEmpty()) {
       return;
     }
-    logs.saveAll(buffer);
-    buffer.clear();
+    try {
+      logs.saveAll(copies(buffer));
+      buffer.clear();
+    } catch (DataIntegrityViolationException rejected) {
+      saveOneByOne();
+    }
+  }
+
+  private void saveOneByOne() {
+    while (!buffer.isEmpty()) {
+      GenerationRunLog line = buffer.getFirst();
+      try {
+        logs.save(copy(line));
+      } catch (DataIntegrityViolationException rejected) {
+        LOG.warn(
+            "run {}: dropped log line seq {}, the database rejected it ({})",
+            runId,
+            line.getSeq(),
+            rejected.getClass().getSimpleName());
+      }
+      buffer.removeFirst();
+    }
   }
 
   /**
-   * Flushes, stops the periodic flush, then publishes the terminal message. Later calls do nothing.
+   * Flushes, stops the periodic flush, then publishes the terminal message. A failed flush throws
+   * before anything is published, and leaves the logger open so a later call can retry. Later calls
+   * after success do nothing.
    */
   @Override
   public synchronized void done() {
     if (done) {
       return;
     }
+    flush();
     done = true;
-    try {
-      flush();
-    } finally {
-      if (flushing != null) {
-        flushing.cancel(false);
-      }
-      publish(DONE_MESSAGE);
+    if (flushing != null) {
+      flushing.cancel(false);
     }
+    publish(DONE_MESSAGE);
   }
 
   private void write(String level, String message) {
-    String kept = truncate(hide(message));
+    String kept = truncate(hide(message.replace("\u0000", "")));
     GenerationRunLog line =
         new GenerationRunLog(runId, nextSeq++, Instant.now(), level, step, kept);
+    if (buffer.size() >= maxBufferedLines) {
+      GenerationRunLog dropped = buffer.removeFirst();
+      LOG.warn("run {}: log buffer full, dropped line seq {}", runId, dropped.getSeq());
+    }
     buffer.add(line);
     publish(
         JSON.writeValueAsString(
             new LogLineMessage(line.getSeq(), line.getTs(), level, step, kept)));
+  }
+
+  /**
+   * Fresh entities for a save. A save that fails may already have given an entity its id, so the
+   * buffered lines are never handed to the repository themselves.
+   */
+  private static List<GenerationRunLog> copies(List<GenerationRunLog> lines) {
+    return lines.stream().map(RedisRunLogger::copy).toList();
+  }
+
+  private static GenerationRunLog copy(GenerationRunLog line) {
+    return new GenerationRunLog(
+        line.getRunId(),
+        line.getSeq(),
+        line.getTs(),
+        line.getLevel(),
+        line.getStep(),
+        line.getMessage());
   }
 
   /** Replaces every registered secret with {@code ****}. */

@@ -30,7 +30,9 @@ public class RunLoggerFactory {
 
   /** A logger for {@code runId} whose seq continues after the last line the run has saved. */
   public RunLogger create(String runId) {
-    RedisRunLogger logger = new RedisRunLogger(runId, logs.findMaxSeqByRunId(runId), logs, redis);
+    RedisRunLogger logger =
+        new RedisRunLogger(
+            runId, logs.findMaxSeqByRunId(runId), logs, redis, RedisRunLogger.MAX_BUFFERED_LINES);
     logger.startFlushing(flushes);
     return logger;
   }

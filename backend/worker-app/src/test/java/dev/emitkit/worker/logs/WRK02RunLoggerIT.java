@@ -2,6 +2,7 @@ package dev.emitkit.worker.logs;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import dev.emitkit.domain.GenerationRun;
@@ -25,10 +26,13 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +44,9 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -79,9 +85,14 @@ class WRK02RunLoggerIT {
   @Autowired private GenerationRunRepository runs;
   @Autowired private GenerationRunLogRepository logs;
   @Autowired private RunLoggerFactory factory;
+  @Autowired private StringRedisTemplate redis;
 
   private final List<RunLogger> opened = new ArrayList<>();
   private final List<String> received = new CopyOnWriteArrayList<>();
+
+  /** While set, the repository proxy from {@link #flakyRepo()} fails every save. */
+  private final AtomicBoolean failSaves = new AtomicBoolean();
+
   private String runId;
   private RedisClient redisClient;
   private StatefulRedisPubSubConnection<String, String> subscriber;
@@ -131,6 +142,7 @@ class WRK02RunLoggerIT {
 
   @AfterEach
   void tearDown() {
+    failSaves.set(false);
     opened.forEach(RunLogger::done);
     subscriber.close();
     redisClient.shutdown();
@@ -210,10 +222,92 @@ class WRK02RunLoggerIT {
     assertThat(received()).noneMatch(m -> m.contains("sk-secret"));
   }
 
+  @Test
+  void doneRetriedAfterFailedFlushSavesLinesBeforeDone() {
+    RunLogger log = openDirect(flakyRepo(), 100);
+    failSaves.set(true);
+    log.info("x");
+
+    assertThatThrownBy(log::done).isInstanceOf(DataAccessResourceFailureException.class);
+    // Redis delivers in publish order: once "y" arrives, a DONE published during the failed
+    // done() would already have arrived too.
+    log.info("y");
+    await().atMost(5, SECONDS).until(() -> received.stream().anyMatch(m -> m.contains("\"y\"")));
+    assertThat(received()).noneMatch(DONE::equals);
+
+    failSaves.set(false);
+    log.done();
+
+    await().atMost(5, SECONDS).until(() -> !received.isEmpty() && received.getLast().equals(DONE));
+    assertThat(stored()).containsExactly("x", "y");
+  }
+
+  @Test
+  void nulCharacterIsStrippedBeforeSaving() {
+    RunLogger log = open();
+
+    log.info("a\u0000b");
+    log.flush();
+
+    assertThat(stored()).containsExactly("ab");
+  }
+
+  @Test
+  void rejectedLineDoesNotBlockLaterLines() {
+    // An older logger left seq 1 behind: the new logger's first line collides with it.
+    logs.saveAndFlush(new GenerationRunLog(runId, 1, EPOCH, "INFO", null, "existing"));
+    RunLogger log = openDirect(logs, 100);
+
+    log.info("collides");
+    log.info("later");
+    log.flush();
+
+    assertThat(stored()).containsExactly("existing", "later");
+  }
+
+  @Test
+  void bufferKeepsNewestLinesWhileDatabaseIsDown() {
+    RunLogger log = openDirect(flakyRepo(), 3);
+    failSaves.set(true);
+
+    for (int i = 1; i <= 5; i++) {
+      log.info("line" + i);
+    }
+    failSaves.set(false);
+    log.flush();
+
+    assertThat(stored()).containsExactly("line3", "line4", "line5");
+  }
+
   private RunLogger open() {
     RunLogger log = factory.create(runId);
     opened.add(log);
     return log;
+  }
+
+  private RunLogger openDirect(GenerationRunLogRepository repository, int maxBufferedLines) {
+    RunLogger log = new RedisRunLogger(runId, 0, repository, redis, maxBufferedLines);
+    opened.add(log);
+    return log;
+  }
+
+  /** The real repository, except that saves fail while {@link #failSaves} is set. */
+  private GenerationRunLogRepository flakyRepo() {
+    return (GenerationRunLogRepository)
+        Proxy.newProxyInstance(
+            getClass().getClassLoader(),
+            new Class<?>[] {GenerationRunLogRepository.class},
+            (proxy, method, args) -> {
+              boolean save = method.getName().equals("save") || method.getName().equals("saveAll");
+              if (save && failSaves.get()) {
+                throw new DataAccessResourceFailureException("database down");
+              }
+              try {
+                return method.invoke(logs, args);
+              } catch (InvocationTargetException e) {
+                throw e.getCause();
+              }
+            });
   }
 
   /** Message texts of the run's stored lines, in seq order. */
