@@ -20,3 +20,9 @@ emitkit:
   worker:
     concurrency: 4
     retry-ttls: 10s,60s,300s
+    work-dir: ${java.io.tmpdir}/emitkit
+    work-dir-retention: 1h
+    work-dir-sweep-interval: 10m
+  ai:
+    gemini:
+      default-model: gemini-2.5-flash

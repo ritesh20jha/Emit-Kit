@@ -9,6 +9,13 @@ dependencies {
     implementation(project(":spec-engine"))
     implementation(project(":generators:core"))
     implementation(project(":ai"))
+    implementation(project(":generators:workflows"))
+    implementation(project(":generators:typescript-sdk"))
+    implementation(project(":generators:python-sdk"))
+    implementation(project(":generators:java-sdk"))
+    implementation(project(":generators:cli"))
+    implementation(project(":generators:mcp"))
+    implementation(project(":generators:docs"))
 
     implementation(libs.spring.boot.starter.amqp)
     // spring-amqp marks Jackson optional, so the JSON converter needs it at runtime; its constructor

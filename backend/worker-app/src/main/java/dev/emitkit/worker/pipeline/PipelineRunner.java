@@ -14,10 +14,13 @@ import dev.emitkit.domain.StepName;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.worker.logs.RunLoggerFactory;
+import dev.emitkit.worker.steps.RunGeneratorsStep;
+import dev.emitkit.worker.steps.WorkDir;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +47,9 @@ public class PipelineRunner {
 
   private static final Logger LOG = LoggerFactory.getLogger(PipelineRunner.class);
 
+  private static final EnumSet<StepName> FILE_STEPS =
+      EnumSet.range(StepName.RUN_GENERATORS, StepName.PACKAGE_ARTIFACT);
+
   private final Map<StepName, PipelineStep> steps;
   private final GenerationRunRepository runs;
   private final ProjectRepository projects;
@@ -53,6 +59,7 @@ public class PipelineRunner {
   private final CancellationRegistry cancellation;
   private final Function<String, RunLogger> loggers;
   private final InstantSource clock;
+  private final WorkDir workDir;
 
   @Autowired
   public PipelineRunner(
@@ -63,7 +70,8 @@ public class PipelineRunner {
       VcsProvider vcsProvider,
       PlatformTransactionManager transactionManager,
       CancellationRegistry cancellation,
-      RunLoggerFactory loggers) {
+      RunLoggerFactory loggers,
+      WorkDir workDir) {
     this(
         steps,
         runs,
@@ -73,10 +81,11 @@ public class PipelineRunner {
         transactionManager,
         cancellation,
         loggers::create,
-        InstantSource.system());
+        InstantSource.system(),
+        workDir);
   }
 
-  PipelineRunner(
+  public PipelineRunner(
       List<PipelineStep> steps,
       GenerationRunRepository runs,
       ProjectRepository projects,
@@ -85,7 +94,8 @@ public class PipelineRunner {
       PlatformTransactionManager transactionManager,
       CancellationRegistry cancellation,
       Function<String, RunLogger> loggers,
-      InstantSource clock) {
+      InstantSource clock,
+      WorkDir workDir) {
     this.steps = indexSteps(steps);
     this.runs = runs;
     this.projects = projects;
@@ -95,6 +105,7 @@ public class PipelineRunner {
     this.cancellation = cancellation;
     this.loggers = loggers;
     this.clock = clock;
+    this.workDir = workDir;
   }
 
   /**
@@ -128,8 +139,19 @@ public class PipelineRunner {
         return;
       }
       run = started.get();
+      // The work dir's files are the saved ones only if it holds RUN_GENERATORS' saved generation.
+      // A saved COMMIT_OUTPUT means a PR exists, so nothing is re-run then.
+      Optional<String> savedGeneration =
+          StepOutputs.read(
+                  run.getStepOutputs(), StepName.RUN_GENERATORS, RunGeneratorsStep.Output.class)
+              .map(RunGeneratorsStep.Output::generationId);
+      boolean workDirLost =
+          !StepOutputs.has(run.getStepOutputs(), StepName.COMMIT_OUTPUT)
+              && !(savedGeneration.isPresent()
+                  && savedGeneration.equals(workDir.generation(runId)));
       for (StepName name : StepName.values()) {
-        if (StepOutputs.has(run.getStepOutputs(), name)) {
+        boolean regenerate = workDirLost && FILE_STEPS.contains(name);
+        if (!regenerate && StepOutputs.has(run.getStepOutputs(), name)) {
           LOG.debug("generation run {}: step {} already has a saved output, skipping", runId, name);
           continue;
         }
@@ -185,7 +207,12 @@ public class PipelineRunner {
 
   private void saveOutput(GenerationRun run, StepName step, @Nullable Object output) {
     run.setCurrentStep(step);
-    run.setStepOutputs(StepOutputs.with(run.getStepOutputs(), step, output));
+    String outputs = StepOutputs.with(run.getStepOutputs(), step, output);
+    if (step == StepName.RUN_GENERATORS) {
+      // A new generation makes the saved outputs of the later file steps stale.
+      outputs = StepOutputs.without(outputs, StepName.SYNTAX_CHECK, StepName.PACKAGE_ARTIFACT);
+    }
+    run.setStepOutputs(outputs);
   }
 
   private void markFailed(GenerationRun run, StepName step, StepResult.Fail failure) {

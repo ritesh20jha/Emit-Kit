@@ -1,2 +1,2 @@
-/** The pipeline steps that fetch and parse the spec: FETCH_SPEC and PARSE_SPEC. */
+/** Steps of a run (FETCH_SPEC, PARSE_SPEC, RUN_GENERATORS) and the work dir they share. */
 package dev.emitkit.worker.steps;

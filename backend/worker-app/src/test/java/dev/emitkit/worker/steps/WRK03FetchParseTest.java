@@ -40,11 +40,14 @@ import dev.emitkit.worker.pipeline.CancellationRegistry;
 import dev.emitkit.worker.pipeline.PipelineRunner;
 import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
+import dev.emitkit.worker.pipeline.RunLogger;
 import dev.emitkit.worker.pipeline.StepOutputs;
 import dev.emitkit.worker.pipeline.StepResult;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -406,7 +409,16 @@ class WRK03FetchParseTest {
       }
     }
     return new PipelineRunner(
-        steps, runs, projects, configs, provider(), transactions, new CancellationRegistry(runs));
+        steps,
+        runs,
+        projects,
+        configs,
+        provider(),
+        transactions,
+        new CancellationRegistry(runs),
+        runId -> RunLogger.NOOP,
+        InstantSource.system(),
+        new WorkDir(Path.of(System.getProperty("java.io.tmpdir"), "emitkit-wrk03")));
   }
 
   private static PipelineStep noOp(StepName name) {
