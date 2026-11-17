@@ -91,11 +91,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-/**
- * RUN-04: a run's file manifest, its files and their diffs, its artifact download, lint results and
- * the versions of a project. Runs against Postgres and Redis, with the artifact store held in
- * memory and the VCS provider replaced by the in-memory fake.
- */
+/** RUN-04 over Postgres and Redis, with the artifact store in memory and the VCS faked. */
 @SpringBootTest(
     properties = {
       "emitkit.vault.cipher=local",
@@ -296,24 +292,14 @@ class RUN04FilesIT {
     assertThat(diffOf(f.owner(), run, CLIENT)).contains("-Q\n+B");
   }
 
-  /**
-   * Traversal, backslash and encoded-separator paths never reach the run. The request firewall
-   * rejects them, and the rejected-request handler answers with problem+json VALIDATION_FAILED. The
-   * path check behind it refuses the rest, and is asserted directly because MockMvc collapses a
-   * doubled slash.
-   */
+  /** Firewall-rejected paths get problem+json VALIDATION_FAILED; {@code //} is checked directly. */
   @Test
   void pathTraversal_400() throws Exception {
     Fixture f = fixture();
     GenerationRun run = run(f.project(), f.owner());
     seedArtifact(run, GENERATED, MANIFEST);
 
-    for (String bad :
-        List.of(
-            "sdk/../../secret",
-            "sdk\\typescript\\client.ts",
-            "sdk/%2e%2e/secret",
-            "sdk%2F..%2Fsecret")) {
+    for (String bad : List.of("sdk/../x", "sdk\\x", "sdk/%2e%2e/x", "sdk%2F..%2Fx")) {
       mvc.perform(get(FILE + "/" + bad, run.getId()).with(signedInAs(f.owner())))
           .andExpect(status().isBadRequest())
           .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))

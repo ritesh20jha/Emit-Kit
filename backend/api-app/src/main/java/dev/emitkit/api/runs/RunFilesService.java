@@ -32,8 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The files of a run: its manifest, one file read or diffed, its zipped artifact and its lint
- * findings. Each call checks {@link Permission#RUN_VIEW} on the run's project first.
+ * A run's files, artifact and lint findings. Each call checks {@link Permission#RUN_VIEW} first.
  */
 @Service
 public class RunFilesService {
@@ -84,10 +83,7 @@ public class RunFilesService {
         .orElse(List.of());
   }
 
-  /**
-   * One generated file: its content, or with {@code diff} its unified diff against the file on the
-   * target branch. The path is checked before the run is looked up.
-   */
+  /** One file's content, or with {@code diff} its unified diff against the target branch. */
   public FileView file(String runId, String captured, boolean diff) {
     String path = relativePath(captured);
     GenerationRun run = runs.require(runId, Permission.RUN_VIEW);
@@ -134,9 +130,8 @@ public class RunFilesService {
   }
 
   /**
-   * The path a request names, with the one slash the URL pattern leaves in front of it removed.
-   * What remains must be a relative path inside the run: no empty name, no absolute path, no
-   * backslash and no {@code ..} segment.
+   * Strips the pattern's leading slash; what remains must be relative, with no backslash or {@code
+   * ..}.
    */
   static String relativePath(String captured) {
     String path = captured.startsWith("/") ? captured.substring(1) : captured;
@@ -180,10 +175,7 @@ public class RunFilesService {
     throw new AppException(ErrorCode.NOT_FOUND, "file not in artifact");
   }
 
-  /**
-   * The file on the target branch that the run's output replaces, or null when there is none. An
-   * added file has no base; neither has a file the VCS does not hold.
-   */
+  /** The target-branch file the output replaces, or null for an added file or a missing one. */
   private @Nullable String baseContent(GenerationRun run, FileStatus status, String path) {
     if (status == FileStatus.ADDED) {
       return null;
