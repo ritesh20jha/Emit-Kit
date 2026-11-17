@@ -89,6 +89,7 @@ public class ParseSpecStep implements PipelineStep {
     if (snapshots.findByProjectIdAndContentHash(projectId, hash).isEmpty()) {
       ParseResult parsed = PARSER.parse(content);
       if (!parsed.ok()) {
+        trimFetchOutput(run.getId(), fetched.commitSha());
         return new StepResult.Fail(ErrorCode.SPEC_INVALID, firstErrors(parsed.errors()));
       }
       fresh =
@@ -146,6 +147,21 @@ public class ParseSpecStep implements PipelineStep {
               return id;
             })
             .orElse(null));
+  }
+
+  /**
+   * Replaces the FETCH_SPEC output of a run that failed to parse with its commit alone, in its own
+   * transaction. A failed run is never resumed, so the spec text is not kept in the run row. Writes
+   * nothing if the run has become terminal.
+   */
+  private void trimFetchOutput(String runId, String commitSha) {
+    transactions.executeWithoutResult(tx ->
+        runs.findByIdForUpdate(runId)
+            .filter(run -> !run.getStatus().isTerminal())
+            .ifPresent(run ->
+                run.setStepOutputs(
+                    StepOutputs.with(
+                        run.getStepOutputs(), FETCH_SPEC, Map.of("commitSha", commitSha)))));
   }
 
   private static String firstErrors(List<String> errors) {

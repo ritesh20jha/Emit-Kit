@@ -62,22 +62,43 @@ public class FetchSpecStep implements PipelineStep {
       return new StepResult.Fail(ErrorCode.SPEC_NOT_FOUND, "invalid repository name: " + repo);
     }
     try {
-      VcsClient vcs = ctx.vcs();
-      String commitSha = vcs.branchHead(repo, branch);
-      if (!recordCommit(ctx.run().getId(), commitSha)) {
-        return new StepResult.Park();
-      }
-      FileContent file = vcs.getFile(repo, path, commitSha);
-      if (file.content().getBytes(StandardCharsets.UTF_8).length > MAX_SPEC_BYTES) {
-        return new StepResult.Fail(ErrorCode.SPEC_TOO_LARGE, "spec is larger than 2 MB");
-      }
-      return new StepResult.Continue(new FetchOutput(commitSha, file.content()));
+      return fetch(ctx, repo, branch, path);
     } catch (VcsAuthException e) {
       return new StepResult.Fail(ErrorCode.VCS_AUTH, REVOKED);
+    }
+  }
+
+  private StepResult fetch(RunContext ctx, String repo, String branch, String path) {
+    VcsClient vcs = ctx.vcs();
+    String commitSha;
+    try {
+      commitSha = vcs.branchHead(repo, branch);
+    } catch (VcsNotFoundException e) {
+      // GitHub answers 404 to a token that can no longer see a private repo, so this is not
+      // necessarily a missing repo. The creator's access is the likely cause.
+      return new StepResult.Fail(
+          ErrorCode.SPEC_NOT_FOUND,
+          "repository "
+              + repo
+              + " or branch "
+              + branch
+              + " was not found, or the project creator can no longer access it. "
+              + "An admin must re-link the project.");
+    }
+    if (!recordCommit(ctx.run().getId(), commitSha)) {
+      return new StepResult.Park();
+    }
+    FileContent file;
+    try {
+      file = vcs.getFile(repo, path, commitSha);
     } catch (VcsNotFoundException e) {
       return new StepResult.Fail(
           ErrorCode.SPEC_NOT_FOUND, "spec not found: " + path + " on " + branch);
     }
+    if (file.content().getBytes(StandardCharsets.UTF_8).length > MAX_SPEC_BYTES) {
+      return new StepResult.Fail(ErrorCode.SPEC_TOO_LARGE, "spec is larger than 2 MB");
+    }
+    return new StepResult.Continue(new FetchOutput(commitSha, file.content()));
   }
 
   /**

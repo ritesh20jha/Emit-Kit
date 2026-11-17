@@ -32,6 +32,7 @@ import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.VcsProviderId;
 import dev.emitkit.vcs.WebhookVerifier;
 import dev.emitkit.vcs.error.VcsAuthException;
+import dev.emitkit.vcs.error.VcsNotFoundException;
 import dev.emitkit.vcs.error.VcsServerException;
 import dev.emitkit.vcs.fake.InMemoryVcsClient;
 import dev.emitkit.vcs.ratelimit.RateLimitPolicy;
@@ -222,9 +223,30 @@ class WRK03FetchParseTest {
   }
 
   @Test
-  void invalidSpec_failsSpecInvalid() {
+  void lostAccess_branchHeadNotFound_failsSpecNotFoundWithAccessMessage() {
     queueRun(repo, SPEC_PATH);
-    commit(SPEC_PATH, unresolvedRefs(7));
+    commit(SPEC_PATH, SPEC);
+    // GitHub answers 404 to a token that can no longer see a private repo.
+    vcs.failNext("branchHead", new VcsNotFoundException("repo not found: " + repo));
+
+    runner().run(runId);
+
+    assertFailed(
+        reload(),
+        "SPEC_NOT_FOUND",
+        "repository "
+            + repo
+            + " or branch "
+            + BRANCH
+            + " was not found, or the project creator can no longer access it. "
+            + "An admin must re-link the project.");
+    assertThat(vcs.calls("getFile")).isEmpty();
+  }
+
+  @Test
+  void invalidSpec_failsSpecInvalid_andTrimsTheContent() {
+    queueRun(repo, SPEC_PATH);
+    String head = commit(SPEC_PATH, unresolvedRefs(7));
 
     runner().run(runId);
 
@@ -233,7 +255,11 @@ class WRK03FetchParseTest {
         IntStream.range(0, 5)
             .mapToObj(i -> "unresolved $ref: #/components/schemas/Missing" + i)
             .collect(Collectors.joining("; "));
-    assertFailed(reload(), "SPEC_INVALID", first5);
+    GenerationRun run = reload();
+    assertFailed(run, "SPEC_INVALID", first5);
+    // A failed run is never resumed, so the spec text is not kept in its step outputs.
+    assertThat(StepOutputs.read(run.getStepOutputs(), FETCH_SPEC, Map.class))
+        .hasValue(Map.of("commitSha", head));
   }
 
   @Test
