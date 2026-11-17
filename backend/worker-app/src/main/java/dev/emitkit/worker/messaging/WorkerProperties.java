@@ -9,6 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param retryTtls time a job waits in each retry queue, in attempt order; must match {@code
  *     Queues.RETRY_QUEUES}
+ * @param workDir root directory for the files of each run, one subdirectory per run; defaults to
+ *     {@code emitkit/} under the temporary directory. A String because Boot has no Path converter.
  */
 @ConfigurationProperties("emitkit.worker")
-public record WorkerProperties(List<Duration> retryTtls) {}
+public record WorkerProperties(List<Duration> retryTtls, String workDir) {}

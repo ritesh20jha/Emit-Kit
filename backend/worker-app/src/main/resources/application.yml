@@ -14,3 +14,4 @@ emitkit:
   worker:
     concurrency: 4
     retry-ttls: 10s,60s,300s
+    work-dir: ${java.io.tmpdir}/emitkit

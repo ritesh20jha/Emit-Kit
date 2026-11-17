@@ -1,10 +1,16 @@
 package dev.emitkit.worker.pipeline;
 
+import static dev.emitkit.domain.StepName.BREAKING_GATE;
 import static dev.emitkit.domain.StepName.CALC_VERSION;
+import static dev.emitkit.domain.StepName.COMMIT_OUTPUT;
 import static dev.emitkit.domain.StepName.DIFF_SPEC;
 import static dev.emitkit.domain.StepName.FETCH_SPEC;
+import static dev.emitkit.domain.StepName.FINALIZE;
 import static dev.emitkit.domain.StepName.LINT_SPEC;
+import static dev.emitkit.domain.StepName.PACKAGE_ARTIFACT;
 import static dev.emitkit.domain.StepName.PARSE_SPEC;
+import static dev.emitkit.domain.StepName.RUN_GENERATORS;
+import static dev.emitkit.domain.StepName.SYNTAX_CHECK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -27,7 +33,9 @@ import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.domain.VersionStrategy;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.worker.steps.WorkDir;
 import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
@@ -39,6 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -72,6 +81,8 @@ class WRK01PipelineRunnerTest {
   @Autowired private ProjectConfigRepository configs;
   @Autowired private GenerationRunRepository runs;
   @Autowired private PlatformTransactionManager transactions;
+
+  @TempDir Path workRoot;
 
   /** What a fake step does when it runs. */
   private interface Script {
@@ -348,6 +359,37 @@ class WRK01PipelineRunnerTest {
     assertThat(reload().getCurrentStep()).isEqualTo(CALC_VERSION);
   }
 
+  @Test
+  void missingWorkDir_reRunsGeneratorsAndLaterStepsInRange() {
+    // Generated files live in the work dir. Without it, the saved RUN_GENERATORS output is stale.
+    for (StepName name :
+        List.of(FETCH_SPEC, PARSE_SPEC, LINT_SPEC, DIFF_SPEC, CALC_VERSION, BREAKING_GATE)) {
+      saveOutput(name, "saved");
+    }
+    saveOutput(RUN_GENERATORS, "saved");
+    saveOutput(SYNTAX_CHECK, "saved");
+    saveOutput(PACKAGE_ARTIFACT, "saved");
+
+    runner().run(runId);
+
+    assertThat(order)
+        .containsExactly(RUN_GENERATORS, SYNTAX_CHECK, PACKAGE_ARTIFACT, COMMIT_OUTPUT, FINALIZE);
+  }
+
+  @Test
+  void missingWorkDir_afterCommit_skipsEverything() {
+    // A PR already exists, so the output steps are never re-run, even without the work dir.
+    for (StepName name : StepName.values()) {
+      if (name != FINALIZE) {
+        saveOutput(name, "saved");
+      }
+    }
+
+    runner().run(runId);
+
+    assertThat(order).containsExactly(FINALIZE);
+  }
+
   /** One fake step per name, except the omitted ones. Each continues with a fixed output. */
   private List<PipelineStep> steps(StepName... omit) {
     List<StepName> omitted = List.of(omit);
@@ -395,7 +437,8 @@ class WRK01PipelineRunnerTest {
         transactions,
         cancellation,
         id -> recorder,
-        clock);
+        clock,
+        new WorkDir(workRoot));
   }
 
   private GenerationRun reload() {

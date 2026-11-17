@@ -18,6 +18,9 @@ public interface RunLogger {
         public void error(String message) {}
 
         @Override
+        public void mask(String secret) {}
+
+        @Override
         public void step(StepName step) {}
 
         @Override
@@ -35,6 +38,9 @@ public interface RunLogger {
 
   /** Writes an error line. */
   void error(String message);
+
+  /** Records a secret so that its value is replaced in every line written from now on. */
+  void mask(String secret);
 
   /** Marks the start of a step, so the following lines belong to it. */
   void step(StepName step);

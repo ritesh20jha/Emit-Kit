@@ -13,13 +13,16 @@ import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.StepName;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.worker.steps.WorkDir;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -43,6 +46,10 @@ public class PipelineRunner {
 
   private static final Logger LOG = LoggerFactory.getLogger(PipelineRunner.class);
 
+  /** The steps whose saved outputs depend on the work dir: RUN_GENERATORS to PACKAGE_ARTIFACT. */
+  private static final Set<StepName> FILE_STEPS =
+      EnumSet.range(StepName.RUN_GENERATORS, StepName.PACKAGE_ARTIFACT);
+
   private final Map<StepName, PipelineStep> steps;
   private final GenerationRunRepository runs;
   private final ProjectRepository projects;
@@ -52,6 +59,7 @@ public class PipelineRunner {
   private final CancellationRegistry cancellation;
   private final Function<String, RunLogger> loggers;
   private final InstantSource clock;
+  private final WorkDir workDir;
 
   @Autowired
   public PipelineRunner(
@@ -61,7 +69,8 @@ public class PipelineRunner {
       ProjectConfigRepository configs,
       VcsProvider vcsProvider,
       PlatformTransactionManager transactionManager,
-      CancellationRegistry cancellation) {
+      CancellationRegistry cancellation,
+      WorkDir workDir) {
     this(
         steps,
         runs,
@@ -71,10 +80,12 @@ public class PipelineRunner {
         transactionManager,
         cancellation,
         runId -> RunLogger.NOOP,
-        InstantSource.system());
+        InstantSource.system(),
+        workDir);
   }
 
-  PipelineRunner(
+  /** Creates the runner. Tests pass their own loggers and clock. */
+  public PipelineRunner(
       List<PipelineStep> steps,
       GenerationRunRepository runs,
       ProjectRepository projects,
@@ -83,7 +94,8 @@ public class PipelineRunner {
       PlatformTransactionManager transactionManager,
       CancellationRegistry cancellation,
       Function<String, RunLogger> loggers,
-      InstantSource clock) {
+      InstantSource clock,
+      WorkDir workDir) {
     this.steps = indexSteps(steps);
     this.runs = runs;
     this.projects = projects;
@@ -93,6 +105,7 @@ public class PipelineRunner {
     this.cancellation = cancellation;
     this.loggers = loggers;
     this.clock = clock;
+    this.workDir = workDir;
   }
 
   /**
@@ -126,8 +139,14 @@ public class PipelineRunner {
         return;
       }
       run = started.get();
+      // Generated files live in the work dir. If it is gone (another worker, or a crash), the saved
+      // outputs of the file-producing steps are stale. A saved COMMIT_OUTPUT means a PR exists, so
+      // nothing is re-run then.
+      boolean workDirLost =
+          !workDir.exists(runId) && !StepOutputs.has(run.getStepOutputs(), StepName.COMMIT_OUTPUT);
       for (StepName name : StepName.values()) {
-        if (StepOutputs.has(run.getStepOutputs(), name)) {
+        boolean regenerate = workDirLost && FILE_STEPS.contains(name);
+        if (!regenerate && StepOutputs.has(run.getStepOutputs(), name)) {
           LOG.debug("generation run {}: step {} already has a saved output, skipping", runId, name);
           continue;
         }
