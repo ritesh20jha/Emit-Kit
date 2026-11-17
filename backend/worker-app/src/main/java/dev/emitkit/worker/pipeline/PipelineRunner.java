@@ -13,6 +13,7 @@ import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.StepName;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.worker.logs.RunLoggerFactory;
 import dev.emitkit.worker.steps.RunGeneratorsStep;
 import dev.emitkit.worker.steps.WorkDir;
 import java.time.InstantSource;
@@ -69,6 +70,7 @@ public class PipelineRunner {
       VcsProvider vcsProvider,
       PlatformTransactionManager transactionManager,
       CancellationRegistry cancellation,
+      RunLoggerFactory loggers,
       WorkDir workDir) {
     this(
         steps,
@@ -78,7 +80,7 @@ public class PipelineRunner {
         vcsProvider,
         transactionManager,
         cancellation,
-        runId -> RunLogger.NOOP,
+        loggers::create,
         InstantSource.system(),
         workDir);
   }

@@ -3,8 +3,6 @@ package dev.emitkit.api.projects;
 import dev.emitkit.api.access.Permission;
 import dev.emitkit.api.access.ProjectAccess;
 import dev.emitkit.api.common.Page;
-import dev.emitkit.common.error.AppException;
-import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.Project;
 import dev.emitkit.domain.RunStatus;
 import io.swagger.v3.oas.annotations.Operation;

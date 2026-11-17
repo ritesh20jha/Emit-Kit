@@ -7,6 +7,12 @@ spring:
         acknowledge-mode: manual
         prefetch: 1
         concurrency: ${emitkit.worker.concurrency}
+  # Host and port come from the environment (SPRING_DATA_REDIS_HOST/PORT). The timeouts keep a lost
+  # Redis from holding a step or the shared flush thread for Lettuce's 60 s default.
+  data:
+    redis:
+      timeout: 2s
+      connect-timeout: 2s
   ai:
     model:
       chat: none

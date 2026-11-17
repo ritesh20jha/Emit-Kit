@@ -136,7 +136,7 @@ public class ProblemDetailsAdvice extends ResponseEntityExceptionHandler {
     return render(problem(ErrorCode.INTERNAL, "An unexpected error occurred.", Map.of()));
   }
 
-  private static ProblemDetail problem(ErrorCode code, String detail, Map<String, ?> extra) {
+  static ProblemDetail problem(ErrorCode code, String detail, Map<String, ?> extra) {
     HttpStatus status = HttpStatus.valueOf(code.httpStatus());
     ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, detail);
     pd.setType(URI.create(TYPE_BASE + code.name()));

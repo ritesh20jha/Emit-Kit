@@ -17,7 +17,9 @@ import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ConfigService;
 import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.projects.SpecService;
+import dev.emitkit.api.runs.RunFilesService;
 import dev.emitkit.api.runs.RunService;
+import dev.emitkit.api.runs.VersionService;
 import dev.emitkit.api.spec.LintRateLimiter;
 import dev.emitkit.api.spec.SpecHistoryService;
 import dev.emitkit.api.webhooks.DeliveryDeduper;
@@ -29,10 +31,7 @@ import dev.emitkit.domain.ProjectRepository;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.vcs.WebhookVerifier;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -47,12 +46,11 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * The CON-02 endpoints: projects, config, spec and lint. Each one still unimplemented answers 501
- * NOT_IMPLEMENTED until its feature ticket replaces the body, and the request DTOs validate their
- * input. Runs with the real security chain, as {@link CON01ContractTest} does.
+ * The CON-02 request DTOs validate their input: projects, config, spec and lint. Every endpoint
+ * here is implemented by now, so only validation is checked. Runs with the real security chain, as
+ * {@link CON01ContractTest} does.
  */
 @WebMvcTest(properties = {GitHubTestCredentials.CLIENT_ID, GitHubTestCredentials.CLIENT_SECRET})
 @AutoConfigureMockMvc
@@ -92,6 +90,8 @@ class CON02ContractTest {
   @MockitoBean private SpecHistoryService specHistory;
   @MockitoBean private ProjectAccess projectAccess;
   @MockitoBean private RunService runService;
+  @MockitoBean private RunFilesService runFilesService;
+  @MockitoBean private VersionService versionService;
   @MockitoBean private WebhookVerifier webhookVerifier;
   @MockitoBean private ProjectRepository projects;
   @MockitoBean private SecretCipher secretCipher;
@@ -131,26 +131,5 @@ class CON02ContractTest {
                 .content("{}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-  }
-
-  /** The body column is empty for requests that carry none. */
-  @ParameterizedTest
-  @WithMockUser
-  @CsvSource({
-    "GET,/api/v1/orgs/org1/projects?cursor=c1&limit=10&q=web&status=FAILED,",
-    "GET,/api/v1/projects/p1,",
-    "DELETE,/api/v1/projects/p1,",
-    "POST,/api/v1/projects/p1/webhook,",
-    "GET,/api/v1/projects/p1/config,",
-    "PUT,/api/v1/projects/p1/config,'" + CONFIG + "'"
-  })
-  void contractEndpointIs501(String method, String path, @Nullable String body) throws Exception {
-    MockHttpServletRequestBuilder request = request(HttpMethod.valueOf(method), path).with(csrf());
-    if (body != null) {
-      request.contentType(MediaType.APPLICATION_JSON).content(body);
-    }
-    mvc.perform(request)
-        .andExpect(status().is(501))
-        .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
   }
 }

@@ -5,7 +5,7 @@ import dev.emitkit.domain.StepName;
 /** Writes the log lines of a run, which users read while the run is in progress. */
 public interface RunLogger {
 
-  /** Drops every line. The runner uses it until the Redis-backed logger exists. */
+  /** Drops every line. Kept for callers that need a logger but no output, such as tests. */
   RunLogger NOOP =
       new RunLogger() {
         @Override
@@ -39,7 +39,10 @@ public interface RunLogger {
   /** Writes an error line. */
   void error(String message);
 
-  /** Records a secret so that its value is replaced in every line written from now on. */
+  /**
+   * Registers a secret. Later lines, stored or published, show it as {@code ****}. Blank values are
+   * ignored. Lines written before the call are not changed.
+   */
   void mask(String secret);
 
   /** Marks the start of a step, so the following lines belong to it. */
