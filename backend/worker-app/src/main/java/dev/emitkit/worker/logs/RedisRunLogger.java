@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +50,11 @@ final class RedisRunLogger implements RunLogger {
   private StepName step;
   private ScheduledFuture<?> flushing;
   private boolean done;
+
+  /**
+   * Set by {@link #done} before its flush, so a failed flush can be finished by the periodic one.
+   */
+  private boolean donePending;
 
   /** {@code lastSeq} is the highest seq already saved for the run, or 0. */
   RedisRunLogger(
@@ -135,17 +141,26 @@ final class RedisRunLogger implements RunLogger {
   }
 
   /**
-   * Flushes, stops the periodic flush, then publishes the terminal message. A failed flush throws
-   * before anything is published, and leaves the logger open so a later call can retry. Later calls
-   * after success do nothing.
+   * Flushes, then stops the periodic flush and publishes the terminal message. If the flush fails,
+   * this throws and publishes nothing. The lines stay buffered and the periodic flush keeps trying;
+   * once the lines are saved it publishes the terminal message itself. Calls after that do nothing.
    */
   @Override
   public synchronized void done() {
     if (done) {
       return;
     }
+    donePending = true;
     flush();
+    finish();
+  }
+
+  /**
+   * Stops the periodic flush and publishes the terminal message. Only after the buffer is saved.
+   */
+  private void finish() {
     done = true;
+    donePending = false;
     if (flushing != null) {
       flushing.cancel(false);
     }
@@ -153,7 +168,7 @@ final class RedisRunLogger implements RunLogger {
   }
 
   private void write(String level, String message) {
-    String kept = truncate(hide(message.replace("\u0000", "")));
+    String kept = truncate(hide(Objects.requireNonNullElse(message, "").replace("\u0000", "")));
     GenerationRunLog line =
         new GenerationRunLog(runId, nextSeq++, Instant.now(), level, step, kept);
     if (buffer.size() >= maxBufferedLines) {
@@ -205,14 +220,29 @@ final class RedisRunLogger implements RunLogger {
     try {
       redis.convertAndSend(channel, payload);
     } catch (RuntimeException e) {
-      LOG.warn("run {}: could not publish a log line to {}", runId, channel, e);
+      // Class and message only: a stack trace per line would flood the log while Redis is down.
+      LOG.warn(
+          "run {}: could not publish a log line to {} ({}: {})",
+          runId,
+          channel,
+          e.getClass().getName(),
+          e.getMessage());
     }
   }
 
-  /** A failed flush must not end the periodic task, so the lines stay buffered for the next try. */
+  /**
+   * The periodic flush. A failed flush must not end the task, so the lines stay buffered for the
+   * next try. A flush that succeeds after a failed {@link #done} finishes the run.
+   */
   private synchronized void flushQuietly() {
+    if (done) {
+      return;
+    }
     try {
       flush();
+      if (donePending) {
+        finish();
+      }
     } catch (RuntimeException e) {
       LOG.warn("run {}: could not save log lines, will retry at the next flush", runId, e);
     }

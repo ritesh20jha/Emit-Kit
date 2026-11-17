@@ -28,10 +28,13 @@ import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -86,12 +90,15 @@ class WRK02RunLoggerIT {
   @Autowired private GenerationRunLogRepository logs;
   @Autowired private RunLoggerFactory factory;
   @Autowired private StringRedisTemplate redis;
+  @Autowired private DataRedisProperties redisProperties;
 
   private final List<RunLogger> opened = new ArrayList<>();
   private final List<String> received = new CopyOnWriteArrayList<>();
 
   /** While set, the repository proxy from {@link #flakyRepo()} fails every save. */
   private final AtomicBoolean failSaves = new AtomicBoolean();
+
+  private final ScheduledExecutorService flushes = Executors.newSingleThreadScheduledExecutor();
 
   private String runId;
   private RedisClient redisClient;
@@ -144,6 +151,7 @@ class WRK02RunLoggerIT {
   void tearDown() {
     failSaves.set(false);
     opened.forEach(RunLogger::done);
+    flushes.shutdownNow();
     subscriber.close();
     redisClient.shutdown();
   }
@@ -243,6 +251,43 @@ class WRK02RunLoggerIT {
   }
 
   @Test
+  void redisTimeoutsAreBoundedSoAStalledRedisCannotHoldTheStep() {
+    assertThat(redisProperties.getTimeout()).isEqualTo(Duration.ofSeconds(2));
+    assertThat(redisProperties.getConnectTimeout()).isEqualTo(Duration.ofSeconds(2));
+  }
+
+  @Test
+  void nullMessageIsAcceptedAndDoneStillPublishes() {
+    RunLogger log = open();
+
+    log.error(null);
+    log.done();
+
+    await().atMost(5, SECONDS).until(() -> !received.isEmpty() && received.getLast().equals(DONE));
+    assertThat(stored()).containsExactly("");
+  }
+
+  @Test
+  void failedDoneIsFinishedByThePeriodicFlushOnceRedisRecovers() {
+    RunLogger log = openFlushing();
+    failSaves.set(true);
+    log.info("x");
+    assertThatThrownBy(log::done).isInstanceOf(DataAccessResourceFailureException.class);
+
+    failSaves.set(false);
+
+    await().atMost(10, SECONDS).until(() -> stored().contains("x"));
+    await().atMost(10, SECONDS).until(() -> received.contains(DONE));
+    // The periodic task has stopped: DONE stays the only one, and the last message.
+    await()
+        .during(Duration.ofSeconds(3))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> received.stream().filter(DONE::equals).count() == 1);
+    assertThat(received()).last().isEqualTo(DONE);
+    assertThat(stored()).containsExactly("x");
+  }
+
+  @Test
   void nulCharacterIsStrippedBeforeSaving() {
     RunLogger log = open();
 
@@ -281,6 +326,15 @@ class WRK02RunLoggerIT {
 
   private RunLogger open() {
     RunLogger log = factory.create(runId);
+    opened.add(log);
+    return log;
+  }
+
+  /** A logger on the failing repository whose periodic flush runs on this test's own executor. */
+  private RunLogger openFlushing() {
+    RedisRunLogger log =
+        new RedisRunLogger(runId, 0, flakyRepo(), redis, RedisRunLogger.MAX_BUFFERED_LINES);
+    log.startFlushing(flushes);
     opened.add(log);
     return log;
   }
