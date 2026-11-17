@@ -10,27 +10,18 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Chooses the generators a run runs, from the outputs and SDK languages of its config. */
+/** The generators a run runs, from the outputs and SDK languages of its config, in enum order. */
 final class GeneratorSelection {
 
   /** The SDK languages as stored in {@code project_configs.sdk_languages}. */
   private static final Map<String, GeneratorId> SDK_LANGUAGES =
       Map.of(
-          "typescript",
-          GeneratorId.TS_SDK,
-          "python",
-          GeneratorId.PY_SDK,
-          "java",
-          GeneratorId.JAVA_SDK);
+          "typescript", GeneratorId.TS_SDK,
+          "python", GeneratorId.PY_SDK,
+          "java", GeneratorId.JAVA_SDK);
 
   private GeneratorSelection() {}
 
-  /**
-   * The generators for {@code outputs}, in {@link GeneratorId} order. SDK adds one generator per
-   * language and the workflows generator.
-   *
-   * @throws AppException {@code GENERATOR_ERROR} if a language is not one of the known SDKs
-   */
   static List<GeneratorId> select(List<OutputKind> outputs, List<String> sdkLanguages) {
     Set<GeneratorId> selected = EnumSet.noneOf(GeneratorId.class);
     for (OutputKind output : outputs) {
@@ -47,14 +38,16 @@ final class GeneratorSelection {
     return List.copyOf(selected);
   }
 
+  /**
+   * @throws AppException {@code GENERATOR_ERROR} for a language that is not a known SDK
+   */
   private static Set<GeneratorId> sdkGenerators(List<String> languages) {
     Set<GeneratorId> result = EnumSet.noneOf(GeneratorId.class);
     for (String language : languages) {
       GeneratorId id =
           language == null ? null : SDK_LANGUAGES.get(language.toLowerCase(Locale.ROOT));
       if (id == null) {
-        throw new AppException(
-            ErrorCode.GENERATOR_ERROR, "unknown SDK language: " + language + ".");
+        throw new AppException(ErrorCode.GENERATOR_ERROR, "unknown SDK language: " + language);
       }
       result.add(id);
     }

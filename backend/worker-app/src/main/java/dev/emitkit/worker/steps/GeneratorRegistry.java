@@ -16,13 +16,12 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
-/** The generator for each {@link GeneratorId}. Every id has exactly one generator. */
+/** The generator for each {@link GeneratorId}. Each id needs exactly one. */
 @Component
 public final class GeneratorRegistry {
 
   private final Map<GeneratorId, Generator> byId;
 
-  /** Registers the generators shipped with this worker. */
   public GeneratorRegistry() {
     this(
         List.of(
@@ -35,8 +34,7 @@ public final class GeneratorRegistry {
             new WorkflowsGenerator()));
   }
 
-  /** Registers the given generators. Fails unless there is exactly one per {@link GeneratorId}. */
-  GeneratorRegistry(List<Generator> generators) {
+  public GeneratorRegistry(List<Generator> generators) {
     Map<GeneratorId, Generator> map = new EnumMap<>(GeneratorId.class);
     for (Generator generator : generators) {
       if (map.put(generator.id(), generator) != null) {
@@ -51,7 +49,6 @@ public final class GeneratorRegistry {
     this.byId = Collections.unmodifiableMap(map);
   }
 
-  /** The generator registered for {@code id}. */
   public Generator get(GeneratorId id) {
     return byId.get(id);
   }

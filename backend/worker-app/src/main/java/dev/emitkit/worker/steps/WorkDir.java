@@ -14,15 +14,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.FileSystemUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Where a run's generated files wait between steps. Layout under {@code {work-dir}/{runId}/}: the
- * files at their repo-relative paths in {@code files/}, and {@code files.json}, a list of {@code
- * {path, kind}} entries. {@code files.json} is written last, so its presence means the files are
+ * A run's files under {@code {work-dir}/{runId}/}: {@code files/}, {@code files.json} listing
+ * {@code {path, kind}}, and {@code generation} written last, so its presence means the write is
  * complete.
  */
 @Component
@@ -30,7 +32,9 @@ public final class WorkDir {
 
   static final String FILES = "files";
   static final String MANIFEST = "files.json";
+  static final String GENERATION = "generation";
 
+  private static final Logger LOG = LoggerFactory.getLogger(WorkDir.class);
   private static final JsonMapper JSON = JsonMapper.builder().build();
 
   private final Path base;
@@ -40,12 +44,15 @@ public final class WorkDir {
     this(Path.of(Objects.requireNonNull(props.workDir(), "emitkit.worker.work-dir")));
   }
 
-  /** Creates a work dir under {@code base}. */
   public WorkDir(Path base) {
     this.base = Objects.requireNonNull(base, "base").toAbsolutePath().normalize();
   }
 
-  /** The directory of one run. Refuses a run id that would point outside the work dir. */
+  public Path root() {
+    return base;
+  }
+
+  /** The directory of one run. Refuses a run id that would point outside the root. */
   public Path of(String runId) {
     Path dir = base.resolve(runId).normalize();
     if (!dir.startsWith(base) || dir.equals(base)) {
@@ -54,18 +61,21 @@ public final class WorkDir {
     return dir;
   }
 
-  /** Whether the run's files were written completely, that is, whether the manifest exists. */
-  public boolean exists(String runId) {
-    return Files.isRegularFile(of(runId).resolve(MANIFEST));
+  public Optional<String> generation(String runId) {
+    Path marker = of(runId).resolve(GENERATION);
+    try {
+      return Files.isRegularFile(marker)
+          ? Optional.of(Files.readString(marker, StandardCharsets.UTF_8))
+          : Optional.empty();
+    } catch (IOException e) {
+      throw new TransientException(ErrorCode.STORAGE_ERROR, "generation unreadable", Map.of(), e);
+    }
   }
 
   /**
-   * Replaces the run's files with {@code files}, at their repo-relative paths, and writes the
-   * manifest. Files left by an earlier attempt are removed first.
-   *
-   * @throws TransientException {@code STORAGE_ERROR} if the disk write fails
+   * Replaces the run's files and records {@code generationId}. A failed disk write is transient.
    */
-  public void write(String runId, List<GeneratedFile> files) {
+  public void write(String runId, String generationId, List<GeneratedFile> files) {
     Path dir = of(runId);
     Path filesDir = dir.resolve(FILES);
     try {
@@ -85,12 +95,21 @@ public final class WorkDir {
       }
       Files.writeString(
           dir.resolve(MANIFEST), JSON.writeValueAsString(manifest), StandardCharsets.UTF_8);
+      Files.writeString(dir.resolve(GENERATION), generationId, StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new TransientException(
           ErrorCode.STORAGE_ERROR, "generated files could not be written", Map.of(), e);
     }
   }
 
-  /** One line of {@code files.json}. */
+  /** Deletes a run's directory. A failure is logged; the sweeper retries later. */
+  public void delete(String runId) {
+    try {
+      FileSystemUtils.deleteRecursively(of(runId));
+    } catch (IOException e) {
+      LOG.warn("could not delete the work dir of run {}", runId, e);
+    }
+  }
+
   public record Entry(String path, FileKind kind) {}
 }

@@ -13,6 +13,7 @@ import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.StepName;
 import dev.emitkit.vcs.VcsClient;
 import dev.emitkit.vcs.VcsProvider;
+import dev.emitkit.worker.steps.RunGeneratorsStep;
 import dev.emitkit.worker.steps.WorkDir;
 import java.time.InstantSource;
 import java.util.ArrayList;
@@ -22,7 +23,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -46,8 +46,8 @@ public class PipelineRunner {
 
   private static final Logger LOG = LoggerFactory.getLogger(PipelineRunner.class);
 
-  /** The steps whose saved outputs depend on the work dir: RUN_GENERATORS to PACKAGE_ARTIFACT. */
-  private static final Set<StepName> FILE_STEPS =
+  /** Steps whose saved outputs depend on the work dir. */
+  private static final EnumSet<StepName> FILE_STEPS =
       EnumSet.range(StepName.RUN_GENERATORS, StepName.PACKAGE_ARTIFACT);
 
   private final Map<StepName, PipelineStep> steps;
@@ -84,7 +84,6 @@ public class PipelineRunner {
         workDir);
   }
 
-  /** Creates the runner. Tests pass their own loggers and clock. */
   public PipelineRunner(
       List<PipelineStep> steps,
       GenerationRunRepository runs,
@@ -139,11 +138,16 @@ public class PipelineRunner {
         return;
       }
       run = started.get();
-      // Generated files live in the work dir. If it is gone (another worker, or a crash), the saved
-      // outputs of the file-producing steps are stale. A saved COMMIT_OUTPUT means a PR exists, so
-      // nothing is re-run then.
+      // The work dir's files are the saved ones only if it holds RUN_GENERATORS' saved generation.
+      // A saved COMMIT_OUTPUT means a PR exists, so nothing is re-run then.
+      Optional<String> savedGeneration =
+          StepOutputs.read(
+                  run.getStepOutputs(), StepName.RUN_GENERATORS, RunGeneratorsStep.Output.class)
+              .map(RunGeneratorsStep.Output::generationId);
       boolean workDirLost =
-          !workDir.exists(runId) && !StepOutputs.has(run.getStepOutputs(), StepName.COMMIT_OUTPUT);
+          !StepOutputs.has(run.getStepOutputs(), StepName.COMMIT_OUTPUT)
+              && !(savedGeneration.isPresent()
+                  && savedGeneration.equals(workDir.generation(runId)));
       for (StepName name : StepName.values()) {
         boolean regenerate = workDirLost && FILE_STEPS.contains(name);
         if (!regenerate && StepOutputs.has(run.getStepOutputs(), name)) {

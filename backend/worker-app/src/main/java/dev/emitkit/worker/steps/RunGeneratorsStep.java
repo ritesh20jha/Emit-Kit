@@ -4,6 +4,7 @@ import dev.emitkit.ai.ChatModelFactory;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.common.error.TransientException;
+import dev.emitkit.common.id.Ids;
 import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
 import dev.emitkit.domain.GenerationRun;
@@ -39,24 +40,20 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * Runs the generators the config selects, in parallel, and writes their files to the work dir (spec
- * v1 §5.1 step 7). Only the docs generator can use AI, and only when the project has a key.
+ * Runs the selected generators in parallel and writes their files to the work dir (spec v1 §5.1
+ * step 7). Only the docs generator uses AI, and only when the project has a key.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
 public final class RunGeneratorsStep implements PipelineStep {
 
-  static final Duration POLL_INTERVAL = Duration.ofSeconds(1);
-
-  private static final String PROJECT_CONFIGS = "project_configs";
-  private static final String AI_KEY_COLUMN = "ai_api_key_enc";
+  private static final Duration POLL_INTERVAL = Duration.ofSeconds(1);
 
   private final GeneratorRegistry registry;
   private final SpecSnapshotRepository snapshots;
   private final WorkDir workDir;
   private final SecretCipher cipher;
   private final ChatModelFactory chatModels;
-  private final Duration pollInterval;
 
   @Autowired
   public RunGeneratorsStep(
@@ -65,22 +62,11 @@ public final class RunGeneratorsStep implements PipelineStep {
       WorkDir workDir,
       SecretCipher cipher,
       ChatModelFactory chatModels) {
-    this(registry, snapshots, workDir, cipher, chatModels, POLL_INTERVAL);
-  }
-
-  RunGeneratorsStep(
-      GeneratorRegistry registry,
-      SpecSnapshotRepository snapshots,
-      WorkDir workDir,
-      SecretCipher cipher,
-      ChatModelFactory chatModels,
-      Duration pollInterval) {
     this.registry = registry;
     this.snapshots = snapshots;
     this.workDir = workDir;
     this.cipher = cipher;
     this.chatModels = chatModels;
-    this.pollInterval = pollInterval;
   }
 
   @Override
@@ -105,26 +91,24 @@ public final class RunGeneratorsStep implements PipelineStep {
             config.getSdkLanguages(),
             ai);
     List<GeneratedFile> files = generate(selected, model, generatorCtx, ctx);
-    workDir.write(run.getId(), files);
-    return new StepResult.Continue(new Output(files.size()));
+    String generationId = Ids.newUlid();
+    workDir.write(run.getId(), generationId, files);
+    return new StepResult.Continue(new Output(files.size(), generationId));
   }
 
-  /** What the step saves: how many files it wrote. */
-  public record Output(int fileCount) {}
+  public record Output(int fileCount, String generationId) {}
 
-  /** The parsed spec of the run's snapshot. */
   private ApiModel apiModel(GenerationRun run) {
     SpecSnapshot snapshot =
         Optional.ofNullable(run.getSpecSnapshotId())
             .flatMap(snapshots::findById)
-            .orElseThrow(
-                () -> new AppException(ErrorCode.SPEC_NOT_FOUND, "the run has no spec snapshot"));
+            .orElseThrow(() -> new AppException(ErrorCode.SPEC_NOT_FOUND, "no spec snapshot"));
     return ApiModelJson.fromJson(snapshot.getApiModel());
   }
 
   /**
-   * The docs AI assistant for the project's key, or empty if it has none. The decrypted key is
-   * masked in the run log and is not kept after the step.
+   * The docs AI assistant for the project's key, or empty. A failure falls back to the templates
+   * with a warning that names only the exception class, since its message could carry the key.
    */
   private Optional<DocsAiAssistant> assistant(ProjectConfig config, RunLogger log) {
     String encrypted = config.getAiApiKeyEnc();
@@ -134,16 +118,13 @@ public final class RunGeneratorsStep implements PipelineStep {
     try {
       String key =
           cipher.decrypt(
-              encrypted, new SecretContext(PROJECT_CONFIGS, AI_KEY_COLUMN, config.getId()));
+              encrypted, new SecretContext("project_configs", "ai_api_key_enc", config.getId()));
       log.mask(key);
       return Optional.of(
           chatModels.docsAssistant(config.getAiProvider(), config.getAiModel(), key));
     } catch (TransientException | CancelledException e) {
-      // A secret-backend outage is retried by redelivery, and a cancel must stop the run.
       throw e;
     } catch (RuntimeException e) {
-      // Spec 6.1: AI failures fall back to the template output. Only the class name is logged,
-      // because a message could carry key material.
       log.warn("AI assistant unavailable, docs use templates: " + e.getClass().getSimpleName());
       return Optional.empty();
     }
@@ -167,10 +148,7 @@ public final class RunGeneratorsStep implements PipelineStep {
     return name.isEmpty() ? "sdk" : name;
   }
 
-  /**
-   * Runs the selected generators on virtual threads and returns their files in {@link GeneratorId}
-   * order. Polls for cancellation while waiting. A failure or a cancel stops the rest.
-   */
+  /** Runs the generators on virtual threads. A failure or a cancel stops the rest. */
   private List<GeneratedFile> generate(
       List<GeneratorId> selected, ApiModel model, GeneratorContext generatorCtx, RunContext ctx) {
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -182,41 +160,37 @@ public final class RunGeneratorsStep implements PipelineStep {
       }
       return awaitAll(futures, ctx).values().stream().flatMap(List::stream).toList();
     } finally {
-      // Generators are pure code that may ignore interrupts, so this stops only what is waiting on
-      // a result. A generator still running finishes on its own thread and its output is dropped.
+      // Generators may ignore interrupts, so this only stops the waiting; their output is dropped.
       futures.values().forEach(future -> future.cancel(true));
       executor.shutdownNow();
     }
   }
 
-  /** Waits until every generator is done, failing as soon as one fails. */
+  /** Waits for every generator, failing as soon as one fails and polling for cancellation. */
   private Map<GeneratorId, List<GeneratedFile>> awaitAll(
       Map<GeneratorId, Future<List<GeneratedFile>>> futures, RunContext ctx) {
     Map<GeneratorId, List<GeneratedFile>> done = new EnumMap<>(GeneratorId.class);
     try {
       while (done.size() < futures.size()) {
         ctx.checkCancelled();
-        for (Map.Entry<GeneratorId, Future<List<GeneratedFile>>> entry : futures.entrySet()) {
-          if (!done.containsKey(entry.getKey()) && entry.getValue().isDone()) {
-            done.put(entry.getKey(), resultOf(entry.getKey(), entry.getValue()));
+        futures.forEach((id, future) -> {
+          if (!done.containsKey(id) && future.isDone()) {
+            done.put(id, resultOf(id, future));
           }
-        }
+        });
         if (done.size() < futures.size()) {
-          Thread.sleep(pollInterval);
+          Thread.sleep(POLL_INTERVAL);
         }
       }
     } catch (InterruptedException e) {
-      // Not a user cancel (that comes from checkCancelled). A shutdown interrupt is retried.
+      // A shutdown interrupt is not a user cancel (that comes from checkCancelled): retry the run.
       Thread.currentThread().interrupt();
       throw new TransientException(ErrorCode.INTERNAL, "interrupted while generating", Map.of(), e);
     }
     return done;
   }
 
-  /**
-   * The files of a finished generator. A cancel or a transient failure propagates unchanged; any
-   * other failure becomes {@code GENERATOR_ERROR} naming the generator.
-   */
+  /** A finished generator's files. A cancel or transient failure propagates; any other is named. */
   private static List<GeneratedFile> resultOf(GeneratorId id, Future<List<GeneratedFile>> future) {
     if (future.state() == Future.State.SUCCESS) {
       return future.resultNow();
