@@ -27,6 +27,15 @@ final class StepOutputs {
     return JSON.writeValueAsString(root);
   }
 
+  /** Returns {@code json} without the outputs of {@code steps}. */
+  static String without(String json, StepName... steps) {
+    ObjectNode root = parse(json);
+    for (StepName step : steps) {
+      root.remove(step.name());
+    }
+    return JSON.writeValueAsString(root);
+  }
+
   /** Whether {@code step} saved an output, even a null one. */
   static boolean has(String json, StepName step) {
     return parse(json).has(step.name());

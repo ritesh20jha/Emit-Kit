@@ -10,10 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** The generators a run runs, from the outputs and SDK languages of its config, in enum order. */
 final class GeneratorSelection {
 
-  /** The SDK languages as stored in {@code project_configs.sdk_languages}. */
   private static final Map<String, GeneratorId> SDK_LANGUAGES =
       Map.of(
           "typescript", GeneratorId.TS_SDK,

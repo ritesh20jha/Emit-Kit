@@ -106,10 +106,6 @@ public final class RunGeneratorsStep implements PipelineStep {
     return ApiModelJson.fromJson(snapshot.getApiModel());
   }
 
-  /**
-   * The docs AI assistant for the project's key, or empty. A failure falls back to the templates
-   * with a warning that names only the exception class, since its message could carry the key.
-   */
   private Optional<DocsAiAssistant> assistant(ProjectConfig config, RunLogger log) {
     String encrypted = config.getAiApiKeyEnc();
     if (encrypted == null || encrypted.isBlank()) {
@@ -130,7 +126,6 @@ public final class RunGeneratorsStep implements PipelineStep {
     }
   }
 
-  /** The npm name falls back to the repository name, because no column stores one. */
   private static PackageNames names(Project project, ProjectConfig config) {
     String repo = project.getRepoFullName();
     return new PackageNames(
@@ -141,14 +136,12 @@ public final class RunGeneratorsStep implements PipelineStep {
         config.getMavenArtifactId());
   }
 
-  /** Lowercases, replaces characters npm rejects, and drops a leading dot or underscore. */
   private static String npmName(String repoName) {
     String name =
         repoName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._~-]", "-").replaceAll("^[._]+", "");
     return name.isEmpty() ? "sdk" : name;
   }
 
-  /** Runs the generators on virtual threads. A failure or a cancel stops the rest. */
   private List<GeneratedFile> generate(
       List<GeneratorId> selected, ApiModel model, GeneratorContext generatorCtx, RunContext ctx) {
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -160,13 +153,11 @@ public final class RunGeneratorsStep implements PipelineStep {
       }
       return awaitAll(futures, ctx).values().stream().flatMap(List::stream).toList();
     } finally {
-      // Generators may ignore interrupts, so this only stops the waiting; their output is dropped.
       futures.values().forEach(future -> future.cancel(true));
       executor.shutdownNow();
     }
   }
 
-  /** Waits for every generator, failing as soon as one fails and polling for cancellation. */
   private Map<GeneratorId, List<GeneratedFile>> awaitAll(
       Map<GeneratorId, Future<List<GeneratedFile>>> futures, RunContext ctx) {
     Map<GeneratorId, List<GeneratedFile>> done = new EnumMap<>(GeneratorId.class);

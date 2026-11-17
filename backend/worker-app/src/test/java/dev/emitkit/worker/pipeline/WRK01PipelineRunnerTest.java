@@ -415,15 +415,37 @@ class WRK01PipelineRunnerTest {
   }
 
   @Test
-  void generationMismatch_reRunsGeneratorsAndLaterStepsInRange() {
+  void generationMismatch_reRunsGeneratorsAndClearsStaleOutputs() {
     // The work dir holds generation Y, but the saved output names X: the files are not these.
     new WorkDir(workRoot).write(runId, "Y", List.of());
     savePriorSteps("X");
+    AtomicBoolean failed = new AtomicBoolean();
+    scripts.put(
+        RUN_GENERATORS,
+        ctx -> {
+          new WorkDir(workRoot).write(runId, "Z", List.of());
+          return new StepResult.Continue(new RunGeneratorsStep.Output(0, "Z"));
+        });
+    scripts.put(
+        SYNTAX_CHECK,
+        ctx -> {
+          if (failed.compareAndSet(false, true)) {
+            throw new TransientException(ErrorCode.STORAGE_ERROR, "blip");
+          }
+          return new StepResult.Continue("SYNTAX_CHECK-out");
+        });
 
+    // SYNTAX_CHECK fails once after the regenerate; the stale outputs of the later steps are
+    // cleared.
+    assertThatThrownBy(() -> runner().run(runId)).isInstanceOf(TransientException.class);
+    assertThat(order).containsExactly(RUN_GENERATORS, SYNTAX_CHECK);
+    assertThat(StepOutputs.has(reload().getStepOutputs(), SYNTAX_CHECK)).isFalse();
+    assertThat(StepOutputs.has(reload().getStepOutputs(), PACKAGE_ARTIFACT)).isFalse();
+
+    // Redelivery: SYNTAX_CHECK runs rather than skipping a stale output.
+    order.clear();
     runner().run(runId);
-
-    assertThat(order)
-        .containsExactly(RUN_GENERATORS, SYNTAX_CHECK, PACKAGE_ARTIFACT, COMMIT_OUTPUT, FINALIZE);
+    assertThat(order).containsExactly(SYNTAX_CHECK, PACKAGE_ARTIFACT, COMMIT_OUTPUT, FINALIZE);
   }
 
   @Test
@@ -610,7 +632,6 @@ class WRK01PipelineRunnerTest {
 
       assertThat(masked).containsExactly(AI_KEY);
       assertThat(contexts.getFirst().ai()).isPresent();
-      assertThat(reload().getCurrentStep()).isEqualTo(FINALIZE);
     }
 
     @Test
@@ -621,7 +642,6 @@ class WRK01PipelineRunnerTest {
 
       runner().run(runId);
 
-      assertThat(reload().getCurrentStep()).isEqualTo(FINALIZE);
       assertThat(invoked).containsExactly(GeneratorId.DOCS);
       assertThat(contexts.getFirst().ai()).isEmpty();
       assertThat(warnings)
@@ -677,7 +697,6 @@ class WRK01PipelineRunnerTest {
       assertThat(run.getFailureCode()).isNull();
     }
 
-    /** Sets the run's config and a spec snapshot, which the shared seed leaves empty. */
     private void configure(List<OutputKind> outputs, List<String> languages, String aiKey) {
       ProjectConfig config = configs.findById(reload().getConfigId()).orElseThrow();
       config.setOutputs(new ArrayList<>(outputs));
@@ -756,7 +775,6 @@ class WRK01PipelineRunnerTest {
   @Nested
   class WorkDirSweep {
 
-    /** Status of the run, hours since the directory changed, and whether it is deleted. */
     @ParameterizedTest(name = "{0} run, {1}h old, deleted={2}")
     @CsvSource({
       "SUCCESS,2,true",

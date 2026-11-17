@@ -46,7 +46,6 @@ public class PipelineRunner {
 
   private static final Logger LOG = LoggerFactory.getLogger(PipelineRunner.class);
 
-  /** Steps whose saved outputs depend on the work dir. */
   private static final EnumSet<StepName> FILE_STEPS =
       EnumSet.range(StepName.RUN_GENERATORS, StepName.PACKAGE_ARTIFACT);
 
@@ -206,7 +205,12 @@ public class PipelineRunner {
 
   private void saveOutput(GenerationRun run, StepName step, @Nullable Object output) {
     run.setCurrentStep(step);
-    run.setStepOutputs(StepOutputs.with(run.getStepOutputs(), step, output));
+    String outputs = StepOutputs.with(run.getStepOutputs(), step, output);
+    if (step == StepName.RUN_GENERATORS) {
+      // A new generation makes the saved outputs of the later file steps stale.
+      outputs = StepOutputs.without(outputs, StepName.SYNTAX_CHECK, StepName.PACKAGE_ARTIFACT);
+    }
+    run.setStepOutputs(outputs);
   }
 
   private void markFailed(GenerationRun run, StepName step, StepResult.Fail failure) {

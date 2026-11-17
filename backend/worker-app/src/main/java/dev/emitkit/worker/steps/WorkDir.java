@@ -23,9 +23,8 @@ import org.springframework.util.FileSystemUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * A run's files under {@code {work-dir}/{runId}/}: {@code files/}, {@code files.json} listing
- * {@code {path, kind}}, and {@code generation} written last, so its presence means the write is
- * complete.
+ * A run's files under {@code {work-dir}/{runId}/}: {@code files/}, {@code files.json} and {@code
+ * generation}, which is written last so that its presence marks a complete write.
  */
 @Component
 public final class WorkDir {
@@ -85,7 +84,6 @@ public final class WorkDir {
       for (GeneratedFile file : files) {
         Path target = filesDir.resolve(file.path()).normalize();
         if (target.equals(filesDir) || !target.startsWith(filesDir)) {
-          // GeneratedFile already rejects these paths; this guards the disk write as well.
           throw new AppException(
               ErrorCode.GENERATOR_ERROR, "generator produced an unsafe path: " + file.path());
         }
@@ -102,7 +100,6 @@ public final class WorkDir {
     }
   }
 
-  /** Deletes a run's directory. A failure is logged; the sweeper retries later. */
   public void delete(String runId) {
     try {
       FileSystemUtils.deleteRecursively(of(runId));

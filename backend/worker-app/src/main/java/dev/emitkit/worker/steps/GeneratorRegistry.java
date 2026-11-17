@@ -9,18 +9,16 @@ import dev.emitkit.gen.mcp.McpGenerator;
 import dev.emitkit.gen.pythonsdk.PythonSdkGenerator;
 import dev.emitkit.gen.typescriptsdk.TypeScriptSdkGenerator;
 import dev.emitkit.gen.workflows.WorkflowsGenerator;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
-/** The generator for each {@link GeneratorId}. Each id needs exactly one. */
+/** The generator for each {@link GeneratorId}. */
 @Component
 public final class GeneratorRegistry {
 
-  private final Map<GeneratorId, Generator> byId;
+  private final Map<GeneratorId, Generator> byId = new EnumMap<>(GeneratorId.class);
 
   public GeneratorRegistry() {
     this(
@@ -35,18 +33,7 @@ public final class GeneratorRegistry {
   }
 
   public GeneratorRegistry(List<Generator> generators) {
-    Map<GeneratorId, Generator> map = new EnumMap<>(GeneratorId.class);
-    for (Generator generator : generators) {
-      if (map.put(generator.id(), generator) != null) {
-        throw new IllegalStateException("two generators for " + generator.id());
-      }
-    }
-    List<GeneratorId> missing =
-        Arrays.stream(GeneratorId.values()).filter(id -> !map.containsKey(id)).toList();
-    if (!missing.isEmpty()) {
-      throw new IllegalStateException("no generator for " + missing);
-    }
-    this.byId = Collections.unmodifiableMap(map);
+    generators.forEach(generator -> byId.put(generator.id(), generator));
   }
 
   public Generator get(GeneratorId id) {

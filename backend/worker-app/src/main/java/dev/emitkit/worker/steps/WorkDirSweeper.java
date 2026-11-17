@@ -47,19 +47,27 @@ public final class WorkDirSweeper {
 
   @Scheduled(fixedDelayString = "${emitkit.worker.work-dir-sweep-interval}")
   public void sweep() {
+    if (!Files.isDirectory(workDir.root())) {
+      return;
+    }
     Instant cutoff = clock.instant().minus(retention);
     try (Stream<Path> children = Files.list(workDir.root())) {
       children
           .filter(dir -> RUN_ID.matcher(dir.getFileName().toString()).matches())
           .forEach(dir -> sweepRun(dir, cutoff));
     } catch (IOException e) {
-      LOG.warn("could not list the work dir {}", workDir.root(), e);
+      LOG.warn("could not list {}", workDir.root(), e);
     }
   }
 
   private void sweepRun(Path dir, Instant cutoff) {
     String runId = dir.getFileName().toString();
-    if (!Files.isDirectory(dir) || modified(dir).isAfter(cutoff)) {
+    try {
+      // An unreadable time keeps the directory.
+      if (!Files.isDirectory(dir) || Files.getLastModifiedTime(dir).toInstant().isAfter(cutoff)) {
+        return;
+      }
+    } catch (IOException e) {
       return;
     }
     var run = runs.findById(runId);
@@ -67,14 +75,5 @@ public final class WorkDirSweeper {
       return;
     }
     workDir.delete(runId);
-  }
-
-  /** Unreadable time counts as fresh, so the directory is kept. */
-  private static Instant modified(Path dir) {
-    try {
-      return Files.getLastModifiedTime(dir).toInstant();
-    } catch (IOException e) {
-      return Instant.MAX;
-    }
   }
 }
