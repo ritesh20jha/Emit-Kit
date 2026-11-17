@@ -23,6 +23,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CancellationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -43,6 +45,7 @@ public final class SyntaxCheckStep implements PipelineStep {
   private static final Duration POLL_INTERVAL = Duration.ofSeconds(1);
   private static final int MAX_LOG_LINES = 200;
   private static final JsonMapper JSON = JsonMapper.builder().build();
+  private static final Logger LOG = LoggerFactory.getLogger(SyntaxCheckStep.class);
 
   private final SandboxRunner sandbox;
   private final SandboxProperties properties;
@@ -70,11 +73,13 @@ public final class SyntaxCheckStep implements PipelineStep {
       return new StepResult.Continue(new Output(0));
     }
     List<String> paths = files.stream().map(WorkDir.Entry::path).toList();
+    Path filesDir = workDir.filesDir(runId);
     Path inTar = null;
+    Path stage = null;
     SandboxResult result = null;
     try {
       inTar = Files.createTempFile("syntaxcheck-in-", ".tar");
-      Tars.writeInput(inTar, workDir.filesDir(runId), paths, languages);
+      Tars.writeInput(inTar, filesDir, paths, languages);
       result = runSandbox(ctx, inTar);
       Optional<StepResult.Fail> failure = failureOf(result, ctx.log());
       if (failure.isPresent()) {
@@ -83,21 +88,27 @@ public final class SyntaxCheckStep implements PipelineStep {
       if (result.outputTar() == null) {
         return new StepResult.Fail(ErrorCode.CHECK_FAILED, "sandbox produced no formatted files");
       }
-      int formatted =
-          Tars.replaceFiles(result.outputTar(), workDir.filesDir(runId), Set.copyOf(paths));
-      return new StepResult.Continue(new Output(formatted));
+      // Read the whole output into a staging dir first, so a bad archive leaves the files alone.
+      stage = Files.createTempDirectory(workDir.of(runId), "syntaxcheck-");
+      Map<String, Path> formatted =
+          Tars.stage(result.outputTar(), stage, filesDir, Set.copyOf(paths));
+      Tars.install(formatted, filesDir);
+      return new StepResult.Continue(new Output(formatted.size()));
+    } catch (Tars.RejectedOutputException e) {
+      return new StepResult.Fail(ErrorCode.CHECK_FAILED, e.getMessage());
     } catch (IOException e) {
       throw new TransientException(
           ErrorCode.STORAGE_ERROR, "generated files could not be checked", Map.of(), e);
     } finally {
       Tars.deleteQuietly(inTar);
+      Tars.deleteQuietly(stage);
       if (result != null) {
         Tars.deleteQuietly(result.outputTar());
       }
     }
   }
 
-  /** The number of files replaced by their formatted versions. */
+  /** The number of distinct files replaced by their formatted versions. */
   public record Output(int formattedFileCount) {}
 
   /**
@@ -116,15 +127,23 @@ public final class SyntaxCheckStep implements PipelineStep {
     }
   }
 
-  /** Cancels the token once the run is asked to stop. Returns when interrupted. */
+  /**
+   * Cancels the token once the run is asked to stop. A failed check is logged and retried on the
+   * next tick, so one database error does not end the polling. Returns when interrupted.
+   */
   private static void cancelWhenStopped(RunContext ctx, CancellationToken token) {
     try {
       while (true) {
         Thread.sleep(POLL_INTERVAL);
-        ctx.checkCancelled();
+        try {
+          ctx.checkCancelled();
+        } catch (CancelledException e) {
+          token.cancel();
+          return;
+        } catch (RuntimeException e) {
+          LOG.warn("could not check whether run {} was cancelled; retrying", ctx.run().getId(), e);
+        }
       }
-    } catch (CancelledException e) {
-      token.cancel();
     } catch (InterruptedException e) {
       // The sandbox run has returned.
     }
