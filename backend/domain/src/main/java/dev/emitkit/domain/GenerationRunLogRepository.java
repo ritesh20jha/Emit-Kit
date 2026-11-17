@@ -14,6 +14,10 @@ public interface GenerationRunLogRepository extends JpaRepository<GenerationRunL
   /** Lines of a run after {@code seq}, in order. Pass 0 to read from the start. */
   List<GenerationRunLog> findByRunIdAndSeqGreaterThanOrderBySeq(String runId, int seq);
 
+  /** The highest {@code seq} written for a run, or 0 if it has no lines yet. */
+  @Query("select coalesce(max(l.seq), 0) from GenerationRunLog l where l.runId = :runId")
+  int findMaxSeqByRunId(@Param("runId") String runId);
+
   /**
    * The first and last log time of each step of a run. A step with no log lines has no entry.
    * Run-level lines, which have no step, are left out.
