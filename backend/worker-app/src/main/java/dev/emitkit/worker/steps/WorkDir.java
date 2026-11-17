@@ -1,5 +1,6 @@
 package dev.emitkit.worker.steps;
 
+import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.common.error.TransientException;
 import dev.emitkit.gen.core.FileKind;
@@ -73,8 +74,10 @@ public final class WorkDir {
       List<Entry> manifest = new ArrayList<>();
       for (GeneratedFile file : files) {
         Path target = filesDir.resolve(file.path()).normalize();
-        if (!target.startsWith(filesDir)) {
-          throw new IllegalArgumentException("file escapes the files dir: " + file.path());
+        if (target.equals(filesDir) || !target.startsWith(filesDir)) {
+          // GeneratedFile already rejects these paths; this guards the disk write as well.
+          throw new AppException(
+              ErrorCode.GENERATOR_ERROR, "generator produced an unsafe path: " + file.path());
         }
         Files.createDirectories(target.getParent());
         Files.writeString(target, file.content(), StandardCharsets.UTF_8);

@@ -85,6 +85,7 @@ class WRK06RunGeneratorsTest {
 
   private static final Instant EPOCH = Instant.parse("2026-11-01T10:00:00Z");
   private static final String SDK_VERSION = "1.2.0";
+  private static final String AI_KEY = "sk-test-key-123";
   private static final AtomicLong SEQUENCE = new AtomicLong();
 
   @Container @ServiceConnection
@@ -109,6 +110,11 @@ class WRK06RunGeneratorsTest {
   private final List<GeneratorId> invoked = Collections.synchronizedList(new ArrayList<>());
   private final List<GeneratorContext> contexts = Collections.synchronizedList(new ArrayList<>());
   private final List<String> masked = Collections.synchronizedList(new ArrayList<>());
+  private final List<String> warnings = Collections.synchronizedList(new ArrayList<>());
+
+  /** The default Gemini model the test factory is built with; null means none is configured. */
+  private String defaultModel = "gemini-test";
+
   private final RunLogger logger =
       (RunLogger)
           Proxy.newProxyInstance(
@@ -117,6 +123,9 @@ class WRK06RunGeneratorsTest {
               (proxy, method, args) -> {
                 if (method.getName().equals("mask")) {
                   masked.add((String) args[0]);
+                }
+                if (method.getName().equals("warn")) {
+                  warnings.add((String) args[0]);
                 }
                 return null;
               });
@@ -202,13 +211,47 @@ class WRK06RunGeneratorsTest {
 
   @Test
   void aiKeyMaskedInLogs() {
-    String runId = seedRun(List.of(OutputKind.DOCS), List.of(), "sk-test-key-123");
+    String runId = seedRun(List.of(OutputKind.DOCS), List.of(), AI_KEY);
 
     runner().run(runId);
 
-    assertThat(masked).containsExactly("sk-test-key-123");
+    assertThat(masked).containsExactly(AI_KEY);
     assertThat(contexts.getFirst().ai()).isPresent();
     assertThat(reload(runId).getCurrentStep()).isEqualTo(FINALIZE);
+  }
+
+  @Test
+  void aiSetupFails_docsStillGenerateWithoutAi() {
+    // No model on the config and none configured by default: the docs assistant cannot be built.
+    defaultModel = null;
+    String runId = seedRun(List.of(OutputKind.DOCS), List.of(), AI_KEY);
+
+    runner().run(runId);
+
+    assertThat(reload(runId).getCurrentStep()).isEqualTo(FINALIZE);
+    assertThat(invoked).containsExactly(GeneratorId.DOCS);
+    assertThat(contexts.getFirst().ai()).isEmpty();
+    assertThat(warnings)
+        .containsExactly("AI assistant unavailable, docs use templates: IllegalStateException")
+        .allSatisfy(warning -> assertThat(warning).doesNotContain(AI_KEY));
+  }
+
+  @Test
+  void unsafeGeneratorPath_failsRunWithoutWritingOutsideFiles() {
+    // GeneratedFile rejects the path inside the generator, so the run fails naming the generator.
+    behaviour.put(
+        GeneratorId.CLI,
+        ctx -> List.of(new GeneratedFile("../escaped.txt", "x", FileKind.GENERATED)));
+    String runId = seedRun(List.of(OutputKind.CLI), List.of(), null);
+
+    runner().run(runId);
+
+    GenerationRun run = reload(runId);
+    assertThat(run.getStatus()).isEqualTo(RunStatus.FAILED);
+    assertThat(run.getFailureCode()).isEqualTo("GENERATOR_ERROR");
+    assertThat(run.getFailureMessage()).contains("CLI");
+    assertThat(workRoot.resolve(runId).resolve("escaped.txt")).doesNotExist();
+    assertThat(workRoot.resolve("escaped.txt")).doesNotExist();
   }
 
   @Test
@@ -252,7 +295,7 @@ class WRK06RunGeneratorsTest {
                   snapshots,
                   new WorkDir(workRoot),
                   cipher,
-                  new ChatModelFactory(new AiProperties("gemini-test", Duration.ofSeconds(30), 1)),
+                  new ChatModelFactory(new AiProperties(defaultModel, Duration.ofSeconds(30), 1)),
                   Duration.ofMillis(10))
               : stub(name));
     }

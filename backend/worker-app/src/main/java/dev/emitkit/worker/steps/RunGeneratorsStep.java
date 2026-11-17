@@ -130,11 +130,22 @@ public final class RunGeneratorsStep implements PipelineStep {
     if (encrypted == null || encrypted.isBlank()) {
       return Optional.empty();
     }
-    String key =
-        cipher.decrypt(
-            encrypted, new SecretContext(PROJECT_CONFIGS, AI_KEY_COLUMN, config.getId()));
-    log.mask(key);
-    return Optional.of(chatModels.docsAssistant(config.getAiProvider(), config.getAiModel(), key));
+    try {
+      String key =
+          cipher.decrypt(
+              encrypted, new SecretContext(PROJECT_CONFIGS, AI_KEY_COLUMN, config.getId()));
+      log.mask(key);
+      return Optional.of(
+          chatModels.docsAssistant(config.getAiProvider(), config.getAiModel(), key));
+    } catch (TransientException | CancelledException e) {
+      // A secret-backend outage is retried by redelivery, and a cancel must stop the run.
+      throw e;
+    } catch (RuntimeException e) {
+      // Spec 6.1: AI failures fall back to the template output. Only the class name is logged,
+      // because a message could carry key material.
+      log.warn("AI assistant unavailable, docs use templates: " + e.getClass().getSimpleName());
+      return Optional.empty();
+    }
   }
 
   /** The npm name falls back to the repository name, because no column stores one. */
