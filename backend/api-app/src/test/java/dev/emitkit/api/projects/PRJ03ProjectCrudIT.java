@@ -152,7 +152,7 @@ class PRJ03ProjectCrudIT {
     vcs = new InMemoryVcsClient();
     when(vcsProvider.forProject(anyString())).thenReturn(vcs);
     vcs.createRepo("acme", "api", false);
-    vcs.putFile("acme/api", "openapi.yaml", SPEC, null, "add spec");
+    vcs.putFile("acme/api", "openapi.yaml", SPEC, null, "add spec", "main");
   }
 
   @AfterEach

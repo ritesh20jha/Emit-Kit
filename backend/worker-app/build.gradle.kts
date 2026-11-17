@@ -17,6 +17,11 @@ dependencies {
     implementation(libs.docker.java.core)
     implementation(libs.docker.java.transport.httpclient5)
     implementation(libs.commons.compress)
+    // Live run logs: lines are published to Redis and buffered to Postgres. Boot's module supplies
+    // the auto-configured StringRedisTemplate; lettuce is its optional client.
+    implementation(libs.spring.boot.data.redis)
+    implementation(libs.spring.data.redis)
+    implementation(libs.lettuce.core)
     // StringRedisTemplate for the VCS quota store. Boot autoconfigures it from this starter.
     implementation(libs.spring.boot.starter.data.redis)
 
@@ -25,6 +30,7 @@ dependencies {
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.rabbitmq)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.awaitility)
     // InMemoryVcsClient, the VCS fake the step tests run against.
     testImplementation(testFixtures(project(":vcs")))
 }

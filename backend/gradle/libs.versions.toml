@@ -22,6 +22,7 @@ commons-compress = "1.28.0"
 java-semver = "0.10.2"
 json-schema-validator = "1.5.9"
 shedlock = "7.11.0"
+awaitility = "4.3.0"
 
 [libraries]
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
@@ -57,6 +58,9 @@ spring-boot-starter-oauth2-client = { module = "org.springframework.boot:spring-
 spring-data-redis = { module = "org.springframework.data:spring-data-redis" }
 spring-boot-starter-data-redis = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
 lettuce-core = { module = "io.lettuce:lettuce-core" }
+# Boot's Redis auto-configuration (StringRedisTemplate, spring.data.redis.*); not pulled in by spring-data-redis alone.
+spring-boot-data-redis = { module = "org.springframework.boot:spring-boot-data-redis" }
+awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
 spring-boot-starter-amqp = { module = "org.springframework.boot:spring-boot-starter-amqp" }
 spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
 springdoc-openapi-webmvc = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }

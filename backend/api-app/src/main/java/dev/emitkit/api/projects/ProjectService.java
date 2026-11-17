@@ -24,13 +24,13 @@ import dev.emitkit.vcs.VcsRepo;
 import dev.emitkit.vcs.Webhook;
 import dev.emitkit.vcs.error.VcsConflictException;
 import dev.emitkit.vcs.error.VcsNotFoundException;
-import java.time.Instant;
-import java.util.List;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
@@ -170,7 +170,8 @@ public class ProjectService {
         request.specPath(),
         starterSpec(name),
         null,
-        "Add starter OpenAPI spec (EmitKit)");
+        "Add starter OpenAPI spec (EmitKit)",
+        created.defaultBranch());
     return link(orgId, admission, request, created.fullName(), created.defaultBranch());
   }
 
@@ -303,7 +304,8 @@ public class ProjectService {
     }
     return new WebhookStatus(true, hook.id());
   }
-   /**   
+
+  /**
    * Creates the repository. Only a name clash from the VCS host is mapped to CONFLICT; any other
    * failure passes through unchanged. A null visibility means private.
    */
@@ -433,6 +435,7 @@ public class ProjectService {
       throw invalid("cursor is malformed");
     }
   }
+
   /**
    * Checks a spec path before the repository is created, so a bad path cannot leave a repository
    * behind. The path must end in .yaml or .yml (any case), must not start or end with '/', and must
