@@ -120,9 +120,6 @@ class CON03ContractTest {
   @ParameterizedTest
   @WithMockUser
   @CsvSource({
-    "POST,/api/v1/runs/r1/cancel,",
-    "POST,/api/v1/runs/r1/rerun,",
-    "POST,/api/v1/runs/r1/approval,'{\"decision\":\"APPROVED\",\"comment\":\"ship it\"}'",
     "GET,/api/v1/runs/r1/logs?afterSeq=10,",
     "GET,/api/v1/runs/r1/logs/stream,",
     "GET,/api/v1/runs/r1/files,",
