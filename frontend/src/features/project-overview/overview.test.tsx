@@ -74,6 +74,16 @@ test("trigger run posts and navigates to the run", async () => {
   expect(body).toEqual({ dryRun: false });
 });
 
+test("a viewer sees the last run but no Trigger run or Rerun", async () => {
+  renderRoute("/projects/p1", "VIEWER");
+
+  const lastRun = await screen.findByRole("region", { name: "Last run" });
+  expect(await within(lastRun).findByText("Succeeded")).toBeInTheDocument();
+  expect(within(lastRun).getByRole("link", { name: "View run" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Trigger run" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Rerun" })).not.toBeInTheDocument();
+});
+
 test("tabs are links with aria-current", async () => {
   renderRoute("/projects/p1");
 
