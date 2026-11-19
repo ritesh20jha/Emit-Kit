@@ -17,6 +17,7 @@ import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId
 import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
+import { Route as AppProjectsIdEditorRouteImport } from './routes/_app/projects/$id/editor'
 import { Route as AppProjectsIdSettingsRouteImport } from './routes/_app/projects/$id/settings'
 import { Route as AppProjectsIdVersionsRouteImport } from './routes/_app/projects/$id/versions'
 import { Route as AppOrgsOrgIdProjectsNewRouteImport } from './routes/_app/orgs/$orgId/projects/new'
@@ -60,6 +61,11 @@ const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppProjectsIdRoute,
 } as any)
+const AppProjectsIdEditorRoute = AppProjectsIdEditorRouteImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => AppProjectsIdRoute,
+} as any)
 const AppProjectsIdSettingsRoute = AppProjectsIdSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/projects/$id/editor': typeof AppProjectsIdEditorRoute
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id/versions': typeof AppProjectsIdVersionsRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
@@ -93,6 +100,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/projects/$id/editor': typeof AppProjectsIdEditorRoute
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id/versions': typeof AppProjectsIdVersionsRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/_app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/_app/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/_app/projects/$id/editor': typeof AppProjectsIdEditorRoute
   '/_app/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/_app/projects/$id/versions': typeof AppProjectsIdVersionsRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
+    | '/projects/$id/editor'
     | '/projects/$id/settings'
     | '/projects/$id/versions'
     | '/orgs/$orgId/'
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/'
     | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
+    | '/projects/$id/editor'
     | '/projects/$id/settings'
     | '/projects/$id/versions'
     | '/orgs/$orgId'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$id'
     | '/_app/orgs/$orgId/members'
     | '/_app/orgs/$orgId/settings'
+    | '/_app/projects/$id/editor'
     | '/_app/projects/$id/settings'
     | '/_app/projects/$id/versions'
     | '/_app/orgs/$orgId/'
@@ -215,6 +227,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdIndexRouteImport
       parentRoute: typeof AppProjectsIdRoute
     }
+    '/_app/projects/$id/editor': {
+      id: '/_app/projects/$id/editor'
+      path: '/editor'
+      fullPath: '/projects/$id/editor'
+      preLoaderRoute: typeof AppProjectsIdEditorRouteImport
+      parentRoute: typeof AppProjectsIdRoute
+    }
     '/_app/projects/$id/settings': {
       id: '/_app/projects/$id/settings'
       path: '/settings'
@@ -240,12 +259,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppProjectsIdRouteChildren {
+  AppProjectsIdEditorRoute: typeof AppProjectsIdEditorRoute
   AppProjectsIdSettingsRoute: typeof AppProjectsIdSettingsRoute
   AppProjectsIdVersionsRoute: typeof AppProjectsIdVersionsRoute
   AppProjectsIdIndexRoute: typeof AppProjectsIdIndexRoute
 }
 
 const AppProjectsIdRouteChildren: AppProjectsIdRouteChildren = {
+  AppProjectsIdEditorRoute: AppProjectsIdEditorRoute,
   AppProjectsIdSettingsRoute: AppProjectsIdSettingsRoute,
   AppProjectsIdVersionsRoute: AppProjectsIdVersionsRoute,
   AppProjectsIdIndexRoute: AppProjectsIdIndexRoute,

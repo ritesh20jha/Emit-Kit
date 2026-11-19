@@ -35,7 +35,7 @@ export { type RunStatus, StatusPill } from "./StatusPill";
 export { TBody, Table, type TableProps, Td, Th, THead, Tr } from "./Table";
 export { Textarea, type TextareaProps } from "./Textarea";
 export { Toaster, type ToasterProps } from "./Toaster";
-export { type FeedbackError, toast } from "./toast";
+export { type FeedbackError, type ToastAction, toast } from "./toast";
 export { Tooltip, type TooltipProps } from "./Tooltip";
 export { type ResolvedTheme, ThemeProvider, type ThemeMode } from "./theme/ThemeProvider";
 export { useTheme } from "./theme/useTheme";

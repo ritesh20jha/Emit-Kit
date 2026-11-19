@@ -10,18 +10,25 @@ export interface FeedbackError {
   code?: string;
 }
 
+/** One button on a toast, such as "View run" or "Retry run". Clicking it runs `onClick`; the toast stays until dismissed or timed out. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export const toast = {
-  success(message: string) {
-    return sonner.success(message);
+  success(message: string, action?: ToastAction) {
+    return sonner.success(message, { action });
   },
   /** The message is the title; the code, when there is one, sits under it in mono so support can quote it. */
-  error(error: FeedbackError) {
+  error(error: FeedbackError, action?: ToastAction) {
     // Longer than the 4 s default, so the code can be read and copied.
     return sonner.error(error.message, {
       duration: 8000,
       description: error.code
         ? createElement("code", { className: "font-mono text-xs" }, error.code)
         : undefined,
+      action,
     });
   },
   dismiss(id?: string | number) {
