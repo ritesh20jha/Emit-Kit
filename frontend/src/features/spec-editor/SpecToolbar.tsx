@@ -14,15 +14,7 @@ export interface SpecToolbarProps {
 /** Save, Save & generate and Dry run, with the save state. Save actions are off until something changed. */
 export function SpecToolbar({ dirty, saving, onSave, onSaveAndGenerate, onDryRun }: SpecToolbarProps) {
   const dryRun = (
-    <Button
-      variant="secondary"
-      size="sm"
-      aria-disabled={dirty || undefined}
-      className={dirty ? "opacity-50" : undefined}
-      onClick={() => {
-        if (!dirty) onDryRun();
-      }}
-    >
+    <Button variant="secondary" size="sm" aria-disabled={dirty || undefined} className={dirty ? "opacity-50" : undefined} onClick={() => !dirty && onDryRun()}>
       Dry run
     </Button>
   );

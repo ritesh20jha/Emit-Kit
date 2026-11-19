@@ -23,14 +23,14 @@ export function SpecEditor({ projectId, onConflict }: SpecEditorProps) {
   const spec = useQuery(specQuery(projectId));
   return (
     <QueryBody query={spec} label="the spec" noAccess="edit this spec">
-      {(loaded) => <EditorSession projectId={projectId} loaded={loaded} onConflict={onConflict} />}
+      {(loaded) => <EditorSession key={projectId} projectId={projectId} loaded={loaded} onConflict={onConflict} />}
     </QueryBody>
   );
 }
 
 /**
  * One editing session of a loaded spec. The text and the save base (the sha it was loaded or last saved at) are
- * local, so refetches never overwrite what the user is typing.
+ * local, so refetches never overwrite what the user is typing. Keyed by project, so a switch starts a new session.
  */
 function EditorSession({
   projectId,
@@ -60,11 +60,8 @@ function EditorSession({
       setBase({ content, sha: saved.newSha });
       reportSaved(saved);
     } catch (error) {
-      if (error instanceof AppError && error.status === 409 && onConflict) {
-        onConflict(error);
-      } else {
-        toast.error(failureFeedback(error));
-      }
+      if (error instanceof AppError && error.status === 409 && onConflict) onConflict(error);
+      else toast.error(failureFeedback(error));
     }
   }
 
@@ -72,13 +69,8 @@ function EditorSession({
   function reportSaved(saved: SaveSpecResponse) {
     if (saved.runError) {
       toast.success("Saved");
-      toast.error(
-        { message: saved.runError.detail, code: saved.runError.code },
-        { label: "Retry run", onClick: () => startRun.mutate(false) },
-      );
-      return;
-    }
-    if (saved.runId) toast.success("Saved and generation started", viewRun(saved.runId));
+      toast.error({ message: saved.runError.detail, code: saved.runError.code }, { label: "Retry run", onClick: () => startRun.mutate(false) });
+    } else if (saved.runId) toast.success("Saved and generation started", viewRun(saved.runId));
     else toast.success("Saved");
   }
 
@@ -108,9 +100,7 @@ function EditorSession({
       </div>
       <ConfirmDialog
         open={blocker.status === "blocked"}
-        onOpenChange={(open) => {
-          if (!open) blocker.reset?.();
-        }}
+        onOpenChange={(open) => open || blocker.reset?.()}
         title="Leave with unsaved changes?"
         description="Your spec edits have not been saved. Leaving now discards them."
         confirmLabel="Discard changes"

@@ -10,7 +10,7 @@ export interface FeedbackError {
   code?: string;
 }
 
-/** One button on a toast, such as "View run" or "Retry run". Clicking it runs `onClick`; the toast stays until dismissed or timed out. */
+/** A button on a toast, such as "View run" or "Retry run". */
 export interface ToastAction {
   label: string;
   onClick: () => void;

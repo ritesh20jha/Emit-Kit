@@ -1,11 +1,12 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { defaultHighlightStyle, foldGutter, foldKeymap, syntaxHighlighting } from "@codemirror/language";
+import { foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { type Diagnostic, lintGutter, setDiagnostics } from "@codemirror/lint";
 import { search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension, type Text } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Problem } from "./problems";
 
@@ -72,10 +73,8 @@ export default function CodeEditor({ ref, initialText, format, problems, onChang
   useEffect(() => {
     const instance = view.current;
     if (!instance) return;
-    const diagnostics = problems
-      .filter((problem) => problem.line !== null)
-      .map((problem) => toDiagnostic(problem, instance.state.doc));
-    instance.dispatch(setDiagnostics(instance.state, diagnostics));
+    const placed = problems.filter((problem) => problem.line !== null);
+    instance.dispatch(setDiagnostics(instance.state, placed.map((problem) => toDiagnostic(problem, instance.state.doc))));
   }, [problems]);
 
   return <div ref={host} className="h-full min-h-0" />;
@@ -84,14 +83,7 @@ export default function CodeEditor({ ref, initialText, format, problems, onChang
 function extensionsFor(format: string, handlers: { current: Handlers }): Extension[] {
   return [
     keymap.of([
-      {
-        key: "Mod-s",
-        preventDefault: true,
-        run: () => {
-          handlers.current.onSave();
-          return true;
-        },
-      },
+      { key: "Mod-s", preventDefault: true, run: () => (handlers.current.onSave(), true) },
       ...searchKeymap,
       ...historyKeymap,
       ...foldKeymap,
@@ -102,7 +94,8 @@ function extensionsFor(format: string, handlers: { current: Handlers }): Extensi
     lintGutter(),
     history(),
     search({ top: true }),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    syntaxHighlighting(highlight),
+    highlightActiveLine(),
     format === "json" ? json() : yaml(),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
@@ -111,6 +104,17 @@ function extensionsFor(format: string, handlers: { current: Handlers }): Extensi
     theme,
   ];
 }
+
+/** Syntax colours are design tokens too, so dark mode keeps their contrast. */
+const highlight = HighlightStyle.define([
+  { tag: [tags.keyword, tags.atom, tags.bool, tags.null, tags.operatorKeyword], color: "var(--color-accent)" },
+  { tag: [tags.string, tags.special(tags.string)], color: "var(--color-status-success)" },
+  { tag: tags.number, color: "var(--color-status-awaiting)" },
+  { tag: tags.propertyName, color: "var(--color-status-running)" },
+  { tag: tags.comment, color: "var(--color-fg-subtle)", fontStyle: "italic" },
+  { tag: [tags.punctuation, tags.meta], color: "var(--color-fg-muted)" },
+  { tag: tags.invalid, color: "var(--color-status-failed)" },
+]);
 
 /** Colours come from the design tokens, so the editor follows light and dark mode with the rest of the app. */
 const theme = EditorView.theme({

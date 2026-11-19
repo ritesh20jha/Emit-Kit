@@ -20,10 +20,12 @@ export interface Problem {
 }
 
 /** What the Problems panel shows. Problems from an earlier check stay visible while a newer one runs. */
-export type ProblemsView =
-  | { status: "pending"; problems: Problem[]; error: null; retry: () => void }
-  | { status: "error"; problems: Problem[]; error: FeedbackError; retry: () => void }
-  | { status: "ready"; problems: Problem[]; error: null; retry: () => void };
+export interface ProblemsView {
+  status: "pending" | "error" | "ready";
+  problems: Problem[];
+  error: FeedbackError | null;
+  retry: () => void;
+}
 
 /** Checks run once the text has been still for this long, so they follow pauses rather than keystrokes. */
 const CHECK_DELAY_MS = 500;
@@ -34,7 +36,7 @@ const SEVERITY: Record<LintIssue["severity"], ProblemSeverity> = { ERROR: "error
 const NO_PROBLEMS: Problem[] = [];
 
 /** The text as it stood CHECK_DELAY_MS ago. The first value is the text itself, so the first check starts at once. */
-function useSettledText(text: string): string {
+export function useSettledText(text: string): string {
   const [settled, setSettled] = useState(text);
   useEffect(() => {
     const timer = setTimeout(() => setSettled(text), CHECK_DELAY_MS);
@@ -57,7 +59,7 @@ export function useProblems(text: string): ProblemsView {
   });
 
   const problems = useMemo(
-    () => [...fromLint(lint.data ?? []), ...fromValidation(validation.data ?? [])],
+    () => [...fromLint(lint.data ?? []), ...fromValidation(validation.data ?? [])].sort(bySeverityAndLine),
     [lint.data, validation.data],
   );
 
@@ -71,6 +73,14 @@ export function useProblems(text: string): ProblemsView {
     return { status: "error", problems: NO_PROBLEMS, error: failureFeedback(failure), retry };
   }
   return { status: "ready", problems, error: null, retry };
+}
+
+const RANK: Record<ProblemSeverity, number> = { error: 0, warning: 1, info: 2 };
+const NO_LINE = Number.MAX_SAFE_INTEGER;
+
+/** Errors, then warnings, then info; within a severity, by line. A problem with no line comes last of its severity. */
+function bySeverityAndLine(a: Problem, b: Problem): number {
+  return RANK[a.severity] - RANK[b.severity] || (a.line ?? NO_LINE) - (b.line ?? NO_LINE);
 }
 
 function fromLint(issues: LintIssue[]): Problem[] {

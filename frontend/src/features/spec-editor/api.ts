@@ -54,6 +54,8 @@ export function useSaveSpec(projectId: string) {
     onSuccess: (saved, body) => {
       // The saved text is the base of the next save, so the cached spec follows it. A remount then starts from it.
       queryClient.setQueryData<SpecResponse>(qk.projects.spec(projectId), (spec) => spec && { ...spec, content: body.content, sha: saved.newSha });
+      void queryClient.invalidateQueries({ queryKey: qk.projects.spec(projectId) });
+      void queryClient.invalidateQueries({ queryKey: qk.versions(projectId) });
       void queryClient.invalidateQueries({ queryKey: qk.runs.list(projectId) });
     },
   });
