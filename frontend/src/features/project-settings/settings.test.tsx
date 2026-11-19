@@ -75,3 +75,12 @@ test("a viewer is told who can change the webhook", async () => {
   expect(await screen.findByText("You have view access. Ask an org admin to change the webhook.")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Re-register" })).not.toBeInTheDocument();
 });
+
+test("a viewer cannot delete the project, and the danger zone says why", async () => {
+  renderRoute("/projects/p1/settings", "VIEWER");
+
+  const danger = await screen.findByRole("region", { name: "Danger zone" });
+  expect(within(danger).getByText(/You need admin access to delete this project/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Delete project" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Re-register" })).not.toBeInTheDocument();
+});
