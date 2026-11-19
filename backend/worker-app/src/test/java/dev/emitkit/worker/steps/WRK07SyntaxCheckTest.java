@@ -96,6 +96,8 @@ class WRK07SyntaxCheckTest {
   void restoreStepLog() {
     stepLogger.detachAppender(stepLog);
     stepLogger.setAdditive(true);
+    // The step restores the interrupt flag on this thread when a sandbox run is interrupted.
+    Thread.interrupted();
   }
 
   @BeforeEach
@@ -114,7 +116,9 @@ class WRK07SyntaxCheckTest {
   void formattedFilesReplaceOriginals() throws Exception {
     Path out = outTar(Map.of("src/" + TS_CLIENT, "const a = 1;\n", "src/" + PY_INIT, "x = 1\n"));
     String report =
-        report("{\"tool\":\"tsc\",\"dir\":\"sdk/typescript\",\"exitCode\":0,\"output\":\"\"}");
+        report(
+            "{\"tool\":\"tsc\",\"dir\":\"sdk/typescript\",\"exitCode\":0,\"output\":\"\","
+                + "\"unknown\":1}");
     FakeRunner runner = new FakeRunner(req -> new SandboxResult(out, report, false));
 
     StepResult result = step(runner).execute(context());
@@ -144,7 +148,9 @@ class WRK07SyntaxCheckTest {
 
     StepResult result = step(runner).execute(context());
 
-    assertThat(result).isEqualTo(new StepResult.Fail(ErrorCode.CHECK_FAILED, "tsc failed"));
+    assertThat(result)
+        .isEqualTo(new StepResult.Fail(ErrorCode.CHECK_FAILED, "tsc failed in sdk/typescript"));
+    assertThat(log.errors).contains("tsc in sdk/typescript exited with 2:");
     assertThat(log.errors).contains("src/client.ts(1,1): error TS2322");
     assertThat(workDir.filesDir(runId).resolve(TS_CLIENT)).hasContent("const a=1\n");
     assertThat(runner.request.inputTar()).doesNotExist();
@@ -276,6 +282,53 @@ class WRK07SyntaxCheckTest {
                 "sandbox output file " + TS_CLIENT + " is over its size limit"));
     assertThat(workDir.filesDir(runId).resolve(TS_CLIENT)).hasContent("const a=1\n");
     assertThat(workDir.filesDir(runId).resolve(PY_INIT)).hasContent("x=1");
+  }
+
+  @Test
+  void missingExitCode_failsCheckFailed() {
+    String report = report("{\"tool\":\"tsc\",\"output\":\"no code\"}");
+    FakeRunner runner = new FakeRunner(req -> new SandboxResult(null, report, false));
+
+    StepResult result = step(runner).execute(context());
+
+    assertThat(result).isEqualTo(new StepResult.Fail(ErrorCode.CHECK_FAILED, "tsc failed"));
+    assertThat(log.errors).contains("tsc no exit code:");
+  }
+
+  @Test
+  void sandboxInterrupted_isTransientNotCancelled() {
+    // A CancellationException with the token not cancelled is a thread interrupt, not a cancel.
+    SandboxRunner interrupted =
+        (req, token) -> {
+          throw new CancellationException("sandbox run cancelled");
+        };
+    SyntaxCheckStep step = step(interrupted);
+    RunContext ctx = context();
+
+    assertThatThrownBy(() -> step.execute(ctx))
+        .isInstanceOf(TransientException.class)
+        .isNotInstanceOf(CancelledException.class);
+    assertThat(Thread.currentThread().isInterrupted()).isTrue();
+  }
+
+  @Test
+  void languagesOfJavaCliAndMcpFiles_areListed() throws Exception {
+    workDir.write(
+        runId,
+        "generation-2",
+        List.of(
+            new GeneratedFile(
+                ".emitkit/sdk/java/src/Client.java", "class Client {}", FileKind.GENERATED),
+            new GeneratedFile(".emitkit/cli/src/index.ts", "export {};\n", FileKind.GENERATED),
+            new GeneratedFile(".emitkit/mcp/src/server.ts", "export {};\n", FileKind.GENERATED),
+            new GeneratedFile(".emitkit/docs/v1/index.md", "# docs\n", FileKind.GENERATED)));
+    Path out = outTar(Map.of());
+    String report = report("{\"tool\":\"tsc\",\"dir\":\"cli\",\"exitCode\":0,\"output\":\"\"}");
+    FakeRunner runner = new FakeRunner(req -> new SandboxResult(out, report, false));
+
+    step(runner).execute(context());
+
+    assertThat(runner.sent).containsEntry(Tars.LANGUAGES, "java\ntypescript\n");
   }
 
   private SyntaxCheckStep step(SandboxRunner runner) {

@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -108,8 +109,8 @@ public final class SyntaxCheckStep implements PipelineStep {
     }
   }
 
-  /** The number of distinct files replaced by their formatted versions. */
-  public record Output(int formattedFileCount) {}
+  /** The number of distinct files that out.tar returned for the run's files. */
+  public record Output(int returnedFileCount) {}
 
   /**
    * Runs the sandbox with a token that is cancelled when the run is asked to stop. A cancelled
@@ -117,35 +118,46 @@ public final class SyntaxCheckStep implements PipelineStep {
    */
   private SandboxResult runSandbox(RunContext ctx, Path inTar) {
     CancellationToken token = new CancellationToken();
-    Thread poller = Thread.ofVirtual().start(() -> cancelWhenStopped(ctx, token));
+    AtomicBoolean done = new AtomicBoolean();
+    Thread poller = Thread.ofVirtual().start(() -> cancelWhenStopped(ctx, token, done));
     try {
       return sandbox.run(new SandboxRequest(properties.image(), inTar, TIMEOUT), token);
     } catch (CancellationException e) {
-      throw new CancelledException(ctx.run().getId());
+      if (token.isCancelled()) {
+        throw new CancelledException(ctx.run().getId());
+      }
+      // Not a cancel: the caller was interrupted, as on a worker shutdown. Keep the flag set and
+      // let the run retry rather than be marked CANCELLED.
+      Thread.currentThread().interrupt();
+      throw new TransientException(ErrorCode.INTERNAL, "sandbox run interrupted", Map.of(), e);
     } finally {
+      done.set(true);
       poller.interrupt();
     }
   }
 
   /**
    * Cancels the token once the run is asked to stop. A failed check is logged and retried on the
-   * next tick, so one database error does not end the polling. Returns when interrupted.
+   * next tick, so one database error does not end the polling. Ends when {@code done} is set, which
+   * the caller does before it interrupts this thread.
    */
-  private static void cancelWhenStopped(RunContext ctx, CancellationToken token) {
-    try {
-      while (true) {
+  private static void cancelWhenStopped(
+      RunContext ctx, CancellationToken token, AtomicBoolean done) {
+    while (!done.get()) {
+      try {
         Thread.sleep(POLL_INTERVAL);
-        try {
-          ctx.checkCancelled();
-        } catch (CancelledException e) {
-          token.cancel();
+        ctx.checkCancelled();
+      } catch (InterruptedException e) {
+        return;
+      } catch (CancelledException e) {
+        token.cancel();
+        return;
+      } catch (RuntimeException e) {
+        if (done.get()) {
           return;
-        } catch (RuntimeException e) {
-          LOG.warn("could not check whether run {} was cancelled; retrying", ctx.run().getId(), e);
         }
+        LOG.warn("could not check whether run {} was cancelled; retrying", ctx.run().getId(), e);
       }
-    } catch (InterruptedException e) {
-      // The sandbox run has returned.
     }
   }
 
@@ -166,11 +178,26 @@ public final class SyntaxCheckStep implements PipelineStep {
           new StepResult.Fail(ErrorCode.CHECK_FAILED, "sandbox report is unreadable"));
     }
     List<CheckReport.ToolResult> failed =
-        results.get().stream().filter(tool -> tool.exitCode() != 0).toList();
+        results.get().stream().filter(SyntaxCheckStep::failed).toList();
     failed.forEach(tool -> logOutput(log, tool));
     return failed.stream()
         .findFirst()
-        .map(tool -> new StepResult.Fail(ErrorCode.CHECK_FAILED, tool.tool() + " failed"));
+        .map(tool -> new StepResult.Fail(ErrorCode.CHECK_FAILED, failure(tool)));
+  }
+
+  /** A tool failed when its exit code is non-zero, or missing: a missing code is not a pass. */
+  private static boolean failed(CheckReport.ToolResult tool) {
+    return tool.exitCode() == null || tool.exitCode() != 0;
+  }
+
+  /** The failure message: "{tool} failed", with " in {dir}" when the report gives a directory. */
+  private static String failure(CheckReport.ToolResult tool) {
+    return tool.dir() == null ? tool.tool() + " failed" : tool.tool() + " failed in " + tool.dir();
+  }
+
+  /** The tool's name, with its directory when the report gives one. */
+  private static String label(CheckReport.ToolResult tool) {
+    return tool.dir() == null ? tool.tool() : tool.tool() + " in " + tool.dir();
   }
 
   private static Optional<List<CheckReport.ToolResult>> toolResults(String reportJson) {
@@ -182,7 +209,8 @@ public final class SyntaxCheckStep implements PipelineStep {
   }
 
   private static void logOutput(RunLogger log, CheckReport.ToolResult tool) {
-    log.error(tool.tool() + " exited with " + tool.exitCode() + ":");
+    String exit = tool.exitCode() == null ? "no exit code" : "exited with " + tool.exitCode();
+    log.error(label(tool) + " " + exit + ":");
     String output = tool.output() == null ? "" : tool.output();
     output.lines().limit(MAX_LOG_LINES).forEach(log::error);
   }
