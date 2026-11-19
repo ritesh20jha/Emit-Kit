@@ -9,7 +9,9 @@ import type { components } from "@/lib/api/generated/schema";
 import { qk } from "@/lib/api/queryKeys";
 import type { Me } from "@/lib/auth/session";
 import { defaultMe } from "@/test/msw/handlers/me";
+import { projectHandlers } from "@/test/msw/handlers/projects";
 import { server } from "@/test/msw/server";
+import { renderRoute } from "@/test/renderRoute";
 import { ThemeProvider, Toaster } from "@/ui";
 import { AppShell } from "./AppShell";
 import { LAST_ORG_KEY } from "./lastOrg";
@@ -243,4 +245,19 @@ test("? opens the shortcut help, which lists g p for Projects", async () => {
   const row = within(help).getByText("Projects").closest("li") as HTMLElement;
   expect(within(row).getByText("g")).toBeInTheDocument();
   expect(within(row).getByText("p")).toBeInTheDocument();
+});
+
+test("project actions appear on a real project page", async () => {
+  const user = userEvent.setup();
+  server.use(...projectHandlers);
+  renderRoute("/projects/p1");
+  // The layout's heading shows once the project is loaded, which also puts its org in the cache for the palette.
+  await screen.findByRole("heading", { name: "acme/billing-api" });
+
+  await user.keyboard("{Control>}k{/Control}");
+
+  for (const label of ["Runs", "Trigger run", "Dry run", "Open editor"]) {
+    // A command with a shortcut hint reads as its label followed by the keys ("Runsgr"), so the label is a prefix.
+    expect(await screen.findByRole("option", { name: new RegExp(`^${label}`) })).toBeInTheDocument();
+  }
 });
