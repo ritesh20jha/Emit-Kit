@@ -37,6 +37,9 @@ export function useDeleteProject(projectId: string, orgId: string) {
       const { error, response } = await api.DELETE("/projects/{id}", { params: { path: { id: projectId } } });
       if (!response.ok) throw toAppError(response, error);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.projects.list(orgId) }),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: qk.projects.one(projectId), exact: true });
+      return queryClient.invalidateQueries({ queryKey: qk.projects.list(orgId) });
+    },
   });
 }

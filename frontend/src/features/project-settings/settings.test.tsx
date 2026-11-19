@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, expect, test } from "vitest";
+import { qk } from "@/lib/api/queryKeys";
 import { project, projectHandlers } from "@/test/msw/handlers/projects";
 import { server } from "@/test/msw/server";
 import { renderRoute, stubViewport } from "@/test/renderRoute";
@@ -41,6 +42,8 @@ test("delete needs typed confirmation", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/org1"));
   expect(deleteCalls).toBe(1);
   expect(await screen.findByText("acme/billing-api was deleted")).toBeInTheDocument();
+  // The deleted project must not stay in the cache, where the palette and a later visit could read it.
+  expect(router.options.context.queryClient.getQueryState(qk.projects.one("p1"))).toBeUndefined();
 });
 
 test("a failed Re-register does not leave the page saying Registered", async () => {
