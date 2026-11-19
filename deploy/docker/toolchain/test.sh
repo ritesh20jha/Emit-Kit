@@ -1,7 +1,8 @@
 #!/bin/sh
 # GEN-12 toolchain image test. Needs a built image: IMAGE (default emitkit/toolchain:test).
 # 1. Tools resolve as user 10001 with no network and a read-only rootfs.
-# 2. The real check.sh contract passes on a TypeScript, Python and Java fixture.
+# 2. The baseline ruff config is active: UP-style code passes, correctness errors fail.
+# 3. The real check.sh contract passes on a TypeScript, Python and Java fixture.
 set -eu
 
 IMAGE=${IMAGE:-emitkit/toolchain:test}
@@ -13,13 +14,24 @@ run() {
 }
 
 echo "== tools"
-run 'tsc -v && ruff --version && javac -version && prettier --version && google-java-format --version >/dev/null 2>&1 &&python -c "import httpx, pydantic" && node -e "require(\"commander\"); require(\"@modelcontextprotocol/sdk/server/mcp.js\")" && id -u' | tail -1 | grep -qx 10001
+run 'tsc -v && ruff --version && javac -version && prettier --version && google-java-format --version >/dev/null 2>&1 && python -c "import httpx, pydantic" && node -e "require(\"commander\"); require(\"@modelcontextprotocol/sdk/server/mcp.js\")" && id -u' | tail -1 | grep -qx 10001
 
 echo "== no package managers in the final image"
 if run 'command -v npm || command -v pip || command -v apt-get || command -v dpkg' >/dev/null 2>&1; then
   echo "package manager still present" >&2
   exit 1
 fi
+
+echo "== baseline ruff config is active"
+mkdir -p "$WORK/lint"
+printf 'from typing import Optional\n\nx: Optional[int] = None\n' > "$WORK/lint/ok.py"
+printf 'import os\n\ny = undefined_name\n' > "$WORK/lint/bad.py"
+chmod 755 "$WORK/lint"
+docker run --rm --network none --read-only --user 10001 -v "$WORK/lint:/w" --entrypoint sh "$IMAGE" \
+  -c 'cd /w && ruff check --no-cache ok.py && ! ruff check --no-cache bad.py' || {
+  echo "FAIL: baseline ruff config not active (ok.py must pass; bad.py must fail)" >&2
+  exit 1
+}
 
 echo "== check.sh contract with fixtures"
 mkdir -p "$WORK/stage/src/ts" "$WORK/stage/src/py" "$WORK/stage/src/java"

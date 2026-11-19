@@ -1,4 +1,4 @@
-# GEN-12 toolchain image (spec 5.6). Build from the repo root:
+# GEN-12 toolchain image (spec 5.6). Run from the repo root; deploy/docker/toolchain is the build context:
 #   docker build -t emitkit/toolchain:test deploy/docker/toolchain
 # Final stage is the pinned python:3.12 base with Node 20 and Temurin 21 copied in from pinned images.
 # All tools are baked in: the container runs with --network none.
@@ -31,6 +31,8 @@ COPY --from=vendor /src/build/vendor /opt/vendor
 COPY --from=vendor /src/build/tools /opt/tools
 COPY google-java-format /usr/local/bin/google-java-format
 COPY --chmod=0755 check.sh /usr/local/bin/check.sh
+# ruff reads its user-level config from $XDG_CONFIG_HOME/ruff/ruff.toml when a project has no config.
+COPY ruff.toml /etc/xdg/ruff/ruff.toml
 
 # NODE_PATH serves node at runtime. tsc ignores NODE_PATH, so /node_modules (an ancestor of every
 # /work path) links to the global modules for module resolution and @types auto-inclusion.
@@ -44,6 +46,7 @@ ENV JAVA_HOME=/opt/java/openjdk \
     NODE_PATH=/opt/node/lib/node_modules \
     VIRTUAL_ENV=/opt/venv \
     HOME=/work \
+    XDG_CONFIG_HOME=/etc/xdg \
     PATH=/opt/venv/bin:/opt/java/openjdk/bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 USER 10001
