@@ -17,6 +17,8 @@ import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId
 import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
+import { Route as AppProjectsIdSettingsRouteImport } from './routes/_app/projects/$id/settings'
+import { Route as AppProjectsIdVersionsRouteImport } from './routes/_app/projects/$id/versions'
 import { Route as AppOrgsOrgIdProjectsNewRouteImport } from './routes/_app/orgs/$orgId/projects/new'
 
 const AppRoute = AppRouteImport.update({
@@ -58,6 +60,16 @@ const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppProjectsIdRoute,
 } as any)
+const AppProjectsIdSettingsRoute = AppProjectsIdSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppProjectsIdRoute,
+} as any)
+const AppProjectsIdVersionsRoute = AppProjectsIdVersionsRouteImport.update({
+  id: '/versions',
+  path: '/versions',
+  getParentRoute: () => AppProjectsIdRoute,
+} as any)
 const AppOrgsOrgIdProjectsNewRoute = AppOrgsOrgIdProjectsNewRouteImport.update({
   id: '/orgs/$orgId/projects/new',
   path: '/orgs/$orgId/projects/new',
@@ -70,6 +82,8 @@ export interface FileRoutesByFullPath {
   '/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
+  '/projects/$id/versions': typeof AppProjectsIdVersionsRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id/': typeof AppProjectsIdIndexRoute
   '/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
@@ -79,6 +93,8 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
+  '/projects/$id/versions': typeof AppProjectsIdVersionsRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id': typeof AppProjectsIdIndexRoute
   '/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
@@ -91,6 +107,8 @@ export interface FileRoutesById {
   '/_app/projects/$id': typeof AppProjectsIdRouteWithChildren
   '/_app/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/_app/projects/$id/settings': typeof AppProjectsIdSettingsRoute
+  '/_app/projects/$id/versions': typeof AppProjectsIdVersionsRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/_app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/_app/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
@@ -103,6 +121,8 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
+    | '/projects/$id/settings'
+    | '/projects/$id/versions'
     | '/orgs/$orgId/'
     | '/projects/$id/'
     | '/orgs/$orgId/projects/new'
@@ -112,6 +132,8 @@ export interface FileRouteTypes {
     | '/'
     | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
+    | '/projects/$id/settings'
+    | '/projects/$id/versions'
     | '/orgs/$orgId'
     | '/projects/$id'
     | '/orgs/$orgId/projects/new'
@@ -123,6 +145,8 @@ export interface FileRouteTypes {
     | '/_app/projects/$id'
     | '/_app/orgs/$orgId/members'
     | '/_app/orgs/$orgId/settings'
+    | '/_app/projects/$id/settings'
+    | '/_app/projects/$id/versions'
     | '/_app/orgs/$orgId/'
     | '/_app/projects/$id/'
     | '/_app/orgs/$orgId/projects/new'
@@ -191,6 +215,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdIndexRouteImport
       parentRoute: typeof AppProjectsIdRoute
     }
+    '/_app/projects/$id/settings': {
+      id: '/_app/projects/$id/settings'
+      path: '/settings'
+      fullPath: '/projects/$id/settings'
+      preLoaderRoute: typeof AppProjectsIdSettingsRouteImport
+      parentRoute: typeof AppProjectsIdRoute
+    }
+    '/_app/projects/$id/versions': {
+      id: '/_app/projects/$id/versions'
+      path: '/versions'
+      fullPath: '/projects/$id/versions'
+      preLoaderRoute: typeof AppProjectsIdVersionsRouteImport
+      parentRoute: typeof AppProjectsIdRoute
+    }
     '/_app/orgs/$orgId/projects/new': {
       id: '/_app/orgs/$orgId/projects/new'
       path: '/orgs/$orgId/projects/new'
@@ -202,10 +240,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppProjectsIdRouteChildren {
+  AppProjectsIdSettingsRoute: typeof AppProjectsIdSettingsRoute
+  AppProjectsIdVersionsRoute: typeof AppProjectsIdVersionsRoute
   AppProjectsIdIndexRoute: typeof AppProjectsIdIndexRoute
 }
 
 const AppProjectsIdRouteChildren: AppProjectsIdRouteChildren = {
+  AppProjectsIdSettingsRoute: AppProjectsIdSettingsRoute,
+  AppProjectsIdVersionsRoute: AppProjectsIdVersionsRoute,
   AppProjectsIdIndexRoute: AppProjectsIdIndexRoute,
 }
 
