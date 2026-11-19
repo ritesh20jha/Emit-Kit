@@ -89,19 +89,20 @@ export const versions: VersionResponse[] = [
   { version: "1.3.2", changeType: "PATCH", changelog: "Fixed a typo in the Invoice schema.", createdAt: "2026-11-02T09:00:00Z", runId: "r3" },
 ];
 
-const config: ConfigResponse = {
+/** The project config the MSW handlers answer with. Its values pass the config form rules, so a save needs no fixing. */
+export const config: ConfigResponse = {
   aiKeySet: true,
   aiModel: "gemini-2.5-flash",
-  aiProvider: "GEMINI",
+  aiProvider: "gemini",
   breakingGate: "REQUIRE_APPROVAL",
   lintFailOn: "ERROR",
   mavenArtifactId: null,
   mavenGroupId: null,
-  npmScope: "@acme",
-  outputDir: "generated",
+  npmScope: "acme",
+  outputDir: "generated/",
   outputs: ["SDK", "DOCS"],
   pypiName: null,
-  sdkLanguages: ["TYPESCRIPT"],
+  sdkLanguages: ["typescript"],
   version: 3,
   versionStrategy: "EMITKIT_MANAGED",
 };
