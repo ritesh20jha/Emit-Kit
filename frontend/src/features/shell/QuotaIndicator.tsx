@@ -9,7 +9,7 @@ const POLL_MS = 60_000;
 /** Shown only when less than this share of the GitHub API quota is left. */
 const LOW_RATIO = 0.2;
 
-const vcsQuotaQuery = queryOptions({
+export const vcsQuotaQuery = queryOptions({
   queryKey: qk.vcsQuota,
   queryFn: async (): Promise<components["schemas"]["QuotaResponse"]> => {
     const { data, error, response } = await api.GET("/me/vcs-quota");
