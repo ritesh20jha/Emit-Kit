@@ -20,17 +20,16 @@ export function QueryBody<T>({
   noAccess: string;
   children: (data: T) => ReactNode;
 }) {
+  // Data already on screen stays, even when a background refetch fails. Only a query with no data shows the other states.
+  if (query.data !== undefined) return <>{children(query.data)}</>;
   if (query.isError) {
     if (query.error instanceof AppError && query.error.status === 403) return <NoAccessState action={noAccess} />;
     return <ErrorState error={failureFeedback(query.error)} onRetry={() => void query.refetch()} />;
   }
-  if (query.isPending) {
-    return (
-      <div aria-busy="true" className="flex flex-col gap-2">
-        <span className="sr-only">Loading {label}…</span>
-        <Skeleton className="h-12" />
-      </div>
-    );
-  }
-  return <>{children(query.data)}</>;
+  return (
+    <div aria-busy="true" className="flex flex-col gap-2">
+      <span className="sr-only">Loading {label}…</span>
+      <Skeleton className="h-12" />
+    </div>
+  );
 }
