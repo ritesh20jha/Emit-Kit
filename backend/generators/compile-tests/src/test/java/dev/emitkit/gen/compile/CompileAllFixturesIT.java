@@ -40,27 +40,6 @@ class CompileAllFixturesIT {
           GeneratorId.CLI,
           GeneratorId.MCP);
 
-  /**
-   * Known failing pairs, keyed "fixture/GENERATOR", each with the follow-up that tracks it. A pair
-   * listed here is skipped with its reason. Never list reserved-words.
-   */
-  private static final String PY_LINT =
-      "GEN-xx follow-up: the generated Python SDK fails ruff check on lint rules only (UP045/UP006/"
-          + "UP035 typing aliases, FA100 missing __future__ import, PYI034 __enter__ not Self) under "
-          + "the image's default rules. Fixing it needs a requires-python decision.";
-
-  private static final Map<String, String> EXCLUDED =
-      Map.ofEntries(
-          Map.entry("petstore/PY_SDK", PY_LINT),
-          Map.entry("auth-schemes/PY_SDK", PY_LINT),
-          Map.entry("polymorphism/PY_SDK", PY_LINT),
-          Map.entry("enums/PY_SDK", PY_LINT),
-          Map.entry("pagination/PY_SDK", PY_LINT),
-          Map.entry("no-operation-ids/PY_SDK", PY_LINT),
-          Map.entry("deep-nesting/PY_SDK", PY_LINT),
-          Map.entry("multi-tag/PY_SDK", PY_LINT),
-          Map.entry("big-200-ops/PY_SDK", PY_LINT));
-
   private static final Map<GeneratorId, Generator> GENERATORS_BY_ID =
       Map.of(
           GeneratorId.TS_SDK, new TypeScriptSdkGenerator(),
@@ -91,9 +70,6 @@ class CompileAllFixturesIT {
   @ParameterizedTest(name = "{0} / {1}")
   @MethodSource("fixturesTimesGenerators")
   void generatedCodePassesChecks(String fixture, GeneratorId gen) {
-    String key = fixture + "/" + gen;
-    assumeTrue(!EXCLUDED.containsKey(key), () -> key + " excluded: " + EXCLUDED.get(key));
-
     Target target = Target.of(gen);
     List<GeneratedFile> files =
         GENERATORS_BY_ID.get(gen).generate(FixtureSpecs.load(fixture), ctx());
