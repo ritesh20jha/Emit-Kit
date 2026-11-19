@@ -1,0 +1,97 @@
+name: Toolchain
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/docker/toolchain/**'
+      - 'backend/generators/**'
+      - 'backend/spec-engine/**'
+      - 'backend/settings.gradle.kts'
+      - 'backend/build-logic/**'
+      - 'backend/gradle/libs.versions.toml'
+      - '.github/workflows/toolchain.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/docker/toolchain/**'
+      - 'backend/generators/**'
+      - 'backend/spec-engine/**'
+      - 'backend/settings.gradle.kts'
+      - 'backend/build-logic/**'
+      - 'backend/gradle/libs.versions.toml'
+      - '.github/workflows/toolchain.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed only to push the image to GHCR on main (see the last step).
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read toolchain version
+        id: version
+        run: echo "version=$(cat deploy/docker/toolchain/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build toolchain image
+        run: docker build -t emitkit/toolchain:test deploy/docker/toolchain
+
+      - name: Test toolchain image
+        run: bash deploy/docker/toolchain/test.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The compile tests run every fixture through the image under gVisor (spec 5.6). Installed from
+      # gVisor's signed apt repo, pinned, as in backend.yml.
+      - name: Install gVisor runsc
+        run: |
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y runsc=20261102.0
+          sudo runsc install
+          sudo systemctl restart docker
+          timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+          docker info --format '{{json .Runtimes}}'
+
+      # required=true: a missing image or runtime fails this job instead of skipping the tests.
+      - name: Compile every fixture in the toolchain image
+        working-directory: backend
+        run: >-
+          ./gradlew :generators:compile-tests:test
+          -Demitkit.sandbox.runtime=runsc
+          -Dcompile-tests.required=true
+          -Demitkit.toolchain.image=emitkit/toolchain:test
+
+      # Pushed only after the tests pass, so GHCR never holds an image that failed them.
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push toolchain image to GHCR
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/emitkit-toolchain:${VERSION}"
+          docker tag emitkit/toolchain:test "$image"
+          docker push "$image"
