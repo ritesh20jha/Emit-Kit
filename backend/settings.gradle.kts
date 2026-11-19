@@ -26,6 +26,7 @@ include(
     "generators:mcp",
     "generators:docs",
     "generators:cli",
+    "generators:compile-tests",
     "ai",
     "api-app",
     "worker-app",
