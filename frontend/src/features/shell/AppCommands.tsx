@@ -20,14 +20,18 @@ interface CachedProjects {
   projectOrgId?: string;
 }
 
+/** A project page's route id: the project layout or one of its children, with or without the pathless /_app parent. */
+const PROJECT_ROUTE = /(^|\/)projects\/\$id(\/|$)/;
+
 /** The id of the project on a /projects/$id page, or undefined elsewhere. */
 function useRouteProjectId(): string | undefined {
   return useRouterState({
     select: (state) => {
       for (const match of [...state.matches].reverse()) {
-        // The typed router knows no project routes yet, so the route id is compared as a plain string.
+        // The typed router knows no project routes yet, so the route id is matched as a plain string. Real ids
+        // carry the pathless layout first (/_app/projects/$id/...), so the segment is matched anywhere in the id.
         const routeId: string = match.routeId;
-        if (routeId === "/projects/$id" || routeId.startsWith("/projects/$id/")) {
+        if (PROJECT_ROUTE.test(routeId)) {
           const id = (match.params as { id?: unknown }).id;
           return typeof id === "string" ? id : undefined;
         }

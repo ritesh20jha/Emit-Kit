@@ -5,6 +5,7 @@ import { AppError } from "@/lib/api/appError";
 import type { components } from "@/lib/api/generated/schema";
 import { usePermission } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils/cn";
+import { relativeTime } from "@/lib/utils/dates";
 import {
   Button,
   buttonClasses,
@@ -22,22 +23,6 @@ import { ProjectFilters } from "./ProjectFilters";
 import type { ProjectSearch, RunStatus } from "./schemas";
 
 type ProjectSummary = components["schemas"]["ProjectSummary"];
-
-const RELATIVE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["day", 86_400],
-  ["hour", 3_600],
-  ["minute", 60],
-];
-
-/** The age of a run in words: "3 hours ago", "yesterday", "now". */
-function relativeTime(iso: string, now = Date.now()): string {
-  const seconds = Math.round((Date.parse(iso) - now) / 1000);
-  for (const [unit, size] of RELATIVE_UNITS) {
-    if (Math.abs(seconds) >= size) return RELATIVE.format(Math.round(seconds / size), unit);
-  }
-  return RELATIVE.format(0, "second");
-}
 
 export interface ProjectsListProps {
   orgId: string;
