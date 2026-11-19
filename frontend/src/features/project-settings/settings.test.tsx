@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, expect, test } from "vitest";
-import { projectHandlers } from "@/test/msw/handlers/projects";
+import { project, projectHandlers } from "@/test/msw/handlers/projects";
 import { server } from "@/test/msw/server";
 import { renderRoute, stubViewport } from "@/test/renderRoute";
 
@@ -41,4 +41,27 @@ test("delete needs typed confirmation", async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/org1"));
   expect(deleteCalls).toBe(1);
   expect(await screen.findByText("acme/billing-api was deleted")).toBeInTheDocument();
+});
+
+test("a failed Re-register does not leave the page saying Registered", async () => {
+  const user = userEvent.setup();
+  // The failed attempt leaves the repository without its webhook, so a fresh read of the project says so.
+  let registered = true;
+  server.use(
+    http.get("/api/v1/projects/:id", () =>
+      HttpResponse.json({ ...project, webhook: { registered, webhookId: registered ? 42 : null } }),
+    ),
+    http.post("/api/v1/projects/:id/webhook", () => {
+      registered = false;
+      return HttpResponse.json({ type: "about:blank", title: "Bad Gateway", status: 502, code: "VCS_AUTH" }, { status: 502 });
+    }),
+  );
+  renderRoute("/projects/p1/settings");
+  expect(await screen.findByText(/^Registered\./)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Re-register" }));
+
+  expect(await screen.findByText("GitHub access was revoked or expired. Reconnect GitHub and try again.")).toBeInTheDocument();
+  expect(await screen.findByText(/^Not registered\./)).toBeInTheDocument();
+  expect(screen.queryByText(/^Registered\./)).not.toBeInTheDocument();
 });
