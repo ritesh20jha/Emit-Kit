@@ -23,13 +23,18 @@ export function SpecCard({ project }: { project: ProjectDetail }) {
   );
 }
 
+/** The lint counts of a run. The backend reports zeros when lint never ran, so counts show only once the step has finished. */
 function LintOf({ runId }: { runId: string }) {
   const run = useQuery(runQuery(runId));
   return (
     <QueryBody query={run} label="the lint counts" noAccess="view this project">
-      {({ lint: { errors, warnings, infos } }) => (
-        <span className="text-fg">{`${plural(errors, "error")} · ${plural(warnings, "warning")} · ${infos} info`}</span>
-      )}
+      {({ lint: { errors, warnings, infos }, steps }) => {
+        const status = steps.find((step) => step.name === "LINT_SPEC")?.status;
+        if (status === "DONE" || status === "FAILED") {
+          return <span className="text-fg">{`${plural(errors, "error")} · ${plural(warnings, "warning")} · ${infos} info`}</span>;
+        }
+        return <span className="text-fg-muted">{status === "SKIPPED" ? "Lint did not run" : "Not linted yet"}</span>;
+      }}
     </QueryBody>
   );
 }

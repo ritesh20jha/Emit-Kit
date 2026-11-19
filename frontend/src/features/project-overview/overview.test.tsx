@@ -42,6 +42,21 @@ test("overview shows last run, version, spec, health and recent runs", async () 
   expect(links.map((link) => link.getAttribute("href"))).toEqual(["/runs/r1", "/runs/r2", "/runs/r3", "/runs/r4", "/runs/r5"]);
 });
 
+test("spec shows no lint counts until the lint step has finished", async () => {
+  server.use(
+    http.get("/api/v1/runs/:runId", ({ params }) => {
+      const detail = runDetail(run(String(params.runId), "RUNNING", "MANUAL", 0, null));
+      // Lint has not run yet, so the backend's zero counts mean nothing.
+      return HttpResponse.json({ ...detail, steps: [{ name: "LINT_SPEC", status: "PENDING", durationMs: null }] });
+    }),
+  );
+  renderRoute("/projects/p1");
+
+  const spec = await screen.findByRole("region", { name: "Spec" });
+  expect(await within(spec).findByText("Not linted yet")).toBeInTheDocument();
+  expect(within(spec).queryByText(/ · /)).not.toBeInTheDocument();
+});
+
 test("trigger run posts and navigates to the run", async () => {
   const user = userEvent.setup();
   let body: unknown;

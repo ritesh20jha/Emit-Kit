@@ -60,7 +60,7 @@ export function runDetail(summary: RunSummary): RunDetail {
     startedAt: summary.createdAt,
     finishedAt: null,
     currentStep: null,
-    steps: [],
+    steps: LINT[summary.id] ? [{ name: "LINT_SPEC", status: "DONE", durationMs: 840 }] : [],
     lint: LINT[summary.id] ?? { errors: 0, warnings: 0, infos: 0 },
     approval: null,
     artifactAvailable: false,
