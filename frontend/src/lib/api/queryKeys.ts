@@ -7,7 +7,18 @@ export const qk = {
     one: (id: string) => ["orgs", id],
     members: (id: string) => ["orgs", id, "members"],
   },
+  vcsRepos: (orgId: string, q: string) => ["orgs", orgId, "vcs-repos", q],
+  specCheck: (orgId: string, repo: string, path: string, branch: string) => [
+    "orgs",
+    orgId,
+    "vcs-repos",
+    repo,
+    "spec-check",
+    path,
+    branch,
+  ],
   projects: {
+    forOrg: (orgId: string) => ["orgs", orgId, "projects"],
     list: (orgId: string, q: Record<string, unknown> = {}) => ["orgs", orgId, "projects", q],
     one: (id: string) => ["projects", id],
     config: (id: string) => ["projects", id, "config"],

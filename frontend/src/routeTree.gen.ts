@@ -17,6 +17,7 @@ import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId
 import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
 import { Route as AppProjectsIdIndexRouteImport } from './routes/_app/projects/$id/index'
+import { Route as AppOrgsOrgIdProjectsNewRouteImport } from './routes/_app/orgs/$orgId/projects/new'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -57,6 +58,11 @@ const AppProjectsIdIndexRoute = AppProjectsIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppProjectsIdRoute,
 } as any)
+const AppOrgsOrgIdProjectsNewRoute = AppOrgsOrgIdProjectsNewRouteImport.update({
+  id: '/orgs/$orgId/projects/new',
+  path: '/orgs/$orgId/projects/new',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id/': typeof AppProjectsIdIndexRoute
+  '/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id': typeof AppProjectsIdIndexRoute
+  '/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/_app/projects/$id/': typeof AppProjectsIdIndexRoute
+  '/_app/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgId/settings'
     | '/orgs/$orgId/'
     | '/projects/$id/'
+    | '/orgs/$orgId/projects/new'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgId/settings'
     | '/orgs/$orgId'
     | '/projects/$id'
+    | '/orgs/$orgId/projects/new'
   id:
     | '__root__'
     | '/_app'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
     | '/_app/orgs/$orgId/settings'
     | '/_app/orgs/$orgId/'
     | '/_app/projects/$id/'
+    | '/_app/orgs/$orgId/projects/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -179,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdIndexRouteImport
       parentRoute: typeof AppProjectsIdRoute
     }
+    '/_app/orgs/$orgId/projects/new': {
+      id: '/_app/orgs/$orgId/projects/new'
+      path: '/orgs/$orgId/projects/new'
+      fullPath: '/orgs/$orgId/projects/new'
+      preLoaderRoute: typeof AppOrgsOrgIdProjectsNewRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -200,6 +219,7 @@ interface AppRouteChildren {
   AppOrgsOrgIdMembersRoute: typeof AppOrgsOrgIdMembersRoute
   AppOrgsOrgIdSettingsRoute: typeof AppOrgsOrgIdSettingsRoute
   AppOrgsOrgIdIndexRoute: typeof AppOrgsOrgIdIndexRoute
+  AppOrgsOrgIdProjectsNewRoute: typeof AppOrgsOrgIdProjectsNewRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -208,6 +228,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOrgsOrgIdMembersRoute: AppOrgsOrgIdMembersRoute,
   AppOrgsOrgIdSettingsRoute: AppOrgsOrgIdSettingsRoute,
   AppOrgsOrgIdIndexRoute: AppOrgsOrgIdIndexRoute,
+  AppOrgsOrgIdProjectsNewRoute: AppOrgsOrgIdProjectsNewRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
