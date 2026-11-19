@@ -18,12 +18,14 @@ export function WebhookPanel({ project, canEdit }: { project: ProjectDetail; can
         />
         {registered ? "Registered. Pushes to the repository start a run." : "Not registered. Pushes will not start runs until it is."}
       </p>
-      {canEdit && (
+      {canEdit ? (
         <div>
           <Button variant="secondary" loading={register.isPending} onClick={() => register.mutate()}>
             Re-register
           </Button>
         </div>
+      ) : (
+        <p className="text-sm text-fg-muted">You have view access. Ask an org admin to change the webhook.</p>
       )}
     </Panel>
   );

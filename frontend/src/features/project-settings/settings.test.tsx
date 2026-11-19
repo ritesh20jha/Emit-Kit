@@ -68,3 +68,10 @@ test("a failed Re-register does not leave the page saying Registered", async () 
   expect(await screen.findByText(/^Not registered\./)).toBeInTheDocument();
   expect(screen.queryByText(/^Registered\./)).not.toBeInTheDocument();
 });
+
+test("a viewer is told who can change the webhook", async () => {
+  renderRoute("/projects/p1/settings", "VIEWER");
+
+  expect(await screen.findByText("You have view access. Ask an org admin to change the webhook.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Re-register" })).not.toBeInTheDocument();
+});
