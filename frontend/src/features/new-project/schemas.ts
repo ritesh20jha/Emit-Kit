@@ -36,6 +36,8 @@ export type StepErrors = Partial<Record<keyof WizardValues, string>>;
 
 /** The same shape the API accepts for a repository name. */
 const NAME_PATTERN = /^[\w.-]+$/;
+/** owner/name, as the API takes it. A repo in the URL is read back into a request, so it is checked here. */
+const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
 
 function oneOf<T extends string>(value: unknown, options: readonly T[]): T | undefined {
   return options.find((option) => option === value);
@@ -50,19 +52,27 @@ function asText(value: unknown): string | undefined {
   return typeof text === "string" && text !== "" ? text : undefined;
 }
 
+/** A repository param that is owner/name, with neither segment a path step ("." or ".."). Anything else is dropped. */
+function asRepo(value: unknown): string | undefined {
+  const text = asText(value);
+  if (text === undefined || !REPO_PATTERN.test(text)) return undefined;
+  const [owner, name] = text.split("/");
+  return owner === "." || owner === ".." || name === "." || name === ".." ? undefined : text;
+}
+
 /** Reads the search params. Unknown values fall back to the defaults, so a stale link still opens the wizard. */
 export function parseNewProjectSearch(search: Record<string, unknown>): NewProjectSearch {
   const step = Number(search.step);
   return {
     step: step === 2 || step === 3 ? step : 1,
     mode: oneOf(search.mode, ["existing", "new"] as const),
-    repo: asText(search.repo),
+    repo: asRepo(search.repo),
     name: asText(search.name),
     visibility: oneOf(search.visibility, ["public", "private"] as const),
     specPath: asText(search.specPath),
     branch: asText(search.branch),
     outputMode: oneOf(search.outputMode, ["same", "separate"] as const),
-    outputRepo: asText(search.outputRepo),
+    outputRepo: asRepo(search.outputRepo),
   };
 }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { AppError, failureFeedback } from "@/lib/api/appError";
 import { usePermission } from "@/lib/auth/permissions";
@@ -12,6 +12,7 @@ import { SpecStep } from "./SpecStep";
 import {
   defaultValues,
   type NewProjectSearch,
+  type RepoMode,
   type StepErrors,
   toCreateRequest,
   validateStep,
@@ -54,10 +55,25 @@ function Wizard({ orgId, search, onSearchChange, onCreated }: NewProjectFlowProp
   const create = useCreateProject(orgId);
   const owner = useMe().data?.orgs.find((org) => org.orgId === orgId)?.slug ?? "";
   const mode = useWatch({ control: form.control, name: "mode" });
+  const repo = useWatch({ control: form.control, name: "repo" });
   const name = useWatch({ control: form.control, name: "name" });
   const takenMessage = useNameCheck(orgId, owner, mode, name);
-  const [conflict, setConflict] = useState<string>();
+  const [refusal, setRefusal] = useState<{ message: string; mode: RepoMode; repo: string; name: string }>();
+  // A 409 is about one repository or name. Once either changes, the banner no longer describes the form.
+  const conflict =
+    refusal && refusal.mode === mode && refusal.repo === repo && refusal.name === name ? refusal.message : undefined;
   const step = search.step;
+
+  // Editing a field clears its stored error. Nothing re-checks an error until the next Next or Finish, so a fixed
+  // value would otherwise keep showing one. Only the fields that changed since the last render are cleared.
+  const values = useWatch({ control: form.control });
+  const seen = useRef(values);
+  useEffect(() => {
+    for (const field of Object.keys(values) as (keyof WizardValues)[]) {
+      if (values[field] !== seen.current[field]) form.clearErrors(field);
+    }
+    seen.current = values;
+  }, [values, form]);
 
   /** Writes a step. The form's values travel with it, so a refresh keeps what was typed at each step change. */
   function goTo(next: WizardStep) {
@@ -86,13 +102,14 @@ function Wizard({ orgId, search, onSearchChange, onCreated }: NewProjectFlowProp
       if (first !== step) goTo(first);
       return;
     }
-    setConflict(undefined);
+    setRefusal(undefined);
     create.mutate(toCreateRequest(values, owner), {
       onSuccess: onCreated,
       onError: (error) => {
         // A 409 means the repository is already taken: the fix is on step 1, so the wizard goes back there.
         if (error instanceof AppError && error.status === 409) {
-          setConflict(error.detail ?? "This repository is already in use.");
+          const message = error.detail ?? "This repository is already in use.";
+          setRefusal({ message, mode: values.mode, repo: values.repo, name: values.name });
           if (step !== 1) goTo(1);
           return;
         }

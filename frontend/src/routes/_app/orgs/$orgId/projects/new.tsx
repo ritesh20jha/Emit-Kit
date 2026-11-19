@@ -19,7 +19,7 @@ function NewProjectPage() {
       onSearchChange={(next) => void navigate({ search: next })}
       onCreated={(project) => {
         // The config page arrives with WEB-10, so the typed router does not know this path yet.
-        void navigate({ to: `/projects/${project.id}/config` as "/", search: { welcome: 1 } });
+        void navigate({ to: `/projects/${project.id}/config` as "/", search: { welcome: 1 }, replace: true });
       }}
     />
   );
