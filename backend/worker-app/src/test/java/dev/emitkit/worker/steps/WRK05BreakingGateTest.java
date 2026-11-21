@@ -7,6 +7,7 @@ import static dev.emitkit.domain.StepName.PACKAGE_ARTIFACT;
 import static dev.emitkit.domain.StepName.RUN_GENERATORS;
 import static dev.emitkit.domain.StepName.SYNTAX_CHECK;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.BreakingGate;
@@ -35,6 +36,7 @@ import dev.emitkit.spec.diff.OpRef;
 import dev.emitkit.spec.diff.SpecDiff;
 import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.worker.pipeline.CancellationRegistry;
+import dev.emitkit.worker.pipeline.CancelledException;
 import dev.emitkit.worker.pipeline.PipelineRunner;
 import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
@@ -88,6 +90,16 @@ class WRK05BreakingGateTest {
                       new Change(ChangeKind.PARAM_ADDED, "query.cursor", false)))));
 
   private static final int BREAKING = 2;
+
+  /** Only non-breaking changes: an added operation and an added optional parameter. */
+  private static final SpecDiff NON_BREAKING =
+      new SpecDiff(
+          List.of(new OpRef("createPet", "POST", "/pets")),
+          List.of(),
+          List.of(
+              new OpChange(
+                  new OpRef("listPets", "GET", "/pets"),
+                  List.of(new Change(ChangeKind.PARAM_ADDED, "query.cursor", false)))));
 
   private static final Instant T3 = Instant.parse("2026-11-03T10:00:00Z");
   private static final AtomicLong SEQUENCE = new AtomicLong();
@@ -174,10 +186,16 @@ class WRK05BreakingGateTest {
     assertThat(log.infos)
         .contains("Breaking: `DELETE /pets/{id} (deletePet)` removed")
         .contains("Breaking: `GET /pets (listPets)` param removed at `query.limit`");
+    assertThat(log.flushes).isEqualTo(1);
   }
 
+  /**
+   * Drives a real PipelineRunner through a park and a resume. The first delivery parks at
+   * BREAKING_GATE. After approval, the redelivery skips the steps with saved outputs, runs the real
+   * gate, which continues, and reaches RUN_GENERATORS.
+   */
   @Test
-  void approvedResume_runnerSkipsSavedStepsAndReachesRunGenerators() {
+  void approvedResume_continuesToRunGenerators() {
     config.setBreakingGate(BreakingGate.REQUIRE_APPROVAL);
     configs.saveAndFlush(config); // the runner loads the config from the database
     String runId = runWithDiff(RunStatus.RUNNING).getId();
@@ -292,12 +310,57 @@ class WRK05BreakingGateTest {
     };
   }
 
+  @Test
+  void cancelRequested_throwsWithoutParking() {
+    config.setBreakingGate(BreakingGate.REQUIRE_APPROVAL);
+    GenerationRun run = runWithDiff(RunStatus.RUNNING);
+    run.setCancelRequested(true);
+    runs.saveAndFlush(run);
+    String runId = run.getId();
+
+    assertThatThrownBy(() -> gate.execute(context(reload(runId), new RecordingLog())))
+        .isInstanceOf(CancelledException.class);
+    assertThat(approvalOf(runId)).isEmpty();
+    assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.RUNNING);
+  }
+
+  @Test
+  void noBreakingChanges_continuesWithoutApproval() {
+    String runId = runWith(NON_BREAKING, RunStatus.RUNNING).getId();
+
+    config.setBreakingGate(BreakingGate.REQUIRE_APPROVAL);
+    assertThat(gate.execute(context(reload(runId), new RecordingLog())))
+        .isEqualTo(new StepResult.Continue(new BreakingGateStep.Output(0)));
+    config.setBreakingGate(BreakingGate.BLOCK);
+    assertThat(gate.execute(context(reload(runId), new RecordingLog())))
+        .isEqualTo(new StepResult.Continue(new BreakingGateStep.Output(0)));
+
+    assertThat(approvalOf(runId)).isEmpty();
+    assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.RUNNING);
+  }
+
+  @Test
+  void terminalRun_parksWithoutWriting() {
+    config.setBreakingGate(BreakingGate.REQUIRE_APPROVAL);
+    String runId = runWithDiff(RunStatus.CANCELLED).getId();
+
+    assertThat(gate.execute(context(reload(runId), new RecordingLog())))
+        .isEqualTo(new StepResult.Park());
+    assertThat(approvalOf(runId)).isEmpty();
+    assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.CANCELLED);
+  }
+
   /** A RUNNING run of the project whose saved diff is {@link #DIFF}. */
   private GenerationRun runWithDiff(RunStatus status) {
+    return runWith(DIFF, status);
+  }
+
+  /** A run of the project, in {@code status}, whose saved diff is {@code diff}. */
+  private GenerationRun runWith(SpecDiff diff, RunStatus status) {
     GenerationRun run =
         new GenerationRun(null, project.getId(), config.getId(), RunTrigger.MANUAL, false, T3);
     run.setStatus(status);
-    run.setDiffSummary(JSON.writeValueAsString(DIFF));
+    run.setDiffSummary(JSON.writeValueAsString(diff));
     return runs.saveAndFlush(run);
   }
 
@@ -338,6 +401,7 @@ class WRK05BreakingGateTest {
   private static final class RecordingLog implements RunLogger {
     final List<String> infos = new ArrayList<>();
     final List<String> warnings = new ArrayList<>();
+    int flushes;
 
     @Override
     public void info(String message) {
@@ -359,7 +423,9 @@ class WRK05BreakingGateTest {
     public void step(StepName step) {}
 
     @Override
-    public void flush() {}
+    public void flush() {
+      flushes++;
+    }
 
     @Override
     public void done() {}

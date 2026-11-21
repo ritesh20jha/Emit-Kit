@@ -10,6 +10,7 @@ import dev.emitkit.domain.RunApprovalRepository;
 import dev.emitkit.domain.RunStatus;
 import dev.emitkit.domain.StepName;
 import dev.emitkit.spec.diff.SpecDiff;
+import dev.emitkit.worker.pipeline.CancelledException;
 import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
 import dev.emitkit.worker.pipeline.StepResult;
@@ -89,6 +90,8 @@ public class BreakingGateStep implements PipelineStep {
       case PENDING -> {
         ctx.log().warn(count + " breaking changes; waiting for approval");
         breaking.forEach(line -> ctx.log().info(line.text()));
+        // The lines are saved before the run stops, since the runner does not flush them on Park.
+        ctx.log().flush();
         yield new StepResult.Park();
       }
       case RUN_FINISHED -> new StepResult.Park();
@@ -98,7 +101,8 @@ public class BreakingGateStep implements PipelineStep {
   /**
    * In one transaction: reads the run's approval under the run's lock. Creates the pending approval
    * if there is none, and marks the run AWAITING_APPROVAL. Writes nothing if the run has become
-   * terminal, or if a decision is already recorded.
+   * terminal, or if a decision is already recorded. Throws {@link CancelledException}, and writes
+   * nothing, if the run has been asked to stop.
    */
   private Approval requestApproval(String runId) {
     Approval outcome =
@@ -107,6 +111,9 @@ public class BreakingGateStep implements PipelineStep {
                 .map(run -> {
                   if (run.getStatus().isTerminal()) {
                     return Approval.RUN_FINISHED;
+                  }
+                  if (run.isCancelRequested()) {
+                    throw new CancelledException(runId);
                   }
                   Optional<RunApproval> approval = approvals.findByRunId(runId);
                   Decision decision = approval.map(RunApproval::getDecision).orElse(null);
