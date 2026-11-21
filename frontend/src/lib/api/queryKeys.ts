@@ -31,4 +31,8 @@ export const qk = {
     files: (id: string) => ["runs", id, "files"],
   },
   versions: (projectId: string) => ["projects", projectId, "versions"],
+  /** Lint issues for one text. The text is the key, so an unchanged text is linted once. */
+  lint: (content: string) => ["lint", content],
+  /** Browser-side validation findings for one text. */
+  validation: (content: string) => ["validation", content],
 };
