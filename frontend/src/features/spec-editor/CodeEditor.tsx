@@ -76,13 +76,18 @@ function extensionsFor(format: string, handlers: { current: Handlers }): Extensi
     search({ top: true }),
     syntaxHighlighting(highlight),
     highlightActiveLine(),
-    format === "json" ? json() : yaml(),
+    languageFor(format),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) handlers.current.onChange(update.state.doc.toString());
     }),
     theme,
   ];
+}
+
+/** The language for a spec's format: JSON or YAML. The merge view uses it too. */
+export function languageFor(format: string): Extension {
+  return format === "json" ? json() : yaml();
 }
 
 /** Syntax colours are design tokens too, so dark mode keeps their contrast. */
@@ -97,7 +102,7 @@ const highlight = HighlightStyle.define([
 ]);
 
 /** Colours come from the design tokens, so the editor follows light and dark mode with the rest of the app. */
-const theme = EditorView.theme({
+export const theme = EditorView.theme({
   "&": { height: "100%", color: "var(--color-fg)", backgroundColor: "var(--color-bg)", fontSize: "13px" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "20px" },
   ".cm-content": { caretColor: "var(--color-fg)" },

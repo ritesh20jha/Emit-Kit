@@ -12,16 +12,23 @@ export type SaveSpecResponse = components["schemas"]["SaveSpecResponse"];
 export type LintIssue = components["schemas"]["LintIssue"];
 export type RunDetail = components["schemas"]["RunDetail"];
 
+async function fetchSpec(projectId: string): Promise<SpecResponse> {
+  const { data, error, response } = await api.GET("/projects/{id}/spec", { params: { path: { id: projectId } } });
+  if (!response.ok) throw toAppError(response, error);
+  return data as SpecResponse;
+}
+
 /** The project's spec file: its text, its format and the sha a save must name as its base. */
 export function specQuery(projectId: string) {
-  return queryOptions({
-    queryKey: qk.projects.spec(projectId),
-    queryFn: async (): Promise<SpecResponse> => {
-      const { data, error, response } = await api.GET("/projects/{id}/spec", { params: { path: { id: projectId } } });
-      if (!response.ok) throw toAppError(response, error);
-      return data as SpecResponse;
-    },
-  });
+  return queryOptions({ queryKey: qk.projects.spec(projectId), queryFn: () => fetchSpec(projectId) });
+}
+
+/**
+ * The server's spec, read fresh when a save conflicts. Keyed by the sha the conflict named, so a new conflict
+ * reads again, and it is its own entry, so the editor's cached spec is not overwritten.
+ */
+export function currentSpecQuery(projectId: string, sha: string) {
+  return queryOptions({ queryKey: qk.projects.currentSpec(projectId, sha), queryFn: () => fetchSpec(projectId), staleTime: 0 });
 }
 
 /** Lint issues for one text, from the server. The text is the key, and the result never goes stale. */

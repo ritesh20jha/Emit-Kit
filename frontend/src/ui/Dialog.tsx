@@ -9,6 +9,8 @@ const PANEL = "fixed z-50 flex flex-col gap-4 border-border-control bg-bg p-5 te
 const CENTER =
   "left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-card border motion-safe:animate-dialog-in";
 
+const CENTER_WIDE = CENTER.replace("max-w-md", "max-w-5xl");
+
 export interface DialogFrameProps {
   open?: boolean;
   defaultOpen?: boolean;
@@ -100,9 +102,12 @@ export function DialogFrame({
   );
 }
 
-export type DialogProps = Omit<DialogFrameProps, "panelClassName">;
+export type DialogProps = Omit<DialogFrameProps, "panelClassName"> & {
+  /** A wider panel, for side-by-side content such as a merge view. */
+  wide?: boolean;
+};
 
 /** A centred modal. Focus is trapped inside while it is open. */
-export function Dialog(props: DialogProps) {
-  return <DialogFrame {...props} panelClassName={CENTER} />;
+export function Dialog({ wide, ...props }: DialogProps) {
+  return <DialogFrame {...props} panelClassName={wide ? CENTER_WIDE : CENTER} />;
 }
