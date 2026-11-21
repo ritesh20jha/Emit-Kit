@@ -24,7 +24,7 @@ export const V1_ROUTES: readonly V1Route[] = [
   { path: `/projects/${PROJECT}/editor`, ready: (page) => page.getByRole('textbox', { name: 'OpenAPI spec' }) },
   { path: `/projects/${PROJECT}/diff?from=s1&to=s2`, ready: (page) => page.getByText('Breaking changes', { exact: true }) },
   { path: `/projects/${PROJECT}/config`, ready: (page) => page.getByLabel('Output directory', { exact: true }) },
-  { path: `/projects/${PROJECT}/versions`, ready: (page) => page.getByRole('heading', { name: 'Version history' }) },
+  { path: `/projects/${PROJECT}/versions`, ready: (page) => page.getByRole('button', { name: '1.4.0', exact: true }) },
   { path: `/projects/${PROJECT}/settings`, ready: (page) => page.getByText('Danger zone', { exact: true }) },
   { path: `/runs/${RUN}`, ready: (page) => page.getByText('Fetched openapi/billing.yaml at a1b2c3d') },
   { path: `/runs/${RUN}/logs`, ready: (page) => page.getByText('Fetched openapi/billing.yaml at a1b2c3d') },
