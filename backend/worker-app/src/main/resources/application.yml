@@ -8,14 +8,14 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:emitkit}
     hikari:
       # Four listener threads, each holding a run's advisory-lock connection plus a connection for
-      # its work (4 x 2 = 8), with headroom for the flush and cancel paths.
+      # its work (4 x 2 = 8), with headroom.
       maximum-pool-size: 20
       # RunLock needs auto-commit: its advisory lock is held by the session, outside any transaction.
       auto-commit: true
       # Hikari reads this as a plain number of milliseconds (10 s).
       connection-timeout: 10000
-  # Worker role: the Postgres idle_session_timeout must stay off for this role. A session that is
-  # idle long enough would be closed by the server, silently dropping its advisory lock.
+      # The advisory run lock lives on an idle connection; a server-side idle timeout would silently drop it.
+      connection-init-sql: SET idle_session_timeout = 0
   jpa:
     hibernate:
       ddl-auto: validate
