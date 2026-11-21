@@ -1,0 +1,67 @@
+name: E2E Backend
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'deploy/docker/toolchain/**'
+      - '.github/workflows/e2e-backend.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Same pinned, sha256-checked runsc install as backend.yml. The sandbox runs under gVisor (spec 5.6).
+      - name: Install gVisor runsc
+        env:
+          RUNSC_VERSION: '20261102.0'
+          RUNSC_SHA256: 81e3ecc4bb0d3eb321f5cf357e97a26daea91c6dc70ec30c9240cd481e6cf2da
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/runsc.deb" "https://storage.googleapis.com/gvisor/releases/pool/${RUNSC_VERSION}/binary-amd64/runsc.deb"
+          echo "${RUNSC_SHA256}  $RUNNER_TEMP/runsc.deb" | sha256sum -c -
+          sudo dpkg -i "$RUNNER_TEMP/runsc.deb"
+          sudo runsc install
+          sudo systemctl restart docker
+          timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+          docker info --format '{{json .Runtimes}}'
+
+      - name: Build toolchain image
+        run: docker build -t emitkit/toolchain:test deploy/docker/toolchain
+
+      # required=true: a missing image or runtime fails the job instead of skipping the test.
+      - name: Run pipeline end-to-end test
+        working-directory: backend
+        run: >-
+          ./gradlew :worker-app:test --tests '*WRK12PipelineE2EIT*'
+          -De2e.required=true
+          -Dsandbox.runtime=runsc
+
+      - name: Upload Gradle test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-test-reports
+          path: backend/worker-app/build/reports/tests
+          if-no-files-found: ignore
