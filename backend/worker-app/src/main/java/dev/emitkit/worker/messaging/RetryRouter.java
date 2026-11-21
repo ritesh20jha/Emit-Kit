@@ -43,12 +43,30 @@ class RetryRouter {
 
   /** Routes {@code job}, whose delivery failed with {@code failure}. */
   void route(GenerationJob job, TransientException failure) {
-    int next = job.attempt() + 1;
+    int next = currentAttempt(job) + 1;
     if (next > Queues.MAX_ATTEMPTS) {
       giveUp(job, failure);
     } else {
       retry(job, next);
     }
+  }
+
+  /**
+   * Parks {@code job} unchanged on the first retry queue, for a delivery that found its run locked
+   * by another worker.
+   */
+  void repark(GenerationJob job) {
+    rabbit.convertAndSend("", Queues.retryQueueFor(1), job);
+  }
+
+  /**
+   * The highest attempt seen for the job's run. A redelivered job can carry an attempt older than
+   * the run's, so the run's count wins when it is higher.
+   */
+  private int currentAttempt(GenerationJob job) {
+    return runs.findById(job.runId())
+        .map(run -> Math.max(job.attempt(), run.getAttempt()))
+        .orElse(job.attempt());
   }
 
   private void retry(GenerationJob job, int next) {
@@ -64,7 +82,7 @@ class RetryRouter {
 
   private void giveUp(GenerationJob job, TransientException failure) {
     String runId = job.runId();
-    String message = "Gave up after " + Queues.MAX_ATTEMPTS + " attempts: " + failure.getMessage();
+    String message = "Gave up after " + Queues.MAX_ATTEMPTS + " retries: " + failure.getMessage();
     boolean failed =
         RunUpdates.ifRunning(
             transactions,

@@ -73,7 +73,11 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @SpringBootTest(
     classes = WRK05BreakingGateTest.TestApp.class,
-    properties = {"spring.jpa.hibernate.ddl-auto=validate", "emitkit.vault.cipher=local"})
+    properties = {
+      "spring.jpa.hibernate.ddl-auto=validate",
+      "spring.flyway.enabled=true",
+      "emitkit.vault.cipher=local"
+    })
 @Testcontainers
 class WRK05BreakingGateTest {
 

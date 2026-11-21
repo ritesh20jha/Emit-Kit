@@ -63,6 +63,7 @@ import tools.jackson.databind.json.JsonMapper;
     classes = WRK02RunLoggerIT.TestApp.class,
     properties = {
       "spring.jpa.hibernate.ddl-auto=validate",
+      "spring.flyway.enabled=true",
       "emitkit.vault.cipher=local",
       "emitkit.worker.pipeline.enabled=true"
     })

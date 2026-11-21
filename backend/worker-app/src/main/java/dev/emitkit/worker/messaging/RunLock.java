@@ -49,7 +49,12 @@ class RunLock {
       Connection connection = dataSource.getConnection();
       // Manual-commit mode would leave a pooled session idle in a transaction while it holds the
       // lock.
-      connection.setAutoCommit(true);
+      try {
+        connection.setAutoCommit(true);
+      } catch (SQLException e) {
+        closeQuietly(connection);
+        throw e;
+      }
       return connection;
     } catch (SQLException e) {
       throw new DataAccessResourceFailureException("no connection for the run lock", e);
@@ -94,7 +99,10 @@ class RunLock {
       this.runId = runId;
     }
 
-    /** Releases the lock; if that fails, drops all of the connection's locks. */
+    /**
+     * Releases the lock; if that fails, drops all of the connection's locks. The connection is
+     * returned to the pool either way.
+     */
     @Override
     public void close() {
       try {
@@ -110,7 +118,7 @@ class RunLock {
     private boolean unlock() {
       try {
         return queryBoolean(connection, UNLOCK, runId);
-      } catch (SQLException e) {
+      } catch (SQLException | RuntimeException e) {
         LOG.warn("could not release the lock of generation run {}", runId, e);
         return false;
       }

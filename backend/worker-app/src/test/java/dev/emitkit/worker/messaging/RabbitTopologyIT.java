@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.rabbitmq.RabbitMQContainer;
 
 // runc under the test profile: the sandbox startup check must not need a sandbox daemon.
@@ -27,11 +28,16 @@ import org.testcontainers.rabbitmq.RabbitMQContainer;
       "emitkit.worker.listener.enabled=false",
       "emitkit.worker.retry-ttls=200ms,200ms,200ms",
       "emitkit.vault.cipher=local",
-      "emitkit.sandbox.runtime=runc"
+      "emitkit.sandbox.runtime=runc",
+      "spring.flyway.enabled=true"
     })
 @ActiveProfiles("test")
 @Testcontainers
 class RabbitTopologyIT {
+
+  // The full worker context now needs a schema, so PostgreSQL runs alongside RabbitMQ.
+  @Container @ServiceConnection
+  static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine");
 
   @Container @ServiceConnection
   static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:4.4.0-management-alpine");
