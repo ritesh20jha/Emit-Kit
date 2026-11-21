@@ -170,7 +170,7 @@ public final class CommitOutputStep implements PipelineStep {
   }
 
   /** The spec diff of the run, or an empty diff when none was recorded. */
-  private static SpecDiff parseDiff(@Nullable String json) {
+  static SpecDiff parseDiff(@Nullable String json) {
     if (json == null || json.isBlank()) {
       return SpecDiff.empty();
     }
