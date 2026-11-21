@@ -17,32 +17,32 @@ export function RunPage({ runId, children }: { runId: string; children: ReactNod
   );
 }
 
-/** The project supplies the org, which decides what the user may do on this run. */
+/** The project supplies the org, which decides what the user may do on this run. Nothing below shows until it loads, so no action is judged without an org. */
 function RunLayout({ run, children }: { run: RunDetail; children: ReactNode }) {
   const project = useQuery(projectQuery(run.projectId));
-  const orgId = project.data?.orgId ?? "";
-  const crumbs = project.data
-    ? [{ label: "Projects", to: `/orgs/${orgId}` }, { label: project.data.repoFullName, to: `/projects/${run.projectId}` }, { label: "Run" }]
-    : [{ label: "Project" }];
   const base = `/runs/${run.id}`;
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <Breadcrumbs items={crumbs} />
-        <RunHeader run={run} orgId={orgId} />
-      </div>
-      <ApprovalBanner run={run} orgId={orgId} />
-      <StepTimeline runId={run.id} steps={run.steps} />
-      <RouteTabs
-        label="Run sections"
-        tabs={[
-          { to: base, label: "Logs" },
-          { to: `${base}/files`, label: "Files" },
-          { to: `${base}/lint`, label: "Lint" },
-          { to: `${base}/changes`, label: "Changes" },
-        ]}
-      />
-      {children}
-    </div>
+    <QueryBody query={project} label="the project" noAccess="view this project">
+      {({ orgId, repoFullName }) => (
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-3">
+            <Breadcrumbs items={[{ label: "Projects", to: `/orgs/${orgId}` }, { label: repoFullName, to: `/projects/${run.projectId}` }, { label: "Run" }]} />
+            <RunHeader run={run} orgId={orgId} />
+          </div>
+          <ApprovalBanner run={run} orgId={orgId} />
+          <StepTimeline runId={run.id} steps={run.steps} />
+          <RouteTabs
+            label="Run sections"
+            tabs={[
+              { to: base, label: "Logs" },
+              { to: `${base}/files`, label: "Files" },
+              { to: `${base}/lint`, label: "Lint" },
+              { to: `${base}/changes`, label: "Changes" },
+            ]}
+          />
+          {children}
+        </div>
+      )}
+    </QueryBody>
   );
 }

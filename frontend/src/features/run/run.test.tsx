@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse, type RequestHandler } from "msw";
 import { beforeEach, expect, test } from "vitest";
 import type { components } from "@/lib/api/generated/schema";
-import { projectHandlers } from "@/test/msw/handlers/projects";
+import { project, projectHandlers } from "@/test/msw/handlers/projects";
 import { server } from "@/test/msw/server";
 import { renderRoute, stubViewport } from "@/test/renderRoute";
 
@@ -91,6 +91,39 @@ test("editor sees waiting message, no buttons", async () => {
   expect(await screen.findByText(/waiting for an admin to approve/i)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /approve|reject/i })).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/comment/i)).not.toBeInTheDocument();
+});
+
+test("admin sees Approve, not the waiting message, once the project loads", async () => {
+  let releaseProject = () => {};
+  const projectLoaded = new Promise<void>((resolve) => (releaseProject = resolve));
+  serveRun(
+    detail({ status: "AWAITING_APPROVAL", finishedAt: null }),
+    http.get("/api/v1/projects/:id", async () => {
+      await projectLoaded;
+      return HttpResponse.json(project);
+    }),
+  );
+  renderRoute("/runs/r1");
+
+  await screen.findByText(/loading the project/i);
+  expect(screen.queryByText(/waiting for an admin/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+
+  releaseProject();
+  expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+  expect(screen.queryByText(/waiting for an admin/i)).not.toBeInTheDocument();
+});
+
+test("a failed project query shows an error, not the waiting message", async () => {
+  serveRun(
+    detail({ status: "AWAITING_APPROVAL", finishedAt: null }),
+    http.get("/api/v1/projects/:id", () => HttpResponse.json({ code: "INTERNAL", detail: "Project unavailable" }, { status: 500 })),
+  );
+  renderRoute("/runs/r1");
+
+  expect(await screen.findByText("Project unavailable")).toBeInTheDocument();
+  expect(screen.queryByText(/waiting for an admin/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /approve|reject|cancel run/i })).not.toBeInTheDocument();
 });
 
 test("files tab selects file from ?path", async () => {
