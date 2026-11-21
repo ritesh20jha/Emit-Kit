@@ -62,16 +62,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-/**
- * RUN-03: the stored log of a run, and the live stream over Redis. The timings are cut down so the
- * waits are short.
- */
+/** RUN-03: the stored log of a run and its live stream. Timings are cut down for the tests. */
 @SpringBootTest(
     properties = {
       "emitkit.vault.cipher=local",
@@ -79,7 +77,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
       GitHubTestCredentials.CLIENT_SECRET,
       "emitkit.logs.heartbeat=300ms",
       "emitkit.logs.gap-timeout=2s",
-      "emitkit.logs.terminal-grace=1s"
+      "emitkit.logs.terminal-grace=3s"
     })
 @AutoConfigureMockMvc
 @Import({RedisTestConfig.class, PostgresTestConfig.class})
@@ -161,6 +159,12 @@ class RUN03LogStreamIT {
     mvc.perform(get(LOGS, f.runId()).with(signedInAs(stranger)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail").value("run not found"));
+    mvc.perform(
+            get(STREAM, "01MISSINGRUN0000000000000A")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .with(signedInAs(f.owner())))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("NOT_FOUND"));
   }
 
   // ---- GET /logs/stream ----------------------------------------------------------------------
@@ -290,10 +294,7 @@ class RUN03LogStreamIT {
     assertCompleted(stream);
   }
 
-  /**
-   * A line whose predecessor is not saved yet waits for the worker's flush. A gap that is never
-   * filled is sent past once the wait is over, so the stream keeps going.
-   */
+  /** A seq gap waits for the worker's flush; a gap never filled is sent past after the wait. */
   @Test
   void gapInLive_isFilledFromTheDatabase_orSentPastAfterTheWait() throws Exception {
     Fixture f = fixture(RUNNING, null);

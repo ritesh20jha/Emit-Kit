@@ -28,11 +28,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter.SseEventBuilder;
 
 /**
- * Streams a run's log lines. A stream subscribes to the run's channel, replays the stored lines
- * after the client's last seq, then sends the live lines in seq order, never twice. The worker
- * publishes a line before it saves it, so a live line can run ahead of the database: a seq gap is
- * filled from the database for a bounded wait. Each stream works on its own serial queue, so a slow
- * client stalls only its own stream.
+ * Streams a run's log lines: stored lines replayed, then live lines in seq order, never twice. A
+ * seq gap is filled from the database for a bounded wait, since the worker saves lines after
+ * publishing.
  */
 @Service
 public class LogStreamService {
@@ -97,8 +95,8 @@ public class LogStreamService {
   }
 
   /**
-   * One open stream. Its state and emitter are touched only on {@link #serial}, one step at a time.
-   * The Redis dispatch thread, the timers and the emitter callbacks only queue work or close.
+   * One open stream. Its state is touched only on {@link #serial}; other threads just queue or
+   * close.
    */
   private final class Stream {
 
@@ -134,7 +132,7 @@ public class LogStreamService {
 
     SseEmitter open() {
       emitter.onCompletion(this::close);
-      emitter.onTimeout(this::close);
+      emitter.onTimeout(emitter::complete); // not an error response
       emitter.onError(error -> close());
       submit(this::start);
       return emitter;
@@ -219,6 +217,7 @@ public class LogStreamService {
               runId,
               lastSent + 1,
               first - 1);
+          gapSince = 0;
         }
         send(pending.pollFirstEntry().getValue());
       }
@@ -271,9 +270,8 @@ public class LogStreamService {
     }
 
     /**
-     * The run has ended, but the worker may still be saving its last lines, since it sets the
-     * status first. Done goes out when the worker's done message arrives, after a grace, or at once
-     * if the run ended long ago.
+     * The worker sets the status before it saves its last lines, so done waits for its done message
+     * or a grace, unless the run ended long ago.
      */
     private void beginEnding(GenerationRun run) {
       if (ending) {
@@ -291,6 +289,9 @@ public class LogStreamService {
     /** Heartbeat, and the check for a run that ended without its done message. */
     private void tick() {
       if (!finished && write(SseEmitter.event().comment("heartbeat"))) {
+        // Lines flushed since the subscription surface here, one heartbeat late.
+        readStored();
+        drain();
         GenerationRun ended = ending ? null : endedRun();
         if (ended != null) {
           beginEnding(ended);

@@ -103,7 +103,8 @@ public class ProblemDetailsAdvice extends ResponseEntityExceptionHandler {
       WebRequest request) {
     ResponseEntity<Object> response =
         super.handleExceptionInternal(ex, body, headers, statusCode, request);
-    if (response.getBody() instanceof ProblemDetail pd
+    if (response != null
+        && response.getBody() instanceof ProblemDetail pd
         && (pd.getProperties() == null || !pd.getProperties().containsKey("code"))) {
       ErrorCode code = fallbackCode(pd.getStatus());
       pd.setType(URI.create(TYPE_BASE + code.name()));
