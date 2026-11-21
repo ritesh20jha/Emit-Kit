@@ -80,7 +80,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @SpringBootTest(
     classes = WRK03FetchParseTest.TestApp.class,
-    properties = {"spring.jpa.hibernate.ddl-auto=validate", "emitkit.vault.cipher=local"})
+    properties = {
+      "spring.jpa.hibernate.ddl-auto=validate",
+      "spring.flyway.enabled=true",
+      "emitkit.vault.cipher=local"
+    })
 @Testcontainers
 class WRK03FetchParseTest {
 

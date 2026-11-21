@@ -87,6 +87,7 @@ import org.testcontainers.utility.DockerImageName;
     classes = WRK11RetryCancelIT.TestApp.class,
     properties = {
       "spring.jpa.hibernate.ddl-auto=validate",
+      "spring.flyway.enabled=true",
       "emitkit.vault.cipher=local",
       "emitkit.worker.pipeline.enabled=true",
       "emitkit.worker.retry-ttls=200ms,200ms,200ms"

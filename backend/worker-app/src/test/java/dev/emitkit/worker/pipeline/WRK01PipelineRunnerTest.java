@@ -98,7 +98,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @SpringBootTest(
     classes = WRK01PipelineRunnerTest.TestApp.class,
-    properties = {"spring.jpa.hibernate.ddl-auto=validate", "emitkit.vault.cipher=local"})
+    properties = {
+      "spring.jpa.hibernate.ddl-auto=validate",
+      "spring.flyway.enabled=true",
+      "emitkit.vault.cipher=local"
+    })
 @Testcontainers
 class WRK01PipelineRunnerTest {
 
