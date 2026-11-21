@@ -40,6 +40,7 @@ import dev.emitkit.worker.pipeline.CancelledException;
 import dev.emitkit.worker.pipeline.PipelineRunner;
 import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
+import dev.emitkit.worker.pipeline.RunLogger;
 import dev.emitkit.worker.pipeline.StepResult;
 import dev.emitkit.worker.steps.CalcVersionStep;
 import dev.emitkit.worker.steps.FinalizeStep;
@@ -57,11 +58,16 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
@@ -75,6 +81,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
@@ -187,12 +194,14 @@ class WRK11RetryCancelIT {
   @Test
   void transientFailure_retriesWithNextAttempt() {
     AtomicInteger lintCalls = new AtomicInteger();
+    AtomicReference<RunLogger> firstLog = new AtomicReference<>();
     fakes.on(
         LINT_SPEC,
         ctx -> {
           int call = lintCalls.incrementAndGet();
           ctx.log().info("lint attempt " + call);
           if (call == 1) {
+            firstLog.set(ctx.log());
             throw new TransientException(ErrorCode.STORAGE_ERROR, "blip");
           }
           return new StepResult.Continue("LINT_SPEC-out");
@@ -206,11 +215,55 @@ class WRK11RetryCancelIT {
     assertThat(run.getAttempt()).isEqualTo(1);
     assertThat(lintCalls).hasValue(2);
     assertThat(fakes.vcs().calls("openPr")).hasSize(1);
-    // Both attempts' lines and the retry notice are stored, with distinct seqs.
+    // Both attempts' lines and the retry notice are stored, in one unbroken seq run.
     assertThat(logLines())
         .extracting(GenerationRunLog::getMessage)
         .contains("lint attempt 1", "Retrying in 200ms", "lint attempt 2");
-    assertThat(logLines()).extracting(GenerationRunLog::getSeq).doesNotHaveDuplicates();
+    assertSeqContiguous();
+    assertFlushStopped(firstLog.get());
+  }
+
+  @Test
+  void unexpectedException_failsTheRunAsInternal_andKeepsItsDetailOut() {
+    AtomicReference<RunLogger> logger = new AtomicReference<>();
+    fakes.on(
+        LINT_SPEC,
+        ctx -> {
+          logger.set(ctx.log());
+          ctx.log().info("before the crash");
+          throw new RuntimeException("secret detail");
+        });
+
+    publish(new GenerationJob(runId, 0));
+
+    awaitTerminal();
+    GenerationRun run = reload();
+    assertThat(run.getStatus()).isEqualTo(RunStatus.FAILED);
+    assertThat(run.getFailureCode()).isEqualTo("INTERNAL");
+    assertThat(run.getFailureMessage()).isEqualTo("Internal error");
+    assertThat(run.getFinishedAt()).isNotNull();
+    assertThat(logLines())
+        .extracting(GenerationRunLog::getMessage)
+        .contains("before the crash", "Internal error")
+        .noneMatch(message -> message.contains("secret detail"));
+    assertSeqContiguous();
+    assertFlushStopped(logger.get());
+  }
+
+  @Test
+  void exceptionEscapingOnJob_isNackedAndRunCompletesOnRedelivery() {
+    // The first delivery's lock attempt fails; the second finds the lock free.
+    fakes.failNextLock(runId);
+
+    publish(new GenerationJob(runId, 0));
+
+    // Requeued only after the 5 s pause, so the run cannot finish inside it.
+    await()
+        .atLeast(Duration.ofSeconds(4))
+        .atMost(Duration.ofSeconds(20))
+        .until(() -> reload().getStatus().isTerminal());
+    assertThat(reload().getStatus()).isEqualTo(RunStatus.SUCCESS);
+    assertThat(fakes.vcs().calls("openPr")).hasSize(1);
   }
 
   @Test
@@ -242,7 +295,14 @@ class WRK11RetryCancelIT {
     fakes.vcs().createBranch(repo, branch, fakes.vcs().branchHead(repo, "main"));
     updateRun(r -> r.setBranchName(branch));
     AtomicBoolean killed = new AtomicBoolean();
-    fakes.on(SYNTAX_CHECK, ctx -> blockUntilCancelled(ctx, killed));
+    AtomicReference<RunLogger> logger = new AtomicReference<>();
+    fakes.on(
+        SYNTAX_CHECK,
+        ctx -> {
+          logger.set(ctx.log());
+          ctx.log().info("syntax check started");
+          return blockUntilCancelled(ctx, killed);
+        });
 
     publish(new GenerationJob(runId, 0));
     await().atMost(Duration.ofSeconds(10)).until(() -> reload().getCurrentStep() == SYNTAX_CHECK);
@@ -256,6 +316,8 @@ class WRK11RetryCancelIT {
     assertThat(killed).isTrue();
     assertThat(fakes.vcs().branches(repo)).doesNotContain(branch);
     assertThat(reload().getFinishedAt()).isNotNull();
+    assertSeqContiguous();
+    assertFlushStopped(logger.get());
   }
 
   @Test
@@ -388,6 +450,31 @@ class WRK11RetryCancelIT {
     return logs.findByRunIdAndSeqGreaterThanOrderBySeq(runId, 0);
   }
 
+  /** The saved lines carry seqs 1..n in order: no duplicates and no gaps. */
+  private void assertSeqContiguous() {
+    List<Integer> seqs = logLines().stream().map(GenerationRunLog::getSeq).toList();
+    assertThat(seqs).isNotEmpty().isEqualTo(IntStream.rangeClosed(1, seqs.size()).boxed().toList());
+  }
+
+  /**
+   * A line written to a logger after its run exited is never saved: that logger's periodic flush
+   * has stopped. The flush interval is two seconds, so three seconds covers one more flush.
+   */
+  private void assertFlushStopped(RunLogger closed) {
+    // A probe line takes a seq the run may already hold, and the unique (run_id, seq) rejects that
+    // one. Four lines leave at least one seq past the run's last line, and that one is saved if the
+    // flush still runs.
+    for (int i = 0; i < 4; i++) {
+      closed.info("written after close " + i);
+    }
+    await()
+        .during(Duration.ofSeconds(3))
+        .atMost(Duration.ofSeconds(4))
+        .until(() ->
+            logLines().stream()
+                .noneMatch(line -> line.getMessage().startsWith("written after close")));
+  }
+
   private void publish(GenerationJob job) {
     rabbit.convertAndSend(Queues.JOBS_EXCHANGE, Queues.JOBS_ROUTING_KEY, job);
   }
@@ -415,15 +502,26 @@ class WRK11RetryCancelIT {
   static final class Fakes {
 
     private final Map<StepName, Behaviour> behaviour = new ConcurrentHashMap<>();
+    private final Set<String> failingLocks = ConcurrentHashMap.newKeySet();
     private volatile InMemoryVcsClient vcs = new InMemoryVcsClient();
 
     void reset() {
       behaviour.clear();
+      failingLocks.clear();
       vcs = new InMemoryVcsClient();
     }
 
     void on(StepName step, Behaviour next) {
       behaviour.put(step, next);
+    }
+
+    /** Makes the next lock attempt for {@code runId} throw, as a lost database connection would. */
+    void failNextLock(String runId) {
+      failingLocks.add(runId);
+    }
+
+    boolean takeLockFailure(String runId) {
+      return failingLocks.remove(runId);
     }
 
     InMemoryVcsClient vcs() {
@@ -478,7 +576,6 @@ class WRK11RetryCancelIT {
     ControlListener.class,
     RetryRouter.class,
     CancelCleanup.class,
-    RunLock.class,
     CancellationRegistry.class,
     RunLoggerFactory.class
   })
@@ -503,6 +600,20 @@ class WRK11RetryCancelIT {
                     case "toString" -> "fake VcsProvider";
                     default -> throw new UnsupportedOperationException(method.getName());
                   });
+    }
+
+    /** The real run lock, except that a run marked by {@link Fakes#failNextLock} fails once. */
+    @Bean
+    RunLock runLock(DataSource dataSource, Fakes fakes) {
+      return new RunLock(dataSource) {
+        @Override
+        Optional<RunLock.Lease> tryAcquire(String runId) {
+          if (fakes.takeLockFailure(runId)) {
+            throw new DataAccessResourceFailureException("db blip");
+          }
+          return super.tryAcquire(runId);
+        }
+      };
     }
 
     @Bean
