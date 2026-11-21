@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppProjectsIdRouteImport } from './routes/_app/projects/$id'
+import { Route as AppRunsRunIdRouteImport } from './routes/_app/runs/$runId'
 import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId/index'
 import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
@@ -22,6 +23,10 @@ import { Route as AppProjectsIdEditorRouteImport } from './routes/_app/projects/
 import { Route as AppProjectsIdRunsRouteImport } from './routes/_app/projects/$id/runs'
 import { Route as AppProjectsIdSettingsRouteImport } from './routes/_app/projects/$id/settings'
 import { Route as AppProjectsIdVersionsRouteImport } from './routes/_app/projects/$id/versions'
+import { Route as AppRunsRunIdIndexRouteImport } from './routes/_app/runs/$runId/index'
+import { Route as AppRunsRunIdChangesRouteImport } from './routes/_app/runs/$runId/changes'
+import { Route as AppRunsRunIdFilesRouteImport } from './routes/_app/runs/$runId/files'
+import { Route as AppRunsRunIdLintRouteImport } from './routes/_app/runs/$runId/lint'
 import { Route as AppOrgsOrgIdProjectsNewRouteImport } from './routes/_app/orgs/$orgId/projects/new'
 
 const AppRoute = AppRouteImport.update({
@@ -41,6 +46,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppProjectsIdRoute = AppProjectsIdRouteImport.update({
   id: '/projects/$id',
   path: '/projects/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRunsRunIdRoute = AppRunsRunIdRouteImport.update({
+  id: '/runs/$runId',
+  path: '/runs/$runId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrgsOrgIdIndexRoute = AppOrgsOrgIdIndexRouteImport.update({
@@ -88,6 +98,26 @@ const AppProjectsIdVersionsRoute = AppProjectsIdVersionsRouteImport.update({
   path: '/versions',
   getParentRoute: () => AppProjectsIdRoute,
 } as any)
+const AppRunsRunIdIndexRoute = AppRunsRunIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRunsRunIdRoute,
+} as any)
+const AppRunsRunIdChangesRoute = AppRunsRunIdChangesRouteImport.update({
+  id: '/changes',
+  path: '/changes',
+  getParentRoute: () => AppRunsRunIdRoute,
+} as any)
+const AppRunsRunIdFilesRoute = AppRunsRunIdFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AppRunsRunIdRoute,
+} as any)
+const AppRunsRunIdLintRoute = AppRunsRunIdLintRouteImport.update({
+  id: '/lint',
+  path: '/lint',
+  getParentRoute: () => AppRunsRunIdRoute,
+} as any)
 const AppOrgsOrgIdProjectsNewRoute = AppOrgsOrgIdProjectsNewRouteImport.update({
   id: '/orgs/$orgId/projects/new',
   path: '/orgs/$orgId/projects/new',
@@ -98,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/projects/$id': typeof AppProjectsIdRouteWithChildren
+  '/runs/$runId': typeof AppRunsRunIdRouteWithChildren
   '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/projects/$id/config': typeof AppProjectsIdConfigRoute
@@ -105,8 +136,12 @@ export interface FileRoutesByFullPath {
   '/projects/$id/runs': typeof AppProjectsIdRunsRoute
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id/versions': typeof AppProjectsIdVersionsRoute
+  '/runs/$runId/changes': typeof AppRunsRunIdChangesRoute
+  '/runs/$runId/files': typeof AppRunsRunIdFilesRoute
+  '/runs/$runId/lint': typeof AppRunsRunIdLintRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id/': typeof AppProjectsIdIndexRoute
+  '/runs/$runId/': typeof AppRunsRunIdIndexRoute
   '/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
 }
 export interface FileRoutesByTo {
@@ -119,8 +154,12 @@ export interface FileRoutesByTo {
   '/projects/$id/runs': typeof AppProjectsIdRunsRoute
   '/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/projects/$id/versions': typeof AppProjectsIdVersionsRoute
+  '/runs/$runId/changes': typeof AppRunsRunIdChangesRoute
+  '/runs/$runId/files': typeof AppRunsRunIdFilesRoute
+  '/runs/$runId/lint': typeof AppRunsRunIdLintRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id': typeof AppProjectsIdIndexRoute
+  '/runs/$runId': typeof AppRunsRunIdIndexRoute
   '/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
 }
 export interface FileRoutesById {
@@ -129,6 +168,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/': typeof AppIndexRoute
   '/_app/projects/$id': typeof AppProjectsIdRouteWithChildren
+  '/_app/runs/$runId': typeof AppRunsRunIdRouteWithChildren
   '/_app/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/_app/projects/$id/config': typeof AppProjectsIdConfigRoute
@@ -136,8 +176,12 @@ export interface FileRoutesById {
   '/_app/projects/$id/runs': typeof AppProjectsIdRunsRoute
   '/_app/projects/$id/settings': typeof AppProjectsIdSettingsRoute
   '/_app/projects/$id/versions': typeof AppProjectsIdVersionsRoute
+  '/_app/runs/$runId/changes': typeof AppRunsRunIdChangesRoute
+  '/_app/runs/$runId/files': typeof AppRunsRunIdFilesRoute
+  '/_app/runs/$runId/lint': typeof AppRunsRunIdLintRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/_app/projects/$id/': typeof AppProjectsIdIndexRoute
+  '/_app/runs/$runId/': typeof AppRunsRunIdIndexRoute
   '/_app/orgs/$orgId/projects/new': typeof AppOrgsOrgIdProjectsNewRoute
 }
 export interface FileRouteTypes {
@@ -146,6 +190,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/projects/$id'
+    | '/runs/$runId'
     | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
     | '/projects/$id/config'
@@ -153,8 +198,12 @@ export interface FileRouteTypes {
     | '/projects/$id/runs'
     | '/projects/$id/settings'
     | '/projects/$id/versions'
+    | '/runs/$runId/changes'
+    | '/runs/$runId/files'
+    | '/runs/$runId/lint'
     | '/orgs/$orgId/'
     | '/projects/$id/'
+    | '/runs/$runId/'
     | '/orgs/$orgId/projects/new'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -167,8 +216,12 @@ export interface FileRouteTypes {
     | '/projects/$id/runs'
     | '/projects/$id/settings'
     | '/projects/$id/versions'
+    | '/runs/$runId/changes'
+    | '/runs/$runId/files'
+    | '/runs/$runId/lint'
     | '/orgs/$orgId'
     | '/projects/$id'
+    | '/runs/$runId'
     | '/orgs/$orgId/projects/new'
   id:
     | '__root__'
@@ -176,6 +229,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_app/'
     | '/_app/projects/$id'
+    | '/_app/runs/$runId'
     | '/_app/orgs/$orgId/members'
     | '/_app/orgs/$orgId/settings'
     | '/_app/projects/$id/config'
@@ -183,8 +237,12 @@ export interface FileRouteTypes {
     | '/_app/projects/$id/runs'
     | '/_app/projects/$id/settings'
     | '/_app/projects/$id/versions'
+    | '/_app/runs/$runId/changes'
+    | '/_app/runs/$runId/files'
+    | '/_app/runs/$runId/lint'
     | '/_app/orgs/$orgId/'
     | '/_app/projects/$id/'
+    | '/_app/runs/$runId/'
     | '/_app/orgs/$orgId/projects/new'
   fileRoutesById: FileRoutesById
 }
@@ -221,6 +279,13 @@ declare module '@tanstack/react-router' {
       path: '/projects/$id'
       fullPath: '/projects/$id'
       preLoaderRoute: typeof AppProjectsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/runs/$runId': {
+      id: '/_app/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/runs/$runId'
+      preLoaderRoute: typeof AppRunsRunIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/orgs/$orgId/': {
@@ -286,6 +351,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsIdVersionsRouteImport
       parentRoute: typeof AppProjectsIdRoute
     }
+    '/_app/runs/$runId/': {
+      id: '/_app/runs/$runId/'
+      path: '/'
+      fullPath: '/runs/$runId/'
+      preLoaderRoute: typeof AppRunsRunIdIndexRouteImport
+      parentRoute: typeof AppRunsRunIdRoute
+    }
+    '/_app/runs/$runId/changes': {
+      id: '/_app/runs/$runId/changes'
+      path: '/changes'
+      fullPath: '/runs/$runId/changes'
+      preLoaderRoute: typeof AppRunsRunIdChangesRouteImport
+      parentRoute: typeof AppRunsRunIdRoute
+    }
+    '/_app/runs/$runId/files': {
+      id: '/_app/runs/$runId/files'
+      path: '/files'
+      fullPath: '/runs/$runId/files'
+      preLoaderRoute: typeof AppRunsRunIdFilesRouteImport
+      parentRoute: typeof AppRunsRunIdRoute
+    }
+    '/_app/runs/$runId/lint': {
+      id: '/_app/runs/$runId/lint'
+      path: '/lint'
+      fullPath: '/runs/$runId/lint'
+      preLoaderRoute: typeof AppRunsRunIdLintRouteImport
+      parentRoute: typeof AppRunsRunIdRoute
+    }
     '/_app/orgs/$orgId/projects/new': {
       id: '/_app/orgs/$orgId/projects/new'
       path: '/orgs/$orgId/projects/new'
@@ -318,9 +411,28 @@ const AppProjectsIdRouteWithChildren = AppProjectsIdRoute._addFileChildren(
   AppProjectsIdRouteChildren,
 )
 
+interface AppRunsRunIdRouteChildren {
+  AppRunsRunIdChangesRoute: typeof AppRunsRunIdChangesRoute
+  AppRunsRunIdFilesRoute: typeof AppRunsRunIdFilesRoute
+  AppRunsRunIdLintRoute: typeof AppRunsRunIdLintRoute
+  AppRunsRunIdIndexRoute: typeof AppRunsRunIdIndexRoute
+}
+
+const AppRunsRunIdRouteChildren: AppRunsRunIdRouteChildren = {
+  AppRunsRunIdChangesRoute: AppRunsRunIdChangesRoute,
+  AppRunsRunIdFilesRoute: AppRunsRunIdFilesRoute,
+  AppRunsRunIdLintRoute: AppRunsRunIdLintRoute,
+  AppRunsRunIdIndexRoute: AppRunsRunIdIndexRoute,
+}
+
+const AppRunsRunIdRouteWithChildren = AppRunsRunIdRoute._addFileChildren(
+  AppRunsRunIdRouteChildren,
+)
+
 interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppProjectsIdRoute: typeof AppProjectsIdRouteWithChildren
+  AppRunsRunIdRoute: typeof AppRunsRunIdRouteWithChildren
   AppOrgsOrgIdMembersRoute: typeof AppOrgsOrgIdMembersRoute
   AppOrgsOrgIdSettingsRoute: typeof AppOrgsOrgIdSettingsRoute
   AppOrgsOrgIdIndexRoute: typeof AppOrgsOrgIdIndexRoute
@@ -330,6 +442,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppProjectsIdRoute: AppProjectsIdRouteWithChildren,
+  AppRunsRunIdRoute: AppRunsRunIdRouteWithChildren,
   AppOrgsOrgIdMembersRoute: AppOrgsOrgIdMembersRoute,
   AppOrgsOrgIdSettingsRoute: AppOrgsOrgIdSettingsRoute,
   AppOrgsOrgIdIndexRoute: AppOrgsOrgIdIndexRoute,
