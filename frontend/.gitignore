@@ -7,3 +7,4 @@ coverage
 *.tsbuildinfo
 .vite
 .tanstack
+dist-e2e

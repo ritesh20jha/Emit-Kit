@@ -50,3 +50,35 @@ jobs:
       - name: Build
         working-directory: frontend
         run: pnpm build
+
+      - name: Check bundle size
+        working-directory: frontend
+        run: pnpm check:bundle
+
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Accessibility and mobile specs
+        working-directory: frontend
+        run: pnpm exec playwright test --project=chromium e2e/a11y.spec.ts e2e/mobile.spec.ts

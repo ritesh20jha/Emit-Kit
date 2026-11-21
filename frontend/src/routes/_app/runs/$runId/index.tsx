@@ -1,15 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRefreshRunOnStep } from "@/features/run";
-import { LogView, useRunLogs } from "@/features/run-logs";
+import { RunLogs } from "@/features/run";
 
-/** The run's live log, the default section. Its step, level and search filters live in the URL, so a view can be linked. */
+/** `/runs/$runId` shows the log too, so a bare run link works. The same view is at `/logs`. */
 export const Route = createFileRoute("/_app/runs/$runId/")({
-  component: LogsRoute,
+  component: IndexRoute,
 });
 
-function LogsRoute() {
+function IndexRoute() {
   const { runId } = Route.useParams();
-  const logs = useRunLogs(runId);
-  useRefreshRunOnStep(runId, logs.lines);
-  return <LogView lines={logs.lines} status={logs.status} filters={logs.filters} onFiltersChange={logs.setFilters} onRetry={logs.retry} />;
+  return <RunLogs runId={runId} />;
 }

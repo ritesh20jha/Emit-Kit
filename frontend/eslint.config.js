@@ -15,6 +15,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist",
+      "dist-e2e",
       "node_modules",
       "src/routeTree.gen.ts",
       "eslint-rules/__fixtures__/**",
@@ -25,7 +26,7 @@ export default tseslint.config(
     ],
   },
   js.configs.recommended,
-  { files: ["**/*.js"], languageOptions: { globals: globals.node } },
+  { files: ["**/*.{js,mjs}"], languageOptions: { globals: globals.node } },
   ...tseslint.configs.strict,
   reactHooks.configs.flat.recommended,
   {

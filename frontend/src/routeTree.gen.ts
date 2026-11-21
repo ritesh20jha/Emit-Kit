@@ -28,6 +28,7 @@ import { Route as AppRunsRunIdIndexRouteImport } from './routes/_app/runs/$runId
 import { Route as AppRunsRunIdChangesRouteImport } from './routes/_app/runs/$runId/changes'
 import { Route as AppRunsRunIdFilesRouteImport } from './routes/_app/runs/$runId/files'
 import { Route as AppRunsRunIdLintRouteImport } from './routes/_app/runs/$runId/lint'
+import { Route as AppRunsRunIdLogsRouteImport } from './routes/_app/runs/$runId/logs'
 import { Route as AppOrgsOrgIdProjectsNewRouteImport } from './routes/_app/orgs/$orgId/projects/new'
 
 const AppRoute = AppRouteImport.update({
@@ -124,6 +125,11 @@ const AppRunsRunIdLintRoute = AppRunsRunIdLintRouteImport.update({
   path: '/lint',
   getParentRoute: () => AppRunsRunIdRoute,
 } as any)
+const AppRunsRunIdLogsRoute = AppRunsRunIdLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AppRunsRunIdRoute,
+} as any)
 const AppOrgsOrgIdProjectsNewRoute = AppOrgsOrgIdProjectsNewRouteImport.update({
   id: '/orgs/$orgId/projects/new',
   path: '/orgs/$orgId/projects/new',
@@ -146,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/runs/$runId/changes': typeof AppRunsRunIdChangesRoute
   '/runs/$runId/files': typeof AppRunsRunIdFilesRoute
   '/runs/$runId/lint': typeof AppRunsRunIdLintRoute
+  '/runs/$runId/logs': typeof AppRunsRunIdLogsRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id/': typeof AppProjectsIdIndexRoute
   '/runs/$runId/': typeof AppRunsRunIdIndexRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/runs/$runId/changes': typeof AppRunsRunIdChangesRoute
   '/runs/$runId/files': typeof AppRunsRunIdFilesRoute
   '/runs/$runId/lint': typeof AppRunsRunIdLintRoute
+  '/runs/$runId/logs': typeof AppRunsRunIdLogsRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
   '/projects/$id': typeof AppProjectsIdIndexRoute
   '/runs/$runId': typeof AppRunsRunIdIndexRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/_app/runs/$runId/changes': typeof AppRunsRunIdChangesRoute
   '/_app/runs/$runId/files': typeof AppRunsRunIdFilesRoute
   '/_app/runs/$runId/lint': typeof AppRunsRunIdLintRoute
+  '/_app/runs/$runId/logs': typeof AppRunsRunIdLogsRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
   '/_app/projects/$id/': typeof AppProjectsIdIndexRoute
   '/_app/runs/$runId/': typeof AppRunsRunIdIndexRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/changes'
     | '/runs/$runId/files'
     | '/runs/$runId/lint'
+    | '/runs/$runId/logs'
     | '/orgs/$orgId/'
     | '/projects/$id/'
     | '/runs/$runId/'
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/changes'
     | '/runs/$runId/files'
     | '/runs/$runId/lint'
+    | '/runs/$runId/logs'
     | '/orgs/$orgId'
     | '/projects/$id'
     | '/runs/$runId'
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/_app/runs/$runId/changes'
     | '/_app/runs/$runId/files'
     | '/_app/runs/$runId/lint'
+    | '/_app/runs/$runId/logs'
     | '/_app/orgs/$orgId/'
     | '/_app/projects/$id/'
     | '/_app/runs/$runId/'
@@ -398,6 +410,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRunsRunIdLintRouteImport
       parentRoute: typeof AppRunsRunIdRoute
     }
+    '/_app/runs/$runId/logs': {
+      id: '/_app/runs/$runId/logs'
+      path: '/logs'
+      fullPath: '/runs/$runId/logs'
+      preLoaderRoute: typeof AppRunsRunIdLogsRouteImport
+      parentRoute: typeof AppRunsRunIdRoute
+    }
     '/_app/orgs/$orgId/projects/new': {
       id: '/_app/orgs/$orgId/projects/new'
       path: '/orgs/$orgId/projects/new'
@@ -436,6 +455,7 @@ interface AppRunsRunIdRouteChildren {
   AppRunsRunIdChangesRoute: typeof AppRunsRunIdChangesRoute
   AppRunsRunIdFilesRoute: typeof AppRunsRunIdFilesRoute
   AppRunsRunIdLintRoute: typeof AppRunsRunIdLintRoute
+  AppRunsRunIdLogsRoute: typeof AppRunsRunIdLogsRoute
   AppRunsRunIdIndexRoute: typeof AppRunsRunIdIndexRoute
 }
 
@@ -443,6 +463,7 @@ const AppRunsRunIdRouteChildren: AppRunsRunIdRouteChildren = {
   AppRunsRunIdChangesRoute: AppRunsRunIdChangesRoute,
   AppRunsRunIdFilesRoute: AppRunsRunIdFilesRoute,
   AppRunsRunIdLintRoute: AppRunsRunIdLintRoute,
+  AppRunsRunIdLogsRoute: AppRunsRunIdLogsRoute,
   AppRunsRunIdIndexRoute: AppRunsRunIdIndexRoute,
 }
 

@@ -68,6 +68,8 @@ export default function CodeEditor({ ref, initialText, format, problems, onChang
 
 function extensionsFor(format: string, handlers: { current: Handlers }): Extension[] {
   return [
+    // CodeMirror's content is a textbox with no visible label of its own. The name tells a screen reader what it is.
+    EditorView.contentAttributes.of({ "aria-label": "OpenAPI spec" }),
     keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (handlers.current.onSave(), true) }, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...defaultKeymap]),
     lineNumbers(),
     foldGutter(),

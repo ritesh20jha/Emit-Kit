@@ -3,6 +3,7 @@ import { lazy } from "react";
 export { ChangesSummary } from "./ChangesSummary";
 export { FilesTree } from "./FilesTree";
 export { LintTable } from "./LintTable";
+export { RunLogs } from "./RunLogs";
 export { RunPage } from "./RunPage";
 export { useRefreshRunOnStep } from "./api";
 
