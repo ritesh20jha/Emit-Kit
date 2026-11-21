@@ -2,12 +2,15 @@ package dev.emitkit.worker.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import dev.emitkit.common.id.Ids;
 import dev.emitkit.common.messaging.GenerationJob;
 import dev.emitkit.common.messaging.Queues;
 import dev.emitkit.common.secret.SecretCipher;
 import dev.emitkit.common.secret.SecretContext;
+import dev.emitkit.domain.BreakingGate;
+import dev.emitkit.domain.Decision;
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunRepository;
 import dev.emitkit.domain.OAuthAccount;
@@ -20,6 +23,8 @@ import dev.emitkit.domain.Project;
 import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
 import dev.emitkit.domain.ProjectRepository;
+import dev.emitkit.domain.RunApproval;
+import dev.emitkit.domain.RunApprovalRepository;
 import dev.emitkit.domain.RunArtifact;
 import dev.emitkit.domain.RunArtifactRepository;
 import dev.emitkit.domain.RunStatus;
@@ -128,6 +133,7 @@ class WRK12PipelineE2EIT {
   @Autowired private ProjectConfigRepository configs;
   @Autowired private GenerationRunRepository runs;
   @Autowired private RunArtifactRepository artifacts;
+  @Autowired private RunApprovalRepository approvals;
   @Autowired private SdkVersionRepository sdkVersions;
   @Autowired private SecretCipher cipher;
   @Autowired private ArtifactStorage storage;
@@ -246,6 +252,90 @@ class WRK12PipelineE2EIT {
         .containsExactly(run.getSdkVersion());
   }
 
+  @Test
+  void secondRunWithNoSpecChange_versionUnchanged_noNewPr() {
+    Seeded seeded = seedProject(FixtureSpecs.raw("petstore"), config -> {});
+    String repo = seeded.project().getRepoFullName();
+    GenerationRun first = awaitTerminal(enqueue(seeded).getId());
+    assertThat(first.getStatus()).as("first run").isEqualTo(RunStatus.SUCCESS);
+    // Merging the first pull request puts its files on the target branch, as a user would.
+    GitHubMock.Pull pull = GITHUB.pulls(repo).get(0);
+    GITHUB
+        .files(repo, pull.head())
+        .forEach((path, content) -> GITHUB.commit(repo, "main", path, content));
+
+    GenerationRun second = awaitTerminal(enqueue(seeded).getId());
+
+    assertThat(second.getStatus())
+        .as("second run failed: %s %s", second.getFailureCode(), second.getFailureMessage())
+        .isEqualTo(RunStatus.SUCCESS);
+    assertThat(second.getSdkVersion()).isEqualTo(first.getSdkVersion());
+    assertThat(second.getPrNumber()).isNull();
+    assertThat(GITHUB.pulls(repo)).hasSize(1);
+    assertThat(GITHUB.unhandled()).as("requests the GitHub mock could not serve").isEmpty();
+  }
+
+  @Test
+  void breakingChange_withRequireApproval_parksThenCompletesAfterApproval() {
+    Seeded seeded =
+        seedProject(
+            FixtureSpecs.raw("petstore"),
+            config -> config.setBreakingGate(BreakingGate.REQUIRE_APPROVAL));
+    String repo = seeded.project().getRepoFullName();
+    GenerationRun first = awaitTerminal(enqueue(seeded).getId());
+    assertThat(first.getStatus()).as("first run").isEqualTo(RunStatus.SUCCESS);
+
+    // Making the query parameter required is a breaking change to GET /pets.
+    String v1 = FixtureSpecs.raw("petstore");
+    String v2 =
+        v1.replace(
+            "{name: limit, in: query, schema:", "{name: limit, in: query, required: true, schema:");
+    assertThat(v2).as("v2 differs from v1").isNotEqualTo(v1);
+    GITHUB.commit(repo, "main", "openapi.yaml", v2);
+
+    GenerationRun run = enqueue(seeded);
+    GenerationRun parked = awaitStatus(run.getId(), RunStatus.AWAITING_APPROVAL);
+    assertThat(parked.getPrNumber()).as("no pull request before approval").isNull();
+    assertThat(approvals.findByRunId(run.getId()))
+        .hasValueSatisfying(approval -> assertThat(approval.getDecision()).isNull());
+
+    // Records the approval as the approve endpoint does, then queues the run again.
+    RunApproval approval = approvals.findByRunId(run.getId()).orElseThrow();
+    approval.decide(seeded.project().getCreatedBy(), Decision.APPROVED, null, Instant.now());
+    approvals.save(approval);
+    GenerationRun approved = runs.findById(run.getId()).orElseThrow();
+    approved.setStatus(RunStatus.QUEUED);
+    runs.save(approved);
+    publish(run.getId());
+
+    GenerationRun done = awaitTerminal(run.getId());
+    assertThat(done.getStatus())
+        .as("run failed: %s %s", done.getFailureCode(), done.getFailureMessage())
+        .isEqualTo(RunStatus.SUCCESS);
+    assertThat(GITHUB.pulls(repo)).hasSize(2);
+    assertThat(done.getPrNumber()).isEqualTo(2);
+    assertThat(GITHUB.comments(repo, 2))
+        .singleElement()
+        .asString()
+        .contains("breaking API changes");
+    assertThat(GITHUB.unhandled()).as("requests the GitHub mock could not serve").isEmpty();
+  }
+
+  @Test
+  void big200Ops_finishesUnder3Minutes() {
+    GenerationRun run =
+        assertTimeoutPreemptively(
+            Duration.ofMinutes(3), () -> runToEnd(FixtureSpecs.raw("big-200-ops")));
+    String repo = projects.findById(run.getProjectId()).orElseThrow().getRepoFullName();
+
+    assertThat(run.getStatus())
+        .as("run failed: %s %s", run.getFailureCode(), run.getFailureMessage())
+        .isEqualTo(RunStatus.SUCCESS);
+    assertThat(GITHUB.pulls(repo)).hasSize(1);
+    assertThat(run.getPrNumber()).isEqualTo(1);
+    assertThat(GITHUB.unhandled()).as("requests the GitHub mock could not serve").isEmpty();
+  }
+
   /** Seeds one project, enqueues a run for it, and waits for the run to end. */
   GenerationRun runToEnd(String spec) {
     return awaitTerminal(enqueue(seedProject(spec, config -> {})).getId());
@@ -327,5 +417,13 @@ class WRK12PipelineE2EIT {
         .atMost(Duration.ofMinutes(5))
         .pollInterval(Duration.ofSeconds(1))
         .until(() -> runs.findById(runId).orElseThrow(), run -> run.getStatus().isTerminal());
+  }
+
+  /** Waits until the run is in {@code status}, then returns it. */
+  GenerationRun awaitStatus(String runId, RunStatus status) {
+    return await()
+        .atMost(Duration.ofMinutes(2))
+        .pollInterval(Duration.ofSeconds(1))
+        .until(() -> runs.findById(runId).orElseThrow(), run -> run.getStatus() == status);
   }
 }

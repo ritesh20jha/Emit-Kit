@@ -34,6 +34,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
 
   private static final JsonMapper JSON = JsonMapper.builder().build();
   private static final Pattern REPO = Pattern.compile("/repos/([^/]+/[^/]+)(/.*)?");
+  private static final Pattern ISSUE = Pattern.compile("/issues/(\\d+)(/comments)?");
   private static final String HEADS = "/git/refs/heads/";
   private static final Map<String, Object> NOT_FOUND = obj("message", "Not Found");
 
@@ -47,6 +48,9 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
   private final Map<String, Map<String, String>> branches = new HashMap<>();
 
   private final Map<String, List<Pull>> pulls = new HashMap<>();
+
+  /** Repo and pull number, as "repo#number", to the bodies of the comments on it. */
+  private final Map<String, List<String>> comments = new HashMap<>();
 
   /** Commit or tree sha to its files (path to content). A commit's files are its tree's files. */
   private final Map<String, Map<String, String>> snapshots = new HashMap<>();
@@ -84,6 +88,11 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
 
   synchronized List<Pull> pulls(String repo) {
     return List.copyOf(pulls.get(repo));
+  }
+
+  /** The bodies of the comments on a pull request, oldest first. */
+  synchronized List<String> comments(String repo, int number) {
+    return List.copyOf(comments.getOrDefault(repo + "#" + number, List.of()));
   }
 
   /** The files at the head of {@code branch} of {@code repo}, path to content. */
@@ -211,6 +220,18 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
       String body = in.path("body").stringValue();
       open.add(new Pull(number, head, base, title, body));
       return json(201, obj("number", number, "html_url", link, "head", obj("ref", head)));
+    }
+    Matcher issue = ISSUE.matcher(rest);
+    if (issue.matches() && method.equals("GET")) {
+      int number = Integer.parseInt(issue.group(1));
+      String link = "https://github.com/" + repo + "/issues/" + number;
+      return json(200, obj("number", number, "state", "open", "html_url", link));
+    }
+    if (issue.matches() && issue.group(2) != null && method.equals("POST")) {
+      String key = repo + "#" + issue.group(1);
+      String body = in.path("body").stringValue();
+      comments.computeIfAbsent(key, k -> new ArrayList<>()).add(body);
+      return json(201, obj("id", ++sequence, "body", body));
     }
     return null;
   }
