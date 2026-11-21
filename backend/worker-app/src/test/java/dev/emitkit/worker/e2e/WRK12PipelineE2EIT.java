@@ -66,7 +66,7 @@ import org.testcontainers.utility.DockerImageName;
 
 /**
  * The whole pipeline against real infrastructure: PostgreSQL, RabbitMQ, Redis, Vault (Transit),
- * RustFS (S3), the toolchain image the sandbox runs, and a {@link GitHubMock}. The worker runs
+ * RustFS, the toolchain image the sandbox runs, and a {@link GitHubMock}. The worker runs
  * in-process. Skipped when the toolchain image is missing, unless {@code e2e.required} is set.
  */
 @SpringBootTest(
@@ -246,48 +246,39 @@ class WRK12PipelineE2EIT {
         .containsExactly(run.getSdkVersion());
   }
 
-  /** Seeds one project with {@link #seedProject}, enqueues a run, and awaits its end. */
+  /** Seeds one project, enqueues a run for it, and waits for the run to end. */
   GenerationRun runToEnd(String spec) {
     return awaitTerminal(enqueue(seedProject(spec, config -> {})).getId());
   }
 
   /**
    * Seeds a user with an encrypted GitHub token, an organization, a GitHub repo whose {@code
-   * openapi.yaml} is {@code spec}, and a project with a config that has every output kind. {@code
-   * adjust} edits the config before it is saved.
+   * openapi.yaml} is {@code spec}, and a project. Its config has every output kind; {@code adjust}
+   * edits the config before it is saved.
    */
   Seeded seedProject(String spec, Consumer<ProjectConfig> adjust) {
     long n = SEQUENCE.incrementAndGet();
-    User creator =
-        users.saveAndFlush(
-            new User(
-                null, 9000 + n, "e2e" + n, "E2E " + n, "e2e" + n + "@example.com", "https://a"));
+    String login = "e2e" + n;
+    var creator = new User(null, 9000 + n, login, login, login + "@example.com", "https://a");
+    users.saveAndFlush(creator);
     String accountId = Ids.newUlid();
+    var context = new SecretContext("oauth_accounts", "access_token_enc", accountId);
     accounts.saveAndFlush(
         new OAuthAccount(
             accountId,
             creator.getId(),
             "github",
             String.valueOf(creator.getGithubId()),
-            cipher.encrypt(
-                GITHUB_TOKEN, new SecretContext("oauth_accounts", "access_token_enc", accountId)),
+            cipher.encrypt(GITHUB_TOKEN, context),
             "repo"));
-    Organization org =
-        orgs.saveAndFlush(
-            new Organization(
-                null, "github", "org-" + n, "e2e" + n, "E2E " + n, false, creator.getId()));
+    var org = new Organization(null, "github", "org-" + n, login, login, false, creator.getId());
+    orgs.saveAndFlush(org);
     String repo = "acme/petstore-" + n;
     GITHUB.createRepo(repo, "main", Map.of("openapi.yaml", spec));
-    Project project =
-        projects.saveAndFlush(
-            new Project(
-                null,
-                org.getId(),
-                repo,
-                "openapi.yaml",
-                "main",
-                OutputMode.APPEND,
-                creator.getId()));
+    var project =
+        new Project(
+            null, org.getId(), repo, "openapi.yaml", "main", OutputMode.APPEND, creator.getId());
+    projects.saveAndFlush(project);
     var config =
         new ProjectConfig(
             null, project.getId(), 1, VersionStrategy.EMITKIT_MANAGED, creator.getId());
@@ -303,15 +294,15 @@ class WRK12PipelineE2EIT {
 
   /** Creates a queued run for the seeded project and publishes its job. */
   GenerationRun enqueue(Seeded seeded) {
-    GenerationRun run =
-        runs.saveAndFlush(
-            new GenerationRun(
-                null,
-                seeded.project().getId(),
-                seeded.config().getId(),
-                RunTrigger.MANUAL,
-                false,
-                Instant.now()));
+    var run =
+        new GenerationRun(
+            null,
+            seeded.project().getId(),
+            seeded.config().getId(),
+            RunTrigger.MANUAL,
+            false,
+            Instant.now());
+    runs.saveAndFlush(run);
     publish(run.getId());
     return run;
   }

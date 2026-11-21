@@ -26,10 +26,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * A stateful fake of the GitHub REST calls a run makes: /user, repos, git refs, trees, commits,
- * contents and pull requests. State is in memory, so a commit made by one run is visible to the
- * next. Any other request gets a 404 and is kept in {@link #unhandled()}. The server starts on
- * first use, so a test class that is skipped never opens a port.
+ * A stateful fake of the GitHub REST calls a run makes. State is in memory, so a commit made by one
+ * run is visible to the next. Other requests get a 404 and are kept in {@link #unhandled()}. The
+ * server starts on first use, so a skipped test class never opens a port.
  */
 final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable {
 
@@ -57,7 +56,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
   private final List<String> unhandled = new ArrayList<>();
   private long sequence;
 
-  /** The mock answers requests that carry {@code Authorization: token <token>}. */
+  /** Answers requests that carry {@code Authorization: token <token>}. */
   GitHubMock(String token) {
     this.token = token;
   }
@@ -112,24 +111,18 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
   }
 
   @Override
-  public ResponseDefinition transform(ServeEvent event) {
+  public synchronized ResponseDefinition transform(ServeEvent event) {
     var request = event.getRequest();
     String body = request.getBodyAsString();
-    return handle(
-        request.getMethod().getName(),
-        request.getUrl(),
-        body.isBlank() ? null : JSON.readTree(body),
-        request.getHeader("Authorization"));
-  }
-
-  private synchronized ResponseDefinition handle(
-      String method, String url, JsonNode in, String authorization) {
-    if (!("token " + token).equals(authorization)) {
+    JsonNode in = body.isBlank() ? null : JSON.readTree(body);
+    if (!("token " + token).equals(request.getHeader("Authorization"))) {
       return json(401, obj("message", "Bad credentials"));
     }
+    String url = request.getUrl();
     int split = url.indexOf('?');
     String path = split < 0 ? url : url.substring(0, split);
     String query = split < 0 ? "" : url.substring(split + 1);
+    String method = request.getMethod().getName();
     ResponseDefinition reply = route(method, path, query, in);
     if (reply == null) {
       unhandled.add(method + " " + url);
@@ -148,26 +141,33 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
       return null;
     }
     String repo = matcher.group(1);
-    String owner = repo.substring(0, repo.indexOf('/'));
     String rest = matcher.group(2) == null ? "" : matcher.group(2);
     Map<String, String> heads = branches.get(repo);
     if (heads == null) {
       return json(404, NOT_FOUND);
     }
     if (method.equals("GET") && rest.isEmpty()) {
+      String owner = repo.substring(0, repo.indexOf('/'));
+      String name = repo.substring(owner.length() + 1);
+      String main = heads.keySet().iterator().next();
       return json(
           200,
           obj(
-              "full_name", repo,
-              "name", repo.substring(owner.length() + 1),
-              "owner", obj("login", owner),
-              "default_branch", heads.keySet().iterator().next()));
+              "full_name",
+              repo,
+              "name",
+              name,
+              "owner",
+              obj("login", owner),
+              "default_branch",
+              main));
     }
-    if (rest.startsWith("/git/refs")) {
-      String branch =
-          rest.startsWith("/git/refs/heads/")
-              ? decode(rest.substring("/git/refs/heads/".length()))
-              : in.path("ref").stringValue().substring("refs/heads/".length());
+    if (rest.startsWith("/git/refs/heads/")) {
+      String branch = decode(rest.substring("/git/refs/heads/".length()));
+      return refRoute(method, repo, heads, branch, in);
+    }
+    if (method.equals("POST") && rest.equals("/git/refs")) {
+      String branch = in.path("ref").stringValue().substring("refs/heads/".length());
       return refRoute(method, repo, heads, branch, in);
     }
     if (method.equals("GET") && rest.startsWith("/git/trees/")) {
@@ -176,21 +176,20 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
         return json(404, NOT_FOUND);
       }
       String tree = commits.get(commit);
-      List<Map<String, Object>> entries =
-          trees.get(tree).entrySet().stream()
-              .map(file ->
+      List<Map<String, Object>> entries = new ArrayList<>();
+      trees
+          .get(tree)
+          .forEach((name, content) ->
+              entries.add(
                   obj(
                       "path",
-                      file.getKey(),
+                      name,
                       "mode",
                       "100644",
                       "type",
                       "blob",
                       "sha",
-                      GitBlob.sha(file.getValue()),
-                      "size",
-                      file.getValue().getBytes(UTF_8).length))
-              .toList();
+                      GitBlob.sha(content))));
       return json(200, obj("sha", tree, "truncated", false, "tree", entries));
     }
     if (method.equals("POST") && rest.equals("/git/trees")) {
@@ -256,6 +255,8 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
           obj(
               "number",
               number,
+              "state",
+              "open",
               "html_url",
               "https://github.com/" + repo + "/pull/" + number,
               "head",
@@ -264,7 +265,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
     return null;
   }
 
-  /** GET, POST (create) and PATCH (move) of one branch's ref. */
+  /** GET, create (POST) and move (PATCH) of one branch's ref. */
   private ResponseDefinition refRoute(
       String method, String repo, Map<String, String> heads, String branch, JsonNode in) {
     boolean exists = heads.containsKey(branch);
@@ -275,13 +276,9 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
     if (method.equals("POST") && exists) {
       return json(422, obj("message", "Reference already exists"));
     }
-    if (method.equals("POST")) {
+    if (method.equals("POST") || (method.equals("PATCH") && exists && commits.containsKey(sha))) {
       heads.put(branch, sha);
-      return json(201, ref(repo, branch, sha));
-    }
-    if (method.equals("PATCH") && exists && commits.containsKey(sha)) {
-      heads.put(branch, sha);
-      return json(200, ref(repo, branch, sha));
+      return json(method.equals("POST") ? 201 : 200, ref(repo, branch, sha));
     }
     return json(404, NOT_FOUND);
   }
@@ -312,10 +309,9 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
 
   /** A ref as GitHub returns it. Its url is where kohsuke sends a ref update. */
   private Map<String, Object> ref(String repo, String branch, String sha) {
+    String url = apiUrl() + "/repos/" + repo + "/git/refs/heads/" + branch;
     return obj(
-        "ref", "refs/heads/" + branch,
-        "url", apiUrl() + "/repos/" + repo + "/git/refs/heads/" + branch,
-        "object", obj("sha", sha, "type", "commit"));
+        "ref", "refs/heads/" + branch, "url", url, "object", obj("sha", sha, "type", "commit"));
   }
 
   /** The value of {@code name} in a query string, or null when it is absent. */
@@ -328,7 +324,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
     return null;
   }
 
-  /** A map that keeps its keys in the order given, so each JSON object is one call. */
+  /** A map that keeps its keys in the order given. */
   private static Map<String, Object> obj(Object... keysAndValues) {
     var map = new LinkedHashMap<String, Object>();
     for (int i = 0; i < keysAndValues.length; i += 2) {
