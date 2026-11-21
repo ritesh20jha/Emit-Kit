@@ -65,9 +65,12 @@ class MergeTagHandler {
     if (run.getSdkVersion() == null) {
       return WebhookOutcome.ignored("no-version");
     }
+    String sha = pull.path("merge_commit_sha").asStringOpt().filter(s -> !s.isBlank()).orElse(null);
+    if (sha == null) {
+      return WebhookOutcome.ignored("no-merge-commit");
+    }
     List<String> tags = tagsFor(run);
     String repo = payload.path("repository").path("full_name").asStringOpt().orElseThrow();
-    String sha = pull.path("merge_commit_sha").asStringOpt().orElseThrow();
     VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
     boolean created = false;
     for (String tag : tags) {

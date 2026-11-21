@@ -25,6 +25,11 @@ class PushHandler {
 
   WebhookOutcome handle(Project project, WebhookEvent event) {
     JsonNode payload = event.payload();
+    // A push to the separate output repository is not the source: it must not queue a run.
+    String pushed = payload.path("repository").path("full_name").asStringOpt().orElse(null);
+    if (!project.getRepoFullName().equals(pushed)) {
+      return WebhookOutcome.ignored("repo");
+    }
     String defaultRef = "refs/heads/" + project.getDefaultBranch();
     if (!defaultRef.equals(payload.path("ref").asStringOpt().orElse(null))) {
       return WebhookOutcome.ignored("branch");

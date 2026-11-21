@@ -244,6 +244,53 @@ class HOOK02PushMergeIT {
     assertThat(vcs.tags(repo)).isEmpty();
   }
 
+  @Test
+  void pushToOutputRepo_ignored() throws Exception {
+    String sourceRepo = newRepo("source-push");
+    String outputRepo = newRepo("output-push");
+    Project project = connect(sourceRepo, outputRepo, OutputMode.SEPARATE, List.of(OutputKind.SDK));
+
+    Response response = deliver(delivery("push", push(outputRepo, "refs/heads/main", SPEC_PATH)));
+
+    assertThat(response.status()).isEqualTo(200);
+    assertThat(response.body()).isEqualTo("{\"status\":\"ignored\",\"reason\":\"repo\"}");
+    assertThat(runsOf(project)).isEmpty();
+  }
+
+  @Test
+  void closedActionOtherThanClosed_ignored() throws Exception {
+    String repo = newRepo("opened");
+    Project project = connect(repo, null, OutputMode.APPEND, List.of(OutputKind.SDK));
+    GenerationRun run = webhookRun(project);
+    String merge = commit(repo, "merged");
+
+    Response response =
+        deliver(delivery("pull_request", pullRequest(repo, "opened", true, run, merge)));
+
+    assertThat(response.status()).isEqualTo(200);
+    assertThat(response.body()).isEqualTo("{\"status\":\"ignored\",\"reason\":\"action\"}");
+    assertThat(vcs.tags(repo)).isEmpty();
+  }
+
+  @Test
+  void tagsMcpWhenSdkTagAlreadyExists() throws Exception {
+    String repo = newRepo("partial");
+    Project project =
+        connect(repo, null, OutputMode.APPEND, List.of(OutputKind.SDK, OutputKind.MCP));
+    GenerationRun run = webhookRun(project);
+    String earlier = commit(repo, "earlier");
+    vcs.createTag(repo, "sdk/v" + VERSION, earlier);
+    String merge = commit(repo, "merged");
+
+    Response response =
+        deliver(delivery("pull_request", pullRequest(repo, "closed", true, run, merge)));
+
+    assertThat(response.status()).isEqualTo(200);
+    assertThat(response.body()).isEqualTo("{\"status\":\"tagged\"}");
+    assertThat(vcs.tags(repo))
+        .containsOnly(entry("sdk/v" + VERSION, earlier), entry("mcp/v" + VERSION, merge));
+  }
+
   /** A new repository in the fake VCS, named uniquely so no test sees another's data. */
   private String newRepo(String purpose) {
     String name = purpose + "-" + UUID.randomUUID();
