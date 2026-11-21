@@ -70,7 +70,7 @@ public final class PackageArtifactStep implements PipelineStep {
     String runId = ctx.run().getId();
     Project project = ctx.project();
     List<WorkDir.Entry> files = workDir.manifest(runId);
-    Map<String, String> contents = readContents(runId, files);
+    Map<String, String> contents = readContents(workDir, runId, files);
     ctx.checkCancelled();
 
     Target target = target(project, ctx);
@@ -95,7 +95,9 @@ public final class PackageArtifactStep implements PipelineStep {
   /** What the artifact was saved as: its storage key, its file count and its zip size. */
   public record Output(String storageKey, int fileCount, long sizeBytes) {}
 
-  private Map<String, String> readContents(String runId, List<WorkDir.Entry> files) {
+  /** The content of each file of the run, by path. Shared with COMMIT_OUTPUT. */
+  static Map<String, String> readContents(
+      WorkDir workDir, String runId, List<WorkDir.Entry> files) {
     Path filesDir = workDir.filesDir(runId);
     Map<String, String> contents = new TreeMap<>();
     try {
@@ -119,10 +121,10 @@ public final class PackageArtifactStep implements PipelineStep {
     }
   }
 
-  /** The repo and branch the artifact is compared with. */
-  private record Target(String repo, String branch) {}
+  /** The repo and branch the artifact is compared with, and the commit goes to. */
+  record Target(String repo, String branch) {}
 
-  private static Target target(Project project, RunContext ctx) {
+  static Target target(Project project, RunContext ctx) {
     if (project.getOutputMode() != OutputMode.SEPARATE) {
       return new Target(project.getRepoFullName(), project.getDefaultBranch());
     }

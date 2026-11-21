@@ -42,13 +42,18 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # The sandbox ITs run under gVisor (spec 5.6). Installed from gVisor's signed apt repo, pinned.
+      # The sandbox ITs run under gVisor (spec 5.6). gVisor's apt repo keeps only the newest runsc, so
+      # a pinned `apt-get install runsc=<version>` breaks at the next release. The pinned .deb stays in
+      # the repo's pool, so it is downloaded directly and checked against a recorded sha256. To bump:
+      # change both values (sha256sum of https://storage.googleapis.com/gvisor/releases/pool/<version>/binary-amd64/runsc.deb).
       - name: Install gVisor runsc
+        env:
+          RUNSC_VERSION: '20261102.0'
+          RUNSC_SHA256: 81e3ecc4bb0d3eb321f5cf357e97a26daea91c6dc70ec30c9240cd481e6cf2da
         run: |
-          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y runsc=20261102.0
+          curl -fsSL -o "$RUNNER_TEMP/runsc.deb" "https://storage.googleapis.com/gvisor/releases/pool/${RUNSC_VERSION}/binary-amd64/runsc.deb"
+          echo "${RUNSC_SHA256}  $RUNNER_TEMP/runsc.deb" | sha256sum -c -
+          sudo dpkg -i "$RUNNER_TEMP/runsc.deb"
           sudo runsc install
           sudo systemctl restart docker
           timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
