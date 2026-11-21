@@ -1,5 +1,11 @@
 package dev.emitkit.worker.steps;
 
+import static dev.emitkit.domain.StepName.BREAKING_GATE;
+import static dev.emitkit.domain.StepName.COMMIT_OUTPUT;
+import static dev.emitkit.domain.StepName.FINALIZE;
+import static dev.emitkit.domain.StepName.PACKAGE_ARTIFACT;
+import static dev.emitkit.domain.StepName.RUN_GENERATORS;
+import static dev.emitkit.domain.StepName.SYNTAX_CHECK;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.emitkit.common.error.ErrorCode;
@@ -27,18 +33,25 @@ import dev.emitkit.spec.diff.ChangeKind;
 import dev.emitkit.spec.diff.OpChange;
 import dev.emitkit.spec.diff.OpRef;
 import dev.emitkit.spec.diff.SpecDiff;
+import dev.emitkit.vcs.VcsProvider;
 import dev.emitkit.worker.pipeline.CancellationRegistry;
+import dev.emitkit.worker.pipeline.PipelineRunner;
+import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
 import dev.emitkit.worker.pipeline.RunLogger;
 import dev.emitkit.worker.pipeline.StepOutputs;
 import dev.emitkit.worker.pipeline.StepResult;
+import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -90,6 +103,8 @@ class WRK05BreakingGateTest {
   @Autowired private GenerationRunRepository runs;
   @Autowired private RunApprovalRepository approvals;
   @Autowired private PlatformTransactionManager transactions;
+
+  @TempDir Path workRoot;
 
   private User creator;
   private Project project;
@@ -162,28 +177,39 @@ class WRK05BreakingGateTest {
   }
 
   @Test
-  void approvedResume_continuesToRunGenerators() {
+  void approvedResume_runnerSkipsSavedStepsAndReachesRunGenerators() {
     config.setBreakingGate(BreakingGate.REQUIRE_APPROVAL);
-    GenerationRun run = runWithDiff(RunStatus.RUNNING);
-    saveOutputsThrough(run.getId(), StepName.CALC_VERSION);
-    String runId = run.getId();
+    configs.saveAndFlush(config); // the runner loads the config from the database
+    String runId = runWithDiff(RunStatus.RUNNING).getId();
+    saveOutputsThrough(runId, StepName.CALC_VERSION);
+    List<StepName> executed = new ArrayList<>();
+    PipelineRunner runner = runner(executed);
 
-    // First delivery: the step parks the run awaiting approval.
-    assertThat(gate.execute(context(reload(runId), new RecordingLog())))
-        .isEqualTo(new StepResult.Park());
+    // First delivery: BREAKING_GATE parks the run, so nothing after it runs.
+    runner.run(runId);
+    assertThat(executed).containsExactly(BREAKING_GATE);
+    assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.AWAITING_APPROVAL);
 
-    // The reviewer approves (RunService.decideApproval), which queues the run again; the runner
-    // then marks it RUNNING and runs this step a second time.
+    // The reviewer approves (RunService.decideApproval), which queues the run again.
     RunApproval approval = approvalOf(runId).orElseThrow();
     approval.decide(creator.getId(), Decision.APPROVED, null, T3);
     approvals.saveAndFlush(approval);
-    GenerationRun resumed = reload(runId);
-    resumed.setStatus(RunStatus.RUNNING);
-    runs.saveAndFlush(resumed);
+    GenerationRun queued = reload(runId);
+    queued.setStatus(RunStatus.QUEUED);
+    runs.saveAndFlush(queued);
 
-    assertThat(gate.execute(context(reload(runId), new RecordingLog())))
-        .isEqualTo(new StepResult.Continue(new BreakingGateStep.Output(BREAKING)));
-    assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.RUNNING);
+    // Redelivery: the runner skips the steps with saved outputs, runs BREAKING_GATE again, which
+    // now continues, and goes on to RUN_GENERATORS and the rest of the pipeline.
+    executed.clear();
+    runner.run(runId);
+
+    assertThat(executed)
+        .containsExactly(
+            BREAKING_GATE, RUN_GENERATORS, SYNTAX_CHECK, PACKAGE_ARTIFACT, COMMIT_OUTPUT, FINALIZE);
+    assertThat(
+            StepOutputs.read(
+                reload(runId).getStepOutputs(), BREAKING_GATE, BreakingGateStep.Output.class))
+        .contains(new BreakingGateStep.Output(BREAKING));
     assertThat(approvalOf(runId))
         .hasValueSatisfying(saved -> assertThat(saved.getDecision()).isEqualTo(Decision.APPROVED));
   }
@@ -202,6 +228,68 @@ class WRK05BreakingGateTest {
         .filteredOn(approval -> runId.equals(approval.getRunId()))
         .hasSize(1);
     assertThat(reload(runId).getStatus()).isEqualTo(RunStatus.AWAITING_APPROVAL);
+  }
+
+  /**
+   * A real PipelineRunner over every step: the real BreakingGateStep, and stubs for the others.
+   * Every step that runs is added to {@code executed}.
+   */
+  private PipelineRunner runner(List<StepName> executed) {
+    List<PipelineStep> steps = new ArrayList<>();
+    for (StepName name : StepName.values()) {
+      steps.add(recording(name == BREAKING_GATE ? gate : stub(name), executed));
+    }
+    // No step in this test asks for VCS, so the provider is never called.
+    VcsProvider unused =
+        (VcsProvider)
+            Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[] {VcsProvider.class},
+                (proxy, method, args) -> {
+                  throw new UnsupportedOperationException(method.getName());
+                });
+    return new PipelineRunner(
+        steps,
+        runs,
+        projects,
+        configs,
+        unused,
+        transactions,
+        new CancellationRegistry(runs),
+        id -> RunLogger.NOOP,
+        InstantSource.system(),
+        new WorkDir(workRoot));
+  }
+
+  /** Adds the step's name to {@code executed} when it runs, then runs the step. */
+  private static PipelineStep recording(PipelineStep step, List<StepName> executed) {
+    return new PipelineStep() {
+      @Override
+      public StepName name() {
+        return step.name();
+      }
+
+      @Override
+      public StepResult execute(RunContext ctx) throws Exception {
+        executed.add(step.name());
+        return step.execute(ctx);
+      }
+    };
+  }
+
+  /** A step that continues with a fixed output. */
+  private static PipelineStep stub(StepName name) {
+    return new PipelineStep() {
+      @Override
+      public StepName name() {
+        return name;
+      }
+
+      @Override
+      public StepResult execute(RunContext ctx) {
+        return new StepResult.Continue(name.name() + "-out");
+      }
+    };
   }
 
   /** A RUNNING run of the project whose saved diff is {@link #DIFF}. */
