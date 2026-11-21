@@ -259,26 +259,34 @@ class WRK12PipelineE2EIT {
   Seeded seedProject(String spec, Consumer<ProjectConfig> adjust) {
     long n = SEQUENCE.incrementAndGet();
     String login = "e2e" + n;
-    var creator = new User(null, 9000 + n, login, login, login + "@example.com", "https://a");
-    users.saveAndFlush(creator);
+    var creator =
+        users.saveAndFlush(
+            new User(null, 9000 + n, login, login, login + "@example.com", "https://a"));
     String accountId = Ids.newUlid();
-    var context = new SecretContext("oauth_accounts", "access_token_enc", accountId);
     accounts.saveAndFlush(
         new OAuthAccount(
             accountId,
             creator.getId(),
             "github",
             String.valueOf(creator.getGithubId()),
-            cipher.encrypt(GITHUB_TOKEN, context),
+            cipher.encrypt(
+                GITHUB_TOKEN, new SecretContext("oauth_accounts", "access_token_enc", accountId)),
             "repo"));
-    var org = new Organization(null, "github", "org-" + n, login, login, false, creator.getId());
-    orgs.saveAndFlush(org);
+    var org =
+        orgs.saveAndFlush(
+            new Organization(null, "github", "org-" + n, login, login, false, creator.getId()));
     String repo = "acme/petstore-" + n;
     GITHUB.createRepo(repo, "main", Map.of("openapi.yaml", spec));
     var project =
-        new Project(
-            null, org.getId(), repo, "openapi.yaml", "main", OutputMode.APPEND, creator.getId());
-    projects.saveAndFlush(project);
+        projects.saveAndFlush(
+            new Project(
+                null,
+                org.getId(),
+                repo,
+                "openapi.yaml",
+                "main",
+                OutputMode.APPEND,
+                creator.getId()));
     var config =
         new ProjectConfig(
             null, project.getId(), 1, VersionStrategy.EMITKIT_MANAGED, creator.getId());
@@ -295,14 +303,14 @@ class WRK12PipelineE2EIT {
   /** Creates a queued run for the seeded project and publishes its job. */
   GenerationRun enqueue(Seeded seeded) {
     var run =
-        new GenerationRun(
-            null,
-            seeded.project().getId(),
-            seeded.config().getId(),
-            RunTrigger.MANUAL,
-            false,
-            Instant.now());
-    runs.saveAndFlush(run);
+        runs.saveAndFlush(
+            new GenerationRun(
+                null,
+                seeded.project().getId(),
+                seeded.config().getId(),
+                RunTrigger.MANUAL,
+                false,
+                Instant.now()));
     publish(run.getId());
     return run;
   }
@@ -315,10 +323,9 @@ class WRK12PipelineE2EIT {
 
   /** Waits until the run reaches a terminal status, then returns it. */
   GenerationRun awaitTerminal(String runId) {
-    await()
+    return await()
         .atMost(Duration.ofMinutes(5))
         .pollInterval(Duration.ofSeconds(1))
-        .until(() -> runs.findById(runId).orElseThrow().getStatus().isTerminal());
-    return runs.findById(runId).orElseThrow();
+        .until(() -> runs.findById(runId).orElseThrow(), run -> run.getStatus().isTerminal());
   }
 }

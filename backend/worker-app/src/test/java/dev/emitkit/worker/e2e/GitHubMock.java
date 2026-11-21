@@ -27,13 +27,14 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * A stateful fake of the GitHub REST calls a run makes. State is in memory, so a commit made by one
- * run is visible to the next. Other requests get a 404 and are kept in {@link #unhandled()}. The
- * server starts on first use, so a skipped test class never opens a port.
+ * run is visible to the next. Other requests get a 404 and are recorded in {@link #unhandled()}.
+ * The server starts on first use, so a skipped test class never opens a port.
  */
 final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable {
 
   private static final JsonMapper JSON = JsonMapper.builder().build();
   private static final Pattern REPO = Pattern.compile("/repos/([^/]+/[^/]+)(/.*)?");
+  private static final String HEADS = "/git/refs/heads/";
   private static final Map<String, Object> NOT_FOUND = obj("message", "Not Found");
 
   /** A pull request. The mock never closes one. */
@@ -47,11 +48,8 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
 
   private final Map<String, List<Pull>> pulls = new HashMap<>();
 
-  /** Commit sha to tree sha. */
-  private final Map<String, String> commits = new HashMap<>();
-
-  /** Tree sha to files, path to content. Each tree is a full snapshot. */
-  private final Map<String, Map<String, String>> trees = new HashMap<>();
+  /** Commit or tree sha to its files (path to content). A commit's files are its tree's files. */
+  private final Map<String, Map<String, String>> snapshots = new HashMap<>();
 
   private final List<String> unhandled = new ArrayList<>();
   private long sequence;
@@ -73,7 +71,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
 
   /** Creates {@code repo} with one commit on {@code branch} that holds {@code files}. */
   synchronized void createRepo(String repo, String branch, Map<String, String> files) {
-    branches.put(repo, new LinkedHashMap<>(Map.of(branch, newCommit(newTree(files)))));
+    branches.put(repo, new LinkedHashMap<>(Map.of(branch, snapshot(files))));
     pulls.put(repo, new ArrayList<>());
   }
 
@@ -81,7 +79,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
   synchronized void commit(String repo, String branch, String path, String content) {
     Map<String, String> files = new TreeMap<>(files(repo, branch));
     files.put(path, content);
-    branches.get(repo).put(branch, newCommit(newTree(files)));
+    branches.get(repo).put(branch, snapshot(files));
   }
 
   synchronized List<Pull> pulls(String repo) {
@@ -90,7 +88,7 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
 
   /** The files at the head of {@code branch} of {@code repo}, path to content. */
   synchronized Map<String, String> files(String repo, String branch) {
-    return Map.copyOf(trees.get(commits.get(branches.get(repo).get(branch))));
+    return Map.copyOf(snapshots.get(branches.get(repo).get(branch)));
   }
 
   /** Requests the mock could not serve, as "METHOD url". Empty when only mocked calls ran. */
@@ -113,17 +111,15 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
   @Override
   public synchronized ResponseDefinition transform(ServeEvent event) {
     var request = event.getRequest();
-    String body = request.getBodyAsString();
-    JsonNode in = body.isBlank() ? null : JSON.readTree(body);
     if (!("token " + token).equals(request.getHeader("Authorization"))) {
       return json(401, obj("message", "Bad credentials"));
     }
     String url = request.getUrl();
-    int split = url.indexOf('?');
-    String path = split < 0 ? url : url.substring(0, split);
-    String query = split < 0 ? "" : url.substring(split + 1);
+    String[] parts = url.split("\\?", 2);
     String method = request.getMethod().getName();
-    ResponseDefinition reply = route(method, path, query, in);
+    String body = request.getBodyAsString();
+    JsonNode in = body.isBlank() ? null : JSON.readTree(body);
+    ResponseDefinition reply = route(method, parts[0], parts.length > 1 ? parts[1] : "", in);
     if (reply == null) {
       unhandled.add(method + " " + url);
       return json(404, NOT_FOUND);
@@ -142,174 +138,119 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
     }
     String repo = matcher.group(1);
     String rest = matcher.group(2) == null ? "" : matcher.group(2);
-    Map<String, String> heads = branches.get(repo);
-    if (heads == null) {
+    Map<String, String> refs = branches.get(repo);
+    if (refs == null) {
       return json(404, NOT_FOUND);
     }
     if (method.equals("GET") && rest.isEmpty()) {
       String owner = repo.substring(0, repo.indexOf('/'));
       String name = repo.substring(owner.length() + 1);
-      String main = heads.keySet().iterator().next();
+      String main = refs.keySet().iterator().next();
       return json(
           200,
           obj(
-              "full_name",
-              repo,
-              "name",
-              name,
-              "owner",
-              obj("login", owner),
-              "default_branch",
-              main));
+              "full_name", repo,
+              "name", name,
+              "owner", obj("login", owner),
+              "default_branch", main));
     }
-    if (rest.startsWith("/git/refs/heads/")) {
-      String branch = decode(rest.substring("/git/refs/heads/".length()));
-      return refRoute(method, repo, heads, branch, in);
+    if (rest.startsWith(HEADS)) {
+      return refRoute(method, repo, refs, decode(rest.substring(HEADS.length())), in);
     }
     if (method.equals("POST") && rest.equals("/git/refs")) {
       String branch = in.path("ref").stringValue().substring("refs/heads/".length());
-      return refRoute(method, repo, heads, branch, in);
+      return refRoute(method, repo, refs, branch, in);
     }
     if (method.equals("GET") && rest.startsWith("/git/trees/")) {
-      String commit = resolve(heads, decode(rest.substring("/git/trees/".length())));
+      String commit = resolve(refs, decode(rest.substring("/git/trees/".length())));
       if (commit == null) {
         return json(404, NOT_FOUND);
       }
-      String tree = commits.get(commit);
-      List<Map<String, Object>> entries = new ArrayList<>();
-      trees
-          .get(tree)
-          .forEach((name, content) ->
-              entries.add(
-                  obj(
-                      "path",
-                      name,
-                      "mode",
-                      "100644",
-                      "type",
-                      "blob",
-                      "sha",
-                      GitBlob.sha(content))));
-      return json(200, obj("sha", tree, "truncated", false, "tree", entries));
+      var tree =
+          snapshots.get(commit).entrySet().stream()
+              .map(e -> obj("path", e.getKey(), "type", "blob", "sha", GitBlob.sha(e.getValue())))
+              .toList();
+      return json(200, obj("sha", commit, "tree", tree));
     }
     if (method.equals("POST") && rest.equals("/git/trees")) {
       String base = in.path("base_tree").stringValue();
-      Map<String, String> files = new TreeMap<>(base == null ? Map.of() : trees.get(base));
-      in.path("tree")
-          .forEach(entry ->
-              files.put(entry.path("path").stringValue(), entry.path("content").stringValue()));
-      return json(201, obj("sha", newTree(files), "truncated", false, "tree", List.of()));
+      var files = new TreeMap<>(snapshots.getOrDefault(base, Map.of()));
+      for (JsonNode entry : in.path("tree")) {
+        files.put(entry.path("path").stringValue(), entry.path("content").stringValue());
+      }
+      return json(201, obj("sha", snapshot(files), "tree", List.of()));
     }
     if (method.equals("POST") && rest.equals("/git/commits")) {
-      String tree = in.path("tree").stringValue();
-      String commit = newCommit(tree);
-      return json(
-          201,
-          obj(
-              "sha",
-              commit,
-              "tree",
-              obj("sha", tree),
-              "html_url",
-              "https://github.com/" + repo + "/commit/" + commit));
+      String commit = snapshot(snapshots.get(in.path("tree").stringValue()));
+      String link = "https://github.com/" + repo + "/commit/" + commit;
+      return json(201, obj("sha", commit, "html_url", link));
     }
     if (method.equals("GET") && rest.startsWith("/contents/")) {
       String file = decode(rest.substring("/contents/".length()));
-      String commit = resolve(heads, param(query, "ref"));
-      String content = commit == null ? null : trees.get(commits.get(commit)).get(file);
+      String commit = resolve(refs, param(query, "ref"));
+      String content = commit == null ? null : snapshots.get(commit).get(file);
       if (content == null) {
         return json(404, NOT_FOUND);
       }
       byte[] bytes = content.getBytes(UTF_8);
+      String sha = GitBlob.sha(content);
+      String encoded = Base64.getEncoder().encodeToString(bytes);
       return json(
-          200,
-          obj(
-              "type",
-              "file",
-              "name",
-              file.substring(file.lastIndexOf('/') + 1),
-              "path",
-              file,
-              "sha",
-              GitBlob.sha(content),
-              "size",
-              bytes.length,
-              "encoding",
-              "base64",
-              "content",
-              Base64.getEncoder().encodeToString(bytes)));
+          200, obj("sha", sha, "size", bytes.length, "encoding", "base64", "content", encoded));
     }
     if (method.equals("POST") && rest.equals("/pulls")) {
       String head = in.path("head").stringValue();
       String base = in.path("base").stringValue();
-      if (!heads.containsKey(head) || !heads.containsKey(base)) {
+      if (!refs.containsKey(head) || !refs.containsKey(base)) {
         return json(422, obj("message", "Validation Failed"));
       }
       List<Pull> open = pulls.get(repo);
       int number = open.size() + 1;
-      open.add(
-          new Pull(
-              number, head, base, in.path("title").stringValue(), in.path("body").stringValue()));
-      return json(
-          201,
-          obj(
-              "number",
-              number,
-              "state",
-              "open",
-              "html_url",
-              "https://github.com/" + repo + "/pull/" + number,
-              "head",
-              obj("ref", head)));
+      String link = "https://github.com/" + repo + "/pull/" + number;
+      String title = in.path("title").stringValue();
+      String body = in.path("body").stringValue();
+      open.add(new Pull(number, head, base, title, body));
+      return json(201, obj("number", number, "html_url", link, "head", obj("ref", head)));
     }
     return null;
   }
 
   /** GET, create (POST) and move (PATCH) of one branch's ref. */
   private ResponseDefinition refRoute(
-      String method, String repo, Map<String, String> heads, String branch, JsonNode in) {
-    boolean exists = heads.containsKey(branch);
+      String method, String repo, Map<String, String> refs, String branch, JsonNode in) {
+    boolean exists = refs.containsKey(branch);
     String sha = in == null ? null : in.path("sha").stringValue();
     if (method.equals("GET") && exists) {
-      return json(200, ref(repo, branch, heads.get(branch)));
+      return json(200, ref(repo, branch, refs.get(branch)));
     }
     if (method.equals("POST") && exists) {
       return json(422, obj("message", "Reference already exists"));
     }
-    if (method.equals("POST") || (method.equals("PATCH") && exists && commits.containsKey(sha))) {
-      heads.put(branch, sha);
+    if (method.equals("POST") || (method.equals("PATCH") && exists && snapshots.containsKey(sha))) {
+      refs.put(branch, sha);
       return json(method.equals("POST") ? 201 : 200, ref(repo, branch, sha));
     }
     return json(404, NOT_FOUND);
   }
 
   /** Resolves a branch name or a commit sha to a commit sha, or null. */
-  private String resolve(Map<String, String> heads, String ref) {
-    if (heads.containsKey(ref)) {
-      return heads.get(ref);
+  private String resolve(Map<String, String> refs, String ref) {
+    if (refs.containsKey(ref)) {
+      return refs.get(ref);
     }
-    return commits.containsKey(ref) ? ref : null;
+    return snapshots.containsKey(ref) ? ref : null;
   }
 
-  private String newTree(Map<String, String> files) {
-    String sha = nextSha();
-    trees.put(sha, new TreeMap<>(files));
+  /** Stores {@code files} under a new sha, which serves as both its tree and its commit. */
+  private String snapshot(Map<String, String> files) {
+    String sha = String.format("%040x", ++sequence);
+    snapshots.put(sha, new TreeMap<>(files));
     return sha;
-  }
-
-  private String newCommit(String tree) {
-    String sha = nextSha();
-    commits.put(sha, tree);
-    return sha;
-  }
-
-  private String nextSha() {
-    return String.format("%040x", ++sequence);
   }
 
   /** A ref as GitHub returns it. Its url is where kohsuke sends a ref update. */
   private Map<String, Object> ref(String repo, String branch, String sha) {
-    String url = apiUrl() + "/repos/" + repo + "/git/refs/heads/" + branch;
+    String url = apiUrl() + "/repos/" + repo + HEADS + branch;
     return obj(
         "ref", "refs/heads/" + branch, "url", url, "object", obj("sha", sha, "type", "commit"));
   }
