@@ -32,14 +32,9 @@ export function RunActions({ run, orgId }: { run: RunDetail; orgId: string }) {
         </a>
       )}
       <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title="Cancel this run?"
+        open={confirming} onOpenChange={setConfirming} title="Cancel this run?"
         description="The run stops where it is, and its generated branch is removed. A cancelled run cannot be resumed."
-        confirmLabel="Yes, cancel run"
-        cancelLabel="Keep running"
-        tone="danger"
-        onConfirm={() => cancel.mutateAsync().then(() => undefined)}
+        confirmLabel="Yes, cancel run" cancelLabel="Keep running" tone="danger" onConfirm={() => cancel.mutateAsync().then(() => undefined)}
       />
     </div>
   );

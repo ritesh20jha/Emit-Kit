@@ -18,10 +18,7 @@ export function ApprovalBanner({ run, orgId }: { run: RunDetail; orgId: string }
       {breaking.length > 0 ? (
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-fg">
           {breaking.map((item) => (
-            <li key={item.key}>
-              {item.label}: <code className="font-mono text-xs">{item.title}</code>
-              {item.detail && <span className="text-fg-muted"> ({item.detail})</span>}
-            </li>
+            <li key={item.key}>{item.label}: <code className="font-mono text-xs">{item.title}</code>{item.detail && <span className="text-fg-muted"> ({item.detail})</span>}</li>
           ))}
         </ul>
       ) : (

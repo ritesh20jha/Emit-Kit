@@ -21,13 +21,13 @@ export function StepTimeline({ runId, steps }: { runId: string; steps: StepState
   const selected = useRouterState({ select: (state) => new URLSearchParams(state.location.searchStr).get("step") });
   const byName = new Map(steps.map((step) => [step.name, step]));
   return (
-    <ol aria-label="Pipeline steps" className="flex flex-col gap-1 md:flex-row md:gap-0">
+    <ol aria-label="Pipeline steps" className="flex flex-col gap-1 md:flex-row md:gap-0 md:overflow-x-auto">
       {(Object.keys(STEP_LABELS) as StepName[]).map((name) => {
         const step: StepState = byName.get(name) ?? { name, status: "PENDING", durationMs: null };
         const { label, icon: Icon, tone } = STATUS[step.status];
         const isSelected = selected === name;
         return (
-          <li key={name} className="min-w-0 flex-1">
+          <li key={name} className="min-w-0 flex-1 md:min-w-28">
             <button type="button" aria-pressed={isSelected} onClick={() => void navigate({ href: `/runs/${runId}?step=${name}` })} className={cn("flex w-full items-start gap-2 rounded-control border px-2 py-1.5 text-left hover:bg-bg-subtle", isSelected ? "border-border-strong bg-bg-subtle" : "border-transparent")}>
               <Icon aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", tone, step.status === "RUNNING" && "motion-safe:animate-spin")} />
               <span className="flex min-w-0 flex-col">

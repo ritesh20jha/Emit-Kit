@@ -3,7 +3,7 @@ import { FolderOpen } from "lucide-react";
 import { QueryBody } from "@/features/projects";
 import { cn } from "@/lib/utils/cn";
 import { EmptyState } from "@/ui";
-import { type ManifestEntry, filesQuery } from "./api";
+import { type ManifestEntry, filesQuery, isActive, runQuery } from "./api";
 
 const STATUS: Record<ManifestEntry["status"], { label: string; tone: string }> = {
   ADDED: { label: "Added", tone: "text-status-success" },
@@ -38,11 +38,13 @@ function toRows(entries: ManifestEntry[]): Row[] {
 /** The run's generated files as a tree, each file with its status. `selected` is the file whose diff is open, from ?path=. */
 export function FilesTree({ runId, selected, onSelect }: { runId: string; selected?: string; onSelect: (path: string) => void }) {
   const files = useQuery(filesQuery(runId));
+  const run = useQuery(runQuery(runId, true)).data;
+  const active = !!run && isActive(run.status);
   return (
     <QueryBody query={files} label="the files" noAccess="view this run">
       {(entries) =>
         entries.length === 0 ? (
-          <EmptyState icon={FolderOpen} title="No files" description="This run did not generate any files." />
+          <EmptyState icon={FolderOpen} title={active ? "Not generated yet" : "No files"} description={active ? "Files appear when the run finishes generating." : "This run did not generate any files."} />
         ) : (
           <nav aria-label="Generated files" className="min-w-0">
             <ul className="flex flex-col gap-0.5">

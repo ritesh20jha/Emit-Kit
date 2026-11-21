@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect } from "react";
 import { projectQuery, QueryBody } from "@/features/projects";
+import { qk } from "@/lib/api/queryKeys";
 import { Breadcrumbs, RouteTabs } from "@/ui";
 import { ApprovalBanner } from "./ApprovalBanner";
 import { type RunDetail, runQuery } from "./api";
@@ -20,6 +21,10 @@ export function RunPage({ runId, children }: { runId: string; children: ReactNod
 /** The project supplies the org, which decides what the user may do on this run. Nothing below shows until it loads, so no action is judged without an org. */
 function RunLayout({ run, children }: { run: RunDetail; children: ReactNode }) {
   const project = useQuery(projectQuery(run.projectId));
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    for (const key of [qk.runs.files(run.id), qk.runs.lint(run.id)]) void queryClient.invalidateQueries({ queryKey: key });
+  }, [queryClient, run.id, run.status]);
   const base = `/runs/${run.id}`;
   return (
     <QueryBody query={project} label="the project" noAccess="view this project">

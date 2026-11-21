@@ -5,10 +5,7 @@ import { RunActions } from "./RunActions";
 import type { RunDetail } from "./api";
 
 const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="flex flex-col gap-0.5">
-    <dt className="text-xs text-fg-muted">{label}</dt>
-    <dd className="text-sm text-fg">{children}</dd>
-  </div>
+  <div className="flex flex-col gap-0.5"><dt className="text-xs text-fg-muted">{label}</dt><dd className="text-sm text-fg">{children}</dd></div>
 );
 
 /** Status, facts and actions. The commit shows its short SHA; its copy button copies the full one. */

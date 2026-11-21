@@ -3,7 +3,7 @@ import { ShieldCheck } from "lucide-react";
 import { QueryBody } from "@/features/projects";
 import { cn } from "@/lib/utils/cn";
 import { EmptyState, Table, TBody, Td, Th, THead, Tr } from "@/ui";
-import { lintQuery } from "./api";
+import { isActive, lintQuery, runQuery } from "./api";
 
 /** Errors first, then warnings, then info. */
 const SEVERITY = {
@@ -15,11 +15,13 @@ const SEVERITY = {
 /** The lint issues of the run's spec, by severity, with rule, location and message. */
 export function LintTable({ runId }: { runId: string }) {
   const issues = useQuery(lintQuery(runId));
+  const run = useQuery(runQuery(runId, true)).data;
+  const pending = !!run && (isActive(run.status) || run.diffSummary === null);
   return (
     <QueryBody query={issues} label="the lint issues" noAccess="view this run">
       {(rows) =>
         rows.length === 0 ? (
-          <EmptyState icon={ShieldCheck} title="No lint issues" description="The spec passed lint with no findings." />
+          <EmptyState icon={ShieldCheck} title={pending ? "Not checked yet" : "No lint issues"} description={pending ? "Lint results appear once the spec has been checked." : "The spec passed lint with no findings."} />
         ) : (
           <Table label="Lint issues">
             <THead><Tr><Th>Severity</Th><Th>Rule</Th><Th>Location</Th><Th>Message</Th></Tr></THead>

@@ -4,7 +4,7 @@ import { QueryBody } from "@/features/projects";
 import { cn } from "@/lib/utils/cn";
 import { EmptyState } from "@/ui";
 import { changeItems } from "./changeItems";
-import { runQuery } from "./api";
+import { isActive, runQuery } from "./api";
 
 /** The run's diff summary as a list, breaking changes first. */
 export function ChangesSummary({ runId }: { runId: string }) {
@@ -13,8 +13,9 @@ export function ChangesSummary({ runId }: { runId: string }) {
     <QueryBody query={run} label="the changes" noAccess="view this run">
       {(detail) => {
         const items = changeItems(detail.diffSummary);
+        const pending = isActive(detail.status) || detail.diffSummary === null;
         return items.length === 0 ? (
-          <EmptyState icon={GitCompare} title="No changes" description="This run's spec matches the last published version." />
+          <EmptyState icon={GitCompare} title={pending ? "Not compared yet" : "No changes"} description={pending ? "Changes appear once the spec has been compared." : "This run's spec matches the last published version."} />
         ) : (
           <ol aria-label="Changes" className="divide-y divide-border rounded-card border border-border">
             {items.map((item) => (

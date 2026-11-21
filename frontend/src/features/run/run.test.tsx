@@ -71,10 +71,7 @@ test("admin approves with comment", async () => {
   const decisions: unknown[] = [];
   serveRun(
     detail({ status: "AWAITING_APPROVAL", finishedAt: null, diffSummary: { added: [], modified: [], removed: [{ method: "DELETE", path: "/pets/{id}", operationId: "deletePet" }] } }),
-    http.post("/api/v1/runs/:runId/approval", async ({ request }) => {
-      decisions.push(await request.json());
-      return HttpResponse.json(detail({ status: "SUCCESS" }));
-    }),
+    http.post("/api/v1/runs/:runId/approval", async ({ request }) => { decisions.push(await request.json()); return HttpResponse.json(detail({ status: "SUCCESS" })); }),
   );
   renderRoute("/runs/r1");
 
@@ -113,10 +110,7 @@ test("admin sees Approve, not the waiting message, once the project loads", asyn
 });
 
 test("a failed project query shows an error, not the waiting message", async () => {
-  serveRun(
-    detail({ status: "AWAITING_APPROVAL", finishedAt: null }),
-    http.get("/api/v1/projects/:id", () => HttpResponse.json({ code: "INTERNAL", detail: "Project unavailable" }, { status: 500 })),
-  );
+  serveRun(detail({ status: "AWAITING_APPROVAL", finishedAt: null }), http.get("/api/v1/projects/:id", () => HttpResponse.json({ code: "INTERNAL", detail: "Project unavailable" }, { status: 500 })));
   renderRoute("/runs/r1");
 
   expect(await screen.findByText("Project unavailable")).toBeInTheDocument();
@@ -125,7 +119,7 @@ test("a failed project query shows an error, not the waiting message", async () 
 });
 
 test("files tab selects file from ?path", async () => {
-  const requested: { path: string; diff: string | null }[] = [];
+  const requested: { path: string; diff: string | null; pathname: string }[] = [];
   serveRun(
     detail(),
     http.get("/api/v1/runs/:runId/files", () => HttpResponse.json([
@@ -133,7 +127,8 @@ test("files tab selects file from ?path", async () => {
       { path: "sdk/typescript/src/index.ts", sha256: "b2", size: 120, status: "UNCHANGED" },
     ])),
     http.get("/api/v1/runs/:runId/files/*", ({ request, params }) => {
-      requested.push({ path: String(params[0]), diff: new URL(request.url).searchParams.get("diff") });
+      const url = new URL(request.url);
+      requested.push({ path: String(params[0]), diff: url.searchParams.get("diff"), pathname: url.pathname });
       return HttpResponse.json({ path: String(params[0]), status: "MODIFIED", content: "export const client = {};\n", unifiedDiff: "@@ -1 +1 @@\n-export const client = {};\n+export const client = { retries: 3 };\n" });
     }),
   );
@@ -141,7 +136,8 @@ test("files tab selects file from ?path", async () => {
 
   expect(await screen.findByRole("button", { name: /client\.ts/ })).toHaveAttribute("aria-current", "true");
   expect(await screen.findByRole("region", { name: "Diff of sdk/typescript/src/client.ts" })).toBeInTheDocument();
-  await waitFor(() => expect(requested).toEqual([{ path: "sdk/typescript/src/client.ts", diff: "true" }]));
+  // The slashes of the manifest path reach the server unencoded, so the serializer is what this asserts.
+  await waitFor(() => expect(requested).toEqual([{ path: "sdk/typescript/src/client.ts", diff: "true", pathname: "/api/v1/runs/r1/files/sdk/typescript/src/client.ts" }]));
 });
 
 test("changes tab lists breaking first", async () => {
@@ -211,4 +207,12 @@ test("the run page re-reads an active run every 10 seconds", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("the files tab says the files are not there yet while the run is active", async () => {
+  serveRun(detail({ status: "RUNNING", finishedAt: null }), http.get("/api/v1/runs/:runId/files", () => HttpResponse.json([])));
+  renderRoute("/runs/r1/files");
+
+  expect(await screen.findByText("Not generated yet")).toBeInTheDocument();
+  expect(screen.queryByText("This run did not generate any files.")).not.toBeInTheDocument();
 });
