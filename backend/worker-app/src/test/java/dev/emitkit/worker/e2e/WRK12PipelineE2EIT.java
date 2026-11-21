@@ -1,6 +1,5 @@
 package dev.emitkit.worker.e2e;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
@@ -33,6 +32,7 @@ import dev.emitkit.domain.VersionStrategy;
 import dev.emitkit.domain.storage.ArtifactStorage;
 import dev.emitkit.domain.storage.S3ArtifactStorage;
 import dev.emitkit.domain.storage.StorageProperties;
+import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.worker.WorkerApplication;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,6 +43,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -51,7 +52,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -77,7 +77,8 @@ import org.testcontainers.utility.DockerImageName;
 @EnabledIf("toolchainAvailable")
 class WRK12PipelineE2EIT {
 
-  static final String TOOLCHAIN = "emitkit/toolchain:test";
+  static final String TOOLCHAIN =
+      System.getProperty("emitkit.toolchain.image", "emitkit/toolchain:test");
   private static final String GITHUB_TOKEN = "gho_e2e_token";
   private static final String VAULT_ROOT = "dev-root";
   private static final String S3_SECRET = "emitkit-secret";
@@ -85,6 +86,9 @@ class WRK12PipelineE2EIT {
   private static final AtomicLong SEQUENCE = new AtomicLong();
   private static final GitHubMock GITHUB = new GitHubMock(GITHUB_TOKEN);
   private static Path secretIdFile;
+
+  /** A project and its config, as {@link #seedProject} saves them. */
+  record Seeded(Project project, ProjectConfig config) {}
 
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6-alpine");
@@ -215,7 +219,7 @@ class WRK12PipelineE2EIT {
 
   @Test
   void petstoreAllOutputs_success_prOpened_artifactStored() throws IOException {
-    GenerationRun run = runToEnd("petstore");
+    GenerationRun run = runToEnd(FixtureSpecs.raw("petstore"));
     String repo = projects.findById(run.getProjectId()).orElseThrow().getRepoFullName();
 
     assertThat(run.getStatus())
@@ -231,6 +235,7 @@ class WRK12PipelineE2EIT {
 
     RunArtifact artifact = artifacts.findByRunId(run.getId()).orElseThrow();
     assertThat(artifact.getFileCount()).isPositive();
+    assertThat(artifact.getSizeBytes()).isPositive();
     try (InputStream bytes = storage.get(artifact.getStorageKey())) {
       assertThat(bytes.readAllBytes()).hasSize((int) artifact.getSizeBytes());
     }
@@ -241,12 +246,17 @@ class WRK12PipelineE2EIT {
         .containsExactly(run.getSdkVersion());
   }
 
+  /** Seeds one project with {@link #seedProject}, enqueues a run, and awaits its end. */
+  GenerationRun runToEnd(String spec) {
+    return awaitTerminal(enqueue(seedProject(spec, config -> {})).getId());
+  }
+
   /**
-   * Seeds a user with an encrypted GitHub token, an organization, and a project whose repo holds
-   * {@code e2e/<specName>.yaml} at the spec path, with a config for every output kind. Enqueues a
-   * run and waits for it to reach a terminal status.
+   * Seeds a user with an encrypted GitHub token, an organization, a GitHub repo whose {@code
+   * openapi.yaml} is {@code spec}, and a project with a config that has every output kind. {@code
+   * adjust} edits the config before it is saved.
    */
-  GenerationRun runToEnd(String specName) throws IOException {
+  Seeded seedProject(String spec, Consumer<ProjectConfig> adjust) {
     long n = SEQUENCE.incrementAndGet();
     User creator =
         users.saveAndFlush(
@@ -267,7 +277,6 @@ class WRK12PipelineE2EIT {
             new Organization(
                 null, "github", "org-" + n, "e2e" + n, "E2E " + n, false, creator.getId()));
     String repo = "acme/petstore-" + n;
-    String spec = new ClassPathResource("e2e/" + specName + ".yaml").getContentAsString(UTF_8);
     GITHUB.createRepo(repo, "main", Map.of("openapi.yaml", spec));
     Project project =
         projects.saveAndFlush(
@@ -288,15 +297,33 @@ class WRK12PipelineE2EIT {
     config.setPypiName("acme-petstore");
     config.setMavenGroupId("dev.acme");
     config.setMavenArtifactId("petstore");
-    config = configs.saveAndFlush(config);
-    String runId =
-        runs.saveAndFlush(
-                new GenerationRun(
-                    null, project.getId(), config.getId(), RunTrigger.MANUAL, false, Instant.now()))
-            .getId();
+    adjust.accept(config);
+    return new Seeded(project, configs.saveAndFlush(config));
+  }
 
+  /** Creates a queued run for the seeded project and publishes its job. */
+  GenerationRun enqueue(Seeded seeded) {
+    GenerationRun run =
+        runs.saveAndFlush(
+            new GenerationRun(
+                null,
+                seeded.project().getId(),
+                seeded.config().getId(),
+                RunTrigger.MANUAL,
+                false,
+                Instant.now()));
+    publish(run.getId());
+    return run;
+  }
+
+  /** Publishes a job for an existing run, as a new run or a redelivery does. */
+  void publish(String runId) {
     rabbit.convertAndSend(
         Queues.JOBS_EXCHANGE, Queues.JOBS_ROUTING_KEY, new GenerationJob(runId, 0));
+  }
+
+  /** Waits until the run reaches a terminal status, then returns it. */
+  GenerationRun awaitTerminal(String runId) {
     await()
         .atMost(Duration.ofMinutes(5))
         .pollInterval(Duration.ofSeconds(1))

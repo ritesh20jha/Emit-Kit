@@ -44,6 +44,8 @@ dependencies {
     testImplementation(testFixtures(project(":vcs")))
     // GitHubMock: the GitHub REST endpoints the pipeline calls, served in-process.
     testImplementation(libs.wiremock.standalone)
+    // The petstore spec and other shared OpenAPI fixtures for the end-to-end test.
+    testImplementation(testFixtures(project(":generators:core")))
 }
 
 // The convention plugin disables bootJar until a main class exists; worker-app has one now.
@@ -53,4 +55,5 @@ tasks.withType<Test>().configureEach {
     providers.systemProperty("sandbox.runtime").orNull?.let { systemProperty("sandbox.runtime", it) }
     providers.systemProperty("sandbox.docker-host").orNull?.let { systemProperty("sandbox.docker-host", it) }
     providers.systemProperty("e2e.required").orNull?.let { systemProperty("e2e.required", it) }
+    providers.systemProperty("emitkit.toolchain.image").orNull?.let { systemProperty("emitkit.toolchain.image", it) }
 }
