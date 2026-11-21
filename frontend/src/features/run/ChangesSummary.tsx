@@ -8,7 +8,7 @@ import { runQuery } from "./api";
 
 /** The run's diff summary as a list, breaking changes first. */
 export function ChangesSummary({ runId }: { runId: string }) {
-  const run = useQuery(runQuery(runId));
+  const run = useQuery(runQuery(runId, true));
   return (
     <QueryBody query={run} label="the changes" noAccess="view this run">
       {(detail) => {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, screen, waitFor, within } from "@testing-library/react";
+import { act, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse, type RequestHandler } from "msw";
 import type { ReactNode } from "react";
@@ -70,11 +70,7 @@ test("admin approves with comment", async () => {
   const user = userEvent.setup();
   const decisions: unknown[] = [];
   serveRun(
-    detail({
-      status: "AWAITING_APPROVAL",
-      finishedAt: null,
-      diffSummary: { added: [], modified: [], removed: [{ method: "DELETE", path: "/pets/{id}", operationId: "deletePet" }] },
-    }),
+    detail({ status: "AWAITING_APPROVAL", finishedAt: null, diffSummary: { added: [], modified: [], removed: [{ method: "DELETE", path: "/pets/{id}", operationId: "deletePet" }] } }),
     http.post("/api/v1/runs/:runId/approval", async ({ request }) => {
       decisions.push(await request.json());
       return HttpResponse.json(detail({ status: "SUCCESS" }));
@@ -103,10 +99,7 @@ test("admin sees Approve, not the waiting message, once the project loads", asyn
   const projectLoaded = new Promise<void>((resolve) => (releaseProject = resolve));
   serveRun(
     detail({ status: "AWAITING_APPROVAL", finishedAt: null }),
-    http.get("/api/v1/projects/:id", async () => {
-      await projectLoaded;
-      return HttpResponse.json(project);
-    }),
+    http.get("/api/v1/projects/:id", async () => { await projectLoaded; return HttpResponse.json(project); }),
   );
   renderRoute("/runs/r1");
 
@@ -135,20 +128,13 @@ test("files tab selects file from ?path", async () => {
   const requested: { path: string; diff: string | null }[] = [];
   serveRun(
     detail(),
-    http.get("/api/v1/runs/:runId/files", () =>
-      HttpResponse.json([
-        { path: "sdk/typescript/src/client.ts", sha256: "a1", size: 900, status: "MODIFIED" },
-        { path: "sdk/typescript/src/index.ts", sha256: "b2", size: 120, status: "UNCHANGED" },
-      ]),
-    ),
+    http.get("/api/v1/runs/:runId/files", () => HttpResponse.json([
+      { path: "sdk/typescript/src/client.ts", sha256: "a1", size: 900, status: "MODIFIED" },
+      { path: "sdk/typescript/src/index.ts", sha256: "b2", size: 120, status: "UNCHANGED" },
+    ])),
     http.get("/api/v1/runs/:runId/files/*", ({ request, params }) => {
       requested.push({ path: String(params[0]), diff: new URL(request.url).searchParams.get("diff") });
-      return HttpResponse.json({
-        path: String(params[0]),
-        status: "MODIFIED",
-        content: "export const client = {};\n",
-        unifiedDiff: "@@ -1 +1 @@\n-export const client = {};\n+export const client = { retries: 3 };\n",
-      });
+      return HttpResponse.json({ path: String(params[0]), status: "MODIFIED", content: "export const client = {};\n", unifiedDiff: "@@ -1 +1 @@\n-export const client = {};\n+export const client = { retries: 3 };\n" });
     }),
   );
   renderRoute("/runs/r1/files?path=sdk%2Ftypescript%2Fsrc%2Fclient.ts");
@@ -209,4 +195,20 @@ test("polls every 10 seconds while the run is active", () => {
 
 test("stops polling once the run has ended", () => {
   for (const status of ["SUCCESS", "FAILED", "CANCELLED"] as const) expect(intervalFor(status)).toBe(false);
+});
+
+test("the run page re-reads an active run every 10 seconds", async () => {
+  // Only the interval is faked, so the clock still moves with real time.
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setInterval", "clearInterval"] });
+  let reads = 0;
+  server.use(http.get("/api/v1/runs/:runId", () => { reads += 1; return HttpResponse.json(detail({ status: "RUNNING", finishedAt: null })); }), ...projectHandlers);
+  try {
+    renderRoute("/runs/r1");
+    await screen.findByText("acme/billing-api");
+    const started = reads;
+    act(() => { vi.advanceTimersByTime(10_000); });
+    await waitFor(() => expect(reads).toBe(started + 1));
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -9,7 +9,7 @@ import { StepTimeline } from "./StepTimeline";
 
 /** The run's header, approval banner, step timeline and section tabs. The section (a child route) goes below. */
 export function RunPage({ runId, children }: { runId: string; children: ReactNode }) {
-  const run = useQuery(runQuery(runId));
+  const run = useQuery(runQuery(runId, true));
   return (
     <QueryBody query={run} label="the run" noAccess="view this run">
       {(detail) => <RunLayout run={detail}>{children}</RunLayout>}
