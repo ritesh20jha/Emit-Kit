@@ -15,7 +15,7 @@ export function ProblemsPanel({ view, onJump }: { view: ProblemsView; onJump: (l
         </div>
       )}
       {view.error && <ErrorState error={view.error} onRetry={view.retry} />}
-      {view.status === "ready" && view.problems.length === 0 && <p className="text-sm text-fg-muted">No problems found.</p>}
+      {view.status === "ready" && !view.error && view.problems.length === 0 && <p className="text-sm text-fg-muted">No problems found.</p>}
       {view.status === "ready" && view.problems.length > 0 && (
         <ul className="flex flex-col gap-3">
           {view.problems.map((problem) => (

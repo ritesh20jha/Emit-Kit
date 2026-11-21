@@ -18,7 +18,7 @@ export interface SpecEditorProps {
   onConflict?: (error: AppError) => void;
 }
 
-/** The project's spec, edited in place. Loading and failure to load are shown here; the editing is in EditorSession. */
+/** The project's spec, edited in place. Loading and failure to load show here; editing is in EditorSession. */
 export function SpecEditor({ projectId, onConflict }: SpecEditorProps) {
   const spec = useQuery(specQuery(projectId));
   return (
@@ -32,15 +32,7 @@ export function SpecEditor({ projectId, onConflict }: SpecEditorProps) {
  * One editing session of a loaded spec. The text and the save base (the sha it was loaded or last saved at) are
  * local, so refetches never overwrite what the user is typing. Keyed by project, so a switch starts a new session.
  */
-function EditorSession({
-  projectId,
-  loaded,
-  onConflict,
-}: {
-  projectId: string;
-  loaded: SpecResponse;
-  onConflict?: (error: AppError) => void;
-}) {
+function EditorSession({ projectId, loaded, onConflict }: { projectId: string; loaded: SpecResponse; onConflict?: (error: AppError) => void }) {
   const [text, setText] = useState(loaded.content);
   const [base, setBase] = useState({ content: loaded.content, sha: loaded.sha });
   const editor = useRef<CodeEditorHandle>(null);
@@ -76,24 +68,11 @@ function EditorSession({
 
   return (
     <div className="flex flex-col gap-4">
-      <SpecToolbar
-        dirty={dirty}
-        saving={save.isPending}
-        onSave={() => void saveText(false)}
-        onSaveAndGenerate={() => void saveText(true)}
-        onDryRun={() => startRun.mutate(true)}
-      />
+      <SpecToolbar dirty={dirty} saving={save.isPending} onSave={() => void saveText(false)} onSaveAndGenerate={() => void saveText(true)} onDryRun={() => startRun.isPending || startRun.mutate(true)} />
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="h-[60vh] min-h-72 overflow-hidden rounded-card border border-border">
           <Suspense fallback={<Skeleton className="h-full" />}>
-            <CodeEditor
-              ref={editor}
-              initialText={loaded.content}
-              format={loaded.format}
-              problems={problems.problems}
-              onChange={setText}
-              onSave={() => void saveText(false)}
-            />
+            <CodeEditor ref={editor} initialText={loaded.content} format={loaded.format} problems={problems.problems} onChange={setText} onSave={() => void saveText(false)} />
           </Suspense>
         </div>
         <ProblemsPanel view={problems} onJump={(line) => editor.current?.jumpTo(line)} />

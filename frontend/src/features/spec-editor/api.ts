@@ -24,10 +24,11 @@ export function specQuery(projectId: string) {
   });
 }
 
-/** Lint issues for one text, from the server. */
+/** Lint issues for one text, from the server. The text is the key, and the result never goes stale. */
 export function lintQuery(content: string) {
   return queryOptions({
     queryKey: qk.lint(content),
+    staleTime: Infinity,
     queryFn: async (): Promise<LintIssue[]> => {
       const { data, error, response } = await api.POST("/lint", { body: { content } });
       if (!response.ok) throw toAppError(response, error);

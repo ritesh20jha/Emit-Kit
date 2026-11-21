@@ -19,9 +19,9 @@ export interface Problem {
   line: number | null;
 }
 
-/** What the Problems panel shows. Problems from an earlier check stay visible while a newer one runs. */
+/** What the panel shows. A failed lint check is a notice beside the browser's results, which still show. */
 export interface ProblemsView {
-  status: "pending" | "error" | "ready";
+  status: "pending" | "ready";
   problems: Problem[];
   error: FeedbackError | null;
   retry: () => void;
@@ -52,16 +52,15 @@ export function useSettledText(text: string): string {
 export function useProblems(text: string): ProblemsView {
   const settled = useSettledText(text);
   const lint = useQuery({ ...lintQuery(settled), placeholderData: keepPreviousData });
+  // Both checks are pure functions of the text, so a result for a text never goes stale.
   const validation = useQuery({
     queryKey: qk.validation(settled),
     queryFn: () => validateSpec(settled),
     placeholderData: keepPreviousData,
+    staleTime: Infinity,
   });
 
-  const problems = useMemo(
-    () => [...fromLint(lint.data ?? []), ...fromValidation(validation.data ?? [])].sort(bySeverityAndLine),
-    [lint.data, validation.data],
-  );
+  const problems = useMemo(() => [...fromLint(lint.data ?? []), ...fromValidation(validation.data ?? [])].sort(bySeverityAndLine), [lint.data, validation.data]);
 
   const retry = () => {
     void lint.refetch();
@@ -69,10 +68,7 @@ export function useProblems(text: string): ProblemsView {
   };
   if (lint.isPending || validation.isPending) return { status: "pending", problems: NO_PROBLEMS, error: null, retry };
   const failure = lint.error ?? validation.error;
-  if (failure && (lint.data === undefined || validation.data === undefined)) {
-    return { status: "error", problems: NO_PROBLEMS, error: failureFeedback(failure), retry };
-  }
-  return { status: "ready", problems, error: null, retry };
+  return { status: "ready", problems, error: failure && failureFeedback(failure), retry };
 }
 
 const RANK: Record<ProblemSeverity, number> = { error: 0, warning: 1, info: 2 };
@@ -84,21 +80,9 @@ function bySeverityAndLine(a: Problem, b: Problem): number {
 }
 
 function fromLint(issues: LintIssue[]): Problem[] {
-  return issues.map((issue, index) => ({
-    id: `lint-${index}`,
-    severity: SEVERITY[issue.severity],
-    message: issue.message,
-    path: issue.jsonPath,
-    line: issue.line,
-  }));
+  return issues.map((issue, index) => ({ id: `lint-${index}`, severity: SEVERITY[issue.severity], message: issue.message, path: issue.jsonPath, line: issue.line }));
 }
 
 function fromValidation(issues: ValidationIssue[]): Problem[] {
-  return issues.map((issue, index) => ({
-    id: `validation-${index}`,
-    severity: "error",
-    message: issue.message,
-    path: issue.path,
-    line: issue.line,
-  }));
+  return issues.map((issue, index) => ({ id: `validation-${index}`, severity: "error", message: issue.message, path: issue.path, line: issue.line }));
 }

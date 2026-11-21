@@ -17,13 +17,7 @@ vi.mock("./validation", () => ({ validateSpec: vi.fn(async () => []) }));
 
 const SPEC = "openapi: 3.0.3\ninfo:\n  title: Billing\n  version: 1.0.0\npaths: {}\n";
 const OTHER = "openapi: 3.0.3\ninfo:\n  title: Payments\n  version: 2.0.0\npaths: {}\n";
-const TITLE_WARNING = {
-  jsonPath: "$.info.title",
-  line: 3,
-  message: "Title should be descriptive",
-  ruleId: "info-title",
-  severity: "WARNING",
-};
+const TITLE_WARNING = { jsonPath: "$.info.title", line: 3, message: "Title should be descriptive", ruleId: "info-title", severity: "WARNING" };
 const SAVE_DONE = { commitSha: "c2", newSha: "sha2", runId: null, runError: null };
 
 let linted: string[] = [];
@@ -53,8 +47,7 @@ beforeEach(() => {
 
 test("clicking a problem moves the cursor to its line", async () => {
   const user = userEvent.setup();
-  renderRoute("/projects/p1/editor");
-  await mountedView();
+  await openEditor();
 
   expect(await screen.findByText("Title should be descriptive")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Go to line 3" }));
@@ -85,8 +78,7 @@ test("mod+s saves", async () => {
   const user = userEvent.setup();
   let saved: unknown;
   server.use(http.put("/api/v1/projects/:id/spec", async ({ request }) => ((saved = await request.json()), HttpResponse.json(SAVE_DONE))));
-  renderRoute("/projects/p1/editor");
-  await mountedView();
+  await openEditor();
   typeAtEnd("\n# edit");
 
   await user.click(contentArea());
@@ -101,13 +93,9 @@ test("202 runError shows Retry run action", async () => {
   const runError = { code: "SANDBOX_TIMEOUT", detail: "The generation sandbox did not start." };
   server.use(
     http.put("/api/v1/projects/:id/spec", () => HttpResponse.json({ ...SAVE_DONE, runError }, { status: 202 })),
-    http.post("/api/v1/projects/:id/runs", async ({ request }) => {
-      runBodies.push(await request.json());
-      return HttpResponse.json(runDetail(run("r9", "QUEUED", "MANUAL", 0, null)), { status: 201 });
-    }),
+    http.post("/api/v1/projects/:id/runs", async ({ request }) => ((runBodies.push(await request.json())), HttpResponse.json(runDetail(run("r9", "QUEUED", "MANUAL", 0, null)), { status: 201 }))),
   );
-  renderRoute("/projects/p1/editor");
-  await mountedView();
+  await openEditor();
   typeAtEnd("\n# edit");
 
   await user.click(screen.getByRole("button", { name: "Save & generate" }));
@@ -118,22 +106,29 @@ test("202 runError shows Retry run action", async () => {
 });
 
 test("lint markers come from POST /lint", async () => {
-  renderRoute("/projects/p1/editor");
-  await mountedView();
+  await openEditor();
 
   await waitFor(() => expect(linted).toContain(SPEC));
-  await waitFor(() => {
-    const markers: { message: string; line: number }[] = [];
-    forEachDiagnostic(editorView().state, (diagnostic, from) => {
-      markers.push({ message: diagnostic.message, line: editorView().state.doc.lineAt(from).number });
-    });
-    expect(markers).toEqual([{ message: "Title should be descriptive", line: 3 }]);
-  });
+  await waitFor(() => expect(markers()).toEqual([{ message: "Title should be descriptive", line: 3 }]));
+});
+
+test("a rate-limited lint check keeps browser problems and markers, with an error notice", async () => {
+  vi.mocked(validateSpec).mockResolvedValue([{ message: "Flow sequence in block collection", path: "", line: 2 }]);
+  server.use(
+    http.post("/api/v1/lint", () =>
+      HttpResponse.json({ code: "RATE_LIMITED", title: "Too many requests", status: 429, detail: "Lint is limited. Wait a minute." }, { status: 429 }),
+    ),
+  );
+  await openEditor();
+  const problems = await screen.findByRole("region", { name: "Problems" });
+
+  expect(await within(problems).findByRole("alert")).toHaveTextContent("Lint is limited. Wait a minute.");
+  expect(within(problems).getByText("Flow sequence in block collection")).toBeInTheDocument();
+  await waitFor(() => expect(markers()).toEqual([{ message: "Flow sequence in block collection", line: 2 }]));
 });
 
 test("dry run is blocked while edits are unsaved", async () => {
-  renderRoute("/projects/p1/editor");
-  await mountedView();
+  await openEditor();
   expect(screen.getByRole("button", { name: "Dry run" })).not.toHaveAttribute("aria-disabled");
 
   typeAtEnd("\n# edit");
@@ -182,9 +177,7 @@ test("Save & generate that starts a run offers View run to that run", async () =
 test("switching to a cached project shows and saves that project's spec", async () => {
   const user = userEvent.setup();
   let saved: unknown;
-  server.use(
-    http.put("/api/v1/projects/:id/spec", async ({ params, request }) => ((saved = { project: params.id, body: await request.json() }), HttpResponse.json(SAVE_DONE))),
-  );
+  server.use(http.put("/api/v1/projects/:id/spec", async ({ params, request }) => ((saved = { project: params.id, body: await request.json() }), HttpResponse.json(SAVE_DONE))));
   // p2 is loaded and left first, so its spec is cached when the editor later moves to it from p1.
   const router = renderRoute("/projects/p2/editor");
   await waitFor(() => expect(editorView().state.doc.toString()).toBe(OTHER));
@@ -235,6 +228,12 @@ test("the settled text follows the text only after 500 ms without a change", () 
   }
 });
 
+/** Renders the editor route and waits for the lazily loaded editor to mount. */
+async function openEditor(path = "/projects/p1/editor") {
+  renderRoute(path);
+  await mountedView();
+}
+
 /** Waits for the lazily loaded editor to mount and returns its view. */
 async function mountedView(): Promise<EditorView> {
   await waitFor(() => expect(document.querySelector(".cm-content")).not.toBeNull());
@@ -260,6 +259,14 @@ function typeAtEnd(text: string) {
 function lineOfCursor(): number {
   const view = editorView();
   return view.state.doc.lineAt(view.state.selection.main.head).number;
+}
+
+/** The inline markers the editor currently shows, with the line each one sits on. */
+function markers(): { message: string; line: number }[] {
+  const found: { message: string; line: number }[] = [];
+  const view = editorView();
+  forEachDiagnostic(view.state, (diagnostic, from) => found.push({ message: diagnostic.message, line: view.state.doc.lineAt(from).number }));
+  return found;
 }
 
 async function toastWith(text: string): Promise<HTMLElement> {

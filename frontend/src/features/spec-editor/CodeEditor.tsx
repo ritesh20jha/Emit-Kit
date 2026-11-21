@@ -56,25 +56,11 @@ export default function CodeEditor({ ref, initialText, format, problems, onChang
     };
   }, [seed]);
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      jumpTo(line: number) {
-        const instance = view.current;
-        if (!instance) return;
-        const target = instance.state.doc.line(clampLine(line, instance.state.doc));
-        instance.dispatch({ selection: { anchor: target.from }, scrollIntoView: true });
-        instance.focus();
-      },
-    }),
-    [],
-  );
+  useImperativeHandle(ref, () => ({ jumpTo: (line: number) => jump(view.current, line) }), []);
 
   useEffect(() => {
     const instance = view.current;
-    if (!instance) return;
-    const placed = problems.filter((problem) => problem.line !== null);
-    instance.dispatch(setDiagnostics(instance.state, placed.map((problem) => toDiagnostic(problem, instance.state.doc))));
+    if (instance) instance.dispatch(setDiagnostics(instance.state, markersFor(problems, instance.state.doc)));
   }, [problems]);
 
   return <div ref={host} className="h-full min-h-0" />;
@@ -82,13 +68,7 @@ export default function CodeEditor({ ref, initialText, format, problems, onChang
 
 function extensionsFor(format: string, handlers: { current: Handlers }): Extension[] {
   return [
-    keymap.of([
-      { key: "Mod-s", preventDefault: true, run: () => (handlers.current.onSave(), true) },
-      ...searchKeymap,
-      ...historyKeymap,
-      ...foldKeymap,
-      ...defaultKeymap,
-    ]),
+    keymap.of([{ key: "Mod-s", preventDefault: true, run: () => (handlers.current.onSave(), true) }, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...defaultKeymap]),
     lineNumbers(),
     foldGutter(),
     lintGutter(),
@@ -126,12 +106,19 @@ const theme = EditorView.theme({
   "&.cm-focused": { outline: "2px solid var(--color-focus)", outlineOffset: "-2px" },
 });
 
-function toDiagnostic(problem: Problem, doc: Text): Diagnostic {
-  const line = doc.line(clampLine(problem.line ?? 1, doc));
-  return { from: line.from, to: line.to, severity: problem.severity, message: problem.message };
+/** Puts the cursor at the start of a line, clamped to the document, and scrolls to it. */
+function jump(instance: EditorView | null, line: number) {
+  if (!instance) return;
+  const target = instance.state.doc.line(Math.min(Math.max(line, 1), instance.state.doc.lines));
+  instance.dispatch({ selection: { anchor: target.from }, scrollIntoView: true });
+  instance.focus();
 }
 
-/** A line number that exists in the document now. Problems can be a check behind the text. */
-function clampLine(line: number, doc: Text): number {
-  return Math.min(Math.max(line, 1), doc.lines);
+/** Markers for the problems that have a line. A problem can be a check behind the text, so its line is clamped. */
+function markersFor(problems: Problem[], doc: Text): Diagnostic[] {
+  return problems.flatMap(({ line, severity, message }) => {
+    if (line === null) return [];
+    const at = doc.line(Math.min(Math.max(line, 1), doc.lines));
+    return [{ from: at.from, to: at.to, severity, message }];
+  });
 }

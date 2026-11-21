@@ -16,7 +16,9 @@ export async function validateSpecText(content: string): Promise<ValidationIssue
     return doc.errors.map((error) => ({ message: error.message, path: "", line: error.linePos?.[0]?.line ?? null }));
   }
   try {
-    await SwaggerParser.validate(doc.toJS() as SpecDocument);
+    // Inside the try: a document that cannot be turned into plain data (an alias bomb) is a problem, not a crash.
+    // External $refs stay unresolved, so a spec never makes the viewer's browser fetch another host.
+    await SwaggerParser.validate(doc.toJS() as SpecDocument, { resolve: { external: false } });
     return [];
   } catch (error) {
     const message = error instanceof Error ? error.message : "The spec is not a valid OpenAPI document.";
