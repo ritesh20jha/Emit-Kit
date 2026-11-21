@@ -143,7 +143,8 @@ final class RedisRunLogger implements RunLogger {
   /**
    * Flushes, then stops the periodic flush and publishes the terminal message. If the flush fails,
    * this throws and publishes nothing. The lines stay buffered and the periodic flush keeps trying;
-   * once the lines are saved it publishes the terminal message itself. Calls after that do nothing.
+   * once the lines are saved it publishes the terminal message itself. {@link #close} does not stop
+   * that retry. Calls after that do nothing.
    */
   @Override
   public synchronized void done() {
@@ -165,6 +166,25 @@ final class RedisRunLogger implements RunLogger {
       flushing.cancel(false);
     }
     publish(DONE_MESSAGE);
+  }
+
+  /**
+   * Saves what is buffered and stops the periodic flush, without publishing the terminal message.
+   * Does nothing after {@link #done}, or while a done is pending: the periodic flush finishes that.
+   */
+  @Override
+  public synchronized void close() {
+    if (done || donePending) {
+      return;
+    }
+    if (flushing != null) {
+      flushing.cancel(false);
+    }
+    try {
+      flush();
+    } catch (RuntimeException e) {
+      LOG.warn("run {}: could not save log lines on close", runId, e);
+    }
   }
 
   private void write(String level, String message) {

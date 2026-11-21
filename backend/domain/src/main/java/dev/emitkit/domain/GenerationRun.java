@@ -207,6 +207,10 @@ public class GenerationRun extends BaseEntity {
     return attempt;
   }
 
+  public void setAttempt(int attempt) {
+    this.attempt = attempt;
+  }
+
   public String getStepOutputs() {
     return stepOutputs;
   }

@@ -186,6 +186,8 @@ public class PipelineRunner {
         }
       }
     } finally {
+      // Stops this logger's periodic flush on every exit; done() already did it on a finish.
+      log.close();
       cancellation.release(runId);
     }
   }
