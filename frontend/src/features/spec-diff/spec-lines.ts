@@ -15,15 +15,13 @@ export function opLine({ method, path, operationId }: OpRef): string {
 
 /**
  * Two texts for a diff of the spec. The server returns operations and changes, not the spec's text, so each side is
- * built from them: removed and changed operations on the old side, and changed operations with their changes and the
- * added operations on the new side. A changed operation is on both sides, so it shows as context.
+ * built from them. Only removed operations are on the old side alone and only added operations on the new side alone.
+ * A modified operation and its change lines are on both sides, so they read as context, not as a removal or addition.
  */
 export function summaryTexts(diff: SpecDiff): { oldText: string; newText: string } {
-  const oldLines = [...diff.removed.map(opLine), ...diff.modified.map(({ op }) => opLine(op))];
-  const newLines = [
-    ...diff.modified.flatMap(({ op, changes }) => [opLine(op), ...changes.map((change) => `  ${change.kind} at ${change.location}`)]),
-    ...diff.added.map(opLine),
-  ];
+  const modifiedLines = diff.modified.flatMap(({ op, changes }) => [opLine(op), ...changes.map((change) => `  ${change.kind} at ${change.location}`)]);
+  const oldLines = [...diff.removed.map(opLine), ...modifiedLines];
+  const newLines = [...modifiedLines, ...diff.added.map(opLine)];
   return { oldText: oldLines.join("\n"), newText: newLines.join("\n") };
 }
 

@@ -36,6 +36,8 @@ export function ConflictDialog({ projectId, conflict, mine, dirty, onDismiss, on
   const [comparing, setComparing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [merged, setMerged] = useState(mine);
+  // The sha whose merge view is on screen. Save merged waits for it, so nothing is saved before the server's text shows.
+  const [readySha, setReadySha] = useState<string | null>(null);
 
   /** Reads the server's spec fresh, then hands it over. A failure rejects, so the caller can show it. */
   async function loadServer() {
@@ -72,7 +74,7 @@ export function ConflictDialog({ projectId, conflict, mine, dirty, onDismiss, on
               Reload
             </Button>
             {comparing ? (
-              <Button size="sm" loading={save.isPending} onClick={() => void saveMerged()}>
+              <Button size="sm" loading={save.isPending} disabled={!current.data || readySha !== sha} onClick={() => void saveMerged()}>
                 Save merged
               </Button>
             ) : (
@@ -88,7 +90,7 @@ export function ConflictDialog({ projectId, conflict, mine, dirty, onDismiss, on
             <QueryBody query={current} label="the saved spec" noAccess="edit this spec">
               {(saved) => (
                 <Suspense fallback={<Skeleton className="h-full" />}>
-                  <MergeView key={sha} theirs={saved.content} mine={merged} onMineChange={setMerged} />
+                  <MergeView key={sha} theirs={saved.content} mine={merged} onMineChange={setMerged} onReady={() => setReadySha(sha)} />
                 </Suspense>
               )}
             </QueryBody>

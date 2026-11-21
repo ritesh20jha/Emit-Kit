@@ -13,7 +13,7 @@ const SNAPSHOTS = [
 
 const DIFF = {
   added: [{ method: "get", operationId: "listInvoices", path: "/invoices" }],
-  removed: [],
+  removed: [{ method: "delete", operationId: "deleteInvoice", path: "/invoices/{id}" }],
   modified: [
     {
       op: { method: "post", operationId: "createInvoice", path: "/invoices" },
@@ -56,10 +56,21 @@ test("breaking changes listed first", async () => {
 
   const changes = await screen.findByRole("region", { name: "Changes" });
   const headings = within(changes).getAllByRole("heading").map((heading) => heading.textContent);
-  expect(headings).toEqual(["Breaking changes", "Added", "Modified"]);
+  expect(headings).toEqual(["Breaking changes", "Added", "Removed", "Modified"]);
   const firstItem = within(changes).getAllByRole("listitem")[0];
   expect(firstItem).toHaveTextContent("getInvoice");
   expect(firstItem).toHaveTextContent("Breaking");
+});
+
+test("only added operations are labelled as additions; change lines are context", async () => {
+  renderRoute("/projects/p1/diff");
+  const lines = await screen.findByRole("group", { name: "Changed lines, old and new" });
+
+  expect(within(lines).getByText("DELETE /invoices/{id} (deleteInvoice)").parentElement).toHaveTextContent("Removed:");
+  expect(within(lines).getByText("GET /invoices (listInvoices)").parentElement).toHaveTextContent("Added:");
+  for (const line of within(lines).getAllByText("RESPONSE_PROPERTY_REMOVED at responses.200.total")) {
+    expect(line.parentElement).not.toHaveTextContent(/Added:|Removed:/);
+  }
 });
 
 test("fewer than two saved versions show an empty state", async () => {

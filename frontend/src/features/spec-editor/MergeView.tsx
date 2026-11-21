@@ -10,20 +10,22 @@ export interface MergeViewProps {
   /** The text to merge, which the user edits on the right. Read once, when the view mounts. */
   mine: string;
   onMineChange: (text: string) => void;
+  /** Called once the view is on screen, so the caller knows the merge can be saved. */
+  onReady: () => void;
 }
 
 /**
  * The server's spec beside the editor's text, with the changes highlighted. Only the right side is editable. It is
  * loaded on its own, with the conflict dialog, so CodeMirror's merge code stays out of the main editor bundle.
  */
-export default function MergeView({ theirs, mine, onMineChange }: MergeViewProps) {
+export default function MergeView({ theirs, mine, onMineChange, onReady }: MergeViewProps) {
   const host = useRef<HTMLDivElement>(null);
-  const handler = useRef(onMineChange);
+  const handler = useRef({ onMineChange, onReady });
   // The view is built once from these, so later edits belong to the view, not to props.
   const [seed] = useState(() => ({ theirs, mine }));
 
   useEffect(() => {
-    handler.current = onMineChange;
+    handler.current = { onMineChange, onReady };
   });
 
   useEffect(() => {
@@ -34,12 +36,13 @@ export default function MergeView({ theirs, mine, onMineChange }: MergeViewProps
         doc: seed.mine,
         extensions: [
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) handler.current(update.state.doc.toString());
+            if (update.docChanged) handler.current.onMineChange(update.state.doc.toString());
           }),
           theme,
         ],
       },
     });
+    handler.current.onReady();
     return () => view.destroy();
   }, [seed]);
 
