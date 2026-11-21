@@ -82,9 +82,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.rabbitmq.RabbitMQContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/**
- * The job listener against RabbitMQ, PostgreSQL and Redis. Fake steps, except the real FINALIZE.
- */
+/** The job listener against RabbitMQ, PostgreSQL and Redis, with fake steps. */
 @SpringBootTest(
     classes = WRK11RetryCancelIT.TestApp.class,
     properties = {
@@ -132,7 +130,6 @@ class WRK11RetryCancelIT {
   void seed() {
     long n = SEQUENCE.incrementAndGet();
     fakes.reset();
-    // Each test gets its own user, organization, project and run: the schema makes those unique.
     User creator =
         users.saveAndFlush(
             new User(null, n, "user" + n, "User " + n, "user" + n + "@example.com", "https://a"));
@@ -175,10 +172,7 @@ class WRK11RetryCancelIT {
     publish(job);
 
     awaitTerminal();
-    await()
-        .during(Duration.ofSeconds(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> fakes.vcs().calls("openPr").size() == 1);
+    awaitSingleOpenPr();
 
     assertThat(reload().getStatus()).isEqualTo(RunStatus.SUCCESS);
     assertThat(fakes.vcs().calls("openPr")).hasSize(1);
@@ -249,8 +243,7 @@ class WRK11RetryCancelIT {
     await().atMost(Duration.ofSeconds(10)).until(() -> reload().getCurrentStep() == SYNTAX_CHECK);
     assertThat(fakes.vcs().branches(repo)).contains(branch);
 
-    // Only the control message: the DB flag stays unset, so the cancel can only come from the
-    // listener, which must act well before the registry's five-second database recheck.
+    // Only the control message, DB flag unset: the listener must act before the 5 s DB recheck.
     rabbit.convertAndSend(Queues.CONTROL_EXCHANGE, "", new ControlMessage("CANCEL", runId));
 
     await().atMost(Duration.ofSeconds(3)).until(() -> reload().getStatus() == RunStatus.CANCELLED);
@@ -267,7 +260,7 @@ class WRK11RetryCancelIT {
         FETCH_SPEC,
         ctx -> {
           fetches.incrementAndGet();
-          // Long enough that the second delivery is consumed while this run still holds its lock.
+          // Long enough for the second delivery to arrive while this run holds the lock.
           Thread.sleep(1000);
           return new StepResult.Continue("FETCH_SPEC-out");
         });
@@ -277,10 +270,7 @@ class WRK11RetryCancelIT {
     publish(job);
 
     awaitTerminal();
-    await()
-        .during(Duration.ofSeconds(1))
-        .atMost(Duration.ofSeconds(5))
-        .until(() -> fakes.vcs().calls("openPr").size() == 1);
+    awaitSingleOpenPr();
 
     assertThat(fetches).hasValue(1);
     assertThat(fakes.vcs().calls("openPr")).hasSize(1);
@@ -298,6 +288,14 @@ class WRK11RetryCancelIT {
       killed.set(true);
       throw e;
     }
+  }
+
+  /** Waits out a second delivery's window, then checks that only one PR was opened. */
+  private void awaitSingleOpenPr() {
+    await()
+        .during(Duration.ofSeconds(1))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> fakes.vcs().calls("openPr").size() == 1);
   }
 
   private List<GenerationRunLog> logLines() {
@@ -368,7 +366,6 @@ class WRK11RetryCancelIT {
             new StepResult.Continue(new RunGeneratorsStep.Output(0, "generation"));
         case CALC_VERSION -> new StepResult.Continue(new CalcVersionStep.Output("1.2.0", true));
         case COMMIT_OUTPUT -> {
-          // What the real step does: cut the branch and open the PR.
           String branchName = "emitkit/run-" + ctx.run().getId();
           String repoName = ctx.project().getRepoFullName();
           VcsClient client = ctx.vcs();

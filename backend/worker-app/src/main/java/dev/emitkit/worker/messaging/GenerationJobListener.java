@@ -12,6 +12,7 @@ import dev.emitkit.worker.pipeline.CancelledException;
 import dev.emitkit.worker.pipeline.PipelineRunner;
 import dev.emitkit.worker.pipeline.RunLogger;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -26,8 +27,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Runs each generation job per delivery. A run that another delivery holds is dropped. Transient
- * failures are routed after the lock is released, and the message is acked once it is handled.
+ * Runs each delivery of a generation job. Transient failures are routed after the lock is released.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -39,6 +39,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class GenerationJobListener {
 
   private static final Logger LOG = LoggerFactory.getLogger(GenerationJobListener.class);
+  static final Duration REQUEUE_DELAY = Duration.ofSeconds(5);
 
   private final PipelineRunner runner;
   private final RunLock locks;
@@ -70,8 +71,8 @@ class GenerationJobListener {
       throws IOException {
     String runId = job.runId();
     MDC.put("runId", runId);
-    LOG.info("Received generation job runId={} attempt={}", runId, job.attempt());
     try {
+      LOG.info("Received generation job runId={} attempt={}", runId, job.attempt());
       Optional<RunLock.Lease> lease = locks.tryAcquire(runId);
       if (lease.isEmpty()) {
         LOG.info("generation run {} is held by another delivery; dropping this one", runId);
@@ -86,14 +87,27 @@ class GenerationJobListener {
         retries.route(job, transientFailure);
       }
       channel.basicAck(deliveryTag, false);
+    } catch (RuntimeException e) {
+      // Unacked, the delivery would hold the only prefetch slot until restart.
+      LOG.error("generation job failed before it was handled; requeuing it", e);
+      pauseBeforeRequeue();
+      channel.basicNack(deliveryTag, false, true);
     } finally {
       MDC.remove("runId");
     }
   }
 
+  private static void pauseBeforeRequeue() {
+    try {
+      Thread.sleep(REQUEUE_DELAY);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
   /**
-   * Runs the pipeline for the run once. Returns the transient failure to retry, or null when the
-   * run is handled: finished, cancelled or failed.
+   * Runs the pipeline once; returns the transient failure to retry, or null when the run is
+   * handled.
    */
   private TransientException runOnce(String runId) {
     try {

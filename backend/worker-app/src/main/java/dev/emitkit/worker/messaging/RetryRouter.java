@@ -16,8 +16,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Parks a transiently failed job in the retry queue for its attempt, or dead-letters it and fails
- * the run once the retries are spent. Called after the run's lock is released.
+ * Parks a transiently failed job for its next attempt, or dead-letters it once retries are spent.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")

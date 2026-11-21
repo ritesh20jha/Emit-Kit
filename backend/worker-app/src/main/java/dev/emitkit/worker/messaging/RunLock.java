@@ -13,11 +13,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.stereotype.Component;
 
-/**
- * Lets one worker run a generation run at a time, with a session-level PostgreSQL advisory lock on
- * a connection of its own. A worker that dies loses its session, and the broker redelivers the
- * message it had not acknowledged.
- */
+/** Lets one worker run a run at a time, with an advisory lock on a connection of its own. */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
 class RunLock {
@@ -50,7 +46,11 @@ class RunLock {
 
   private Connection connect() {
     try {
-      return dataSource.getConnection();
+      Connection connection = dataSource.getConnection();
+      // Manual-commit mode would leave a pooled session idle in a transaction while it holds the
+      // lock.
+      connection.setAutoCommit(true);
+      return connection;
     } catch (SQLException e) {
       throw new DataAccessResourceFailureException("no connection for the run lock", e);
     }
@@ -94,23 +94,26 @@ class RunLock {
       this.runId = runId;
     }
 
-    /**
-     * Releases the lock. If that fails or finds no lock, all of the connection's locks are dropped,
-     * so a pooled session cannot keep the run locked.
-     */
+    /** Releases the lock; if that fails, drops all of the connection's locks. */
     @Override
     public void close() {
-      boolean released = false;
       try {
-        released = queryBoolean(connection, UNLOCK, runId);
+        if (!unlock()) {
+          LOG.warn("lock of generation run {} was not released; dropping all locks", runId);
+          dropAllLocks(connection, runId);
+        }
+      } finally {
+        closeQuietly(connection);
+      }
+    }
+
+    private boolean unlock() {
+      try {
+        return queryBoolean(connection, UNLOCK, runId);
       } catch (SQLException e) {
         LOG.warn("could not release the lock of generation run {}", runId, e);
+        return false;
       }
-      if (!released) {
-        LOG.warn("lock of generation run {} was not released; dropping all locks", runId);
-        dropAllLocks(connection, runId);
-      }
-      closeQuietly(connection);
     }
   }
 }

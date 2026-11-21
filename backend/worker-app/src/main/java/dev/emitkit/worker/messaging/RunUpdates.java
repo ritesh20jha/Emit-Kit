@@ -10,10 +10,7 @@ final class RunUpdates {
 
   private RunUpdates() {}
 
-  /**
-   * Applies {@code change} to the run in one transaction, on its locked row. Returns false, writing
-   * nothing, if the run is missing or already terminal.
-   */
+  /** Applies {@code change} to the run in one transaction, on its locked row, if not terminal. */
   static boolean ifRunning(
       TransactionTemplate transactions,
       GenerationRunRepository runs,

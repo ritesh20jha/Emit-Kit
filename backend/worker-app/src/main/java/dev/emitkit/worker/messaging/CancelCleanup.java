@@ -16,10 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * Deletes a cancelled run's branch and marks it CANCELLED. A finished run is left alone, so the
- * branch of a finished run with a pull request is kept.
- */
+/** Deletes a cancelled run's branch and marks it CANCELLED. A finished run is left alone. */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
 class CancelCleanup {

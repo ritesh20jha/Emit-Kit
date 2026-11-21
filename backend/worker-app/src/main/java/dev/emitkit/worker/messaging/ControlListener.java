@@ -20,8 +20,6 @@ import org.springframework.stereotype.Component;
     matchIfMissing = true)
 class ControlListener {
 
-  static final String CANCEL = "CANCEL";
-
   private final CancellationRegistry cancellation;
 
   ControlListener(CancellationRegistry cancellation) {
@@ -32,10 +30,10 @@ class ControlListener {
   void onControl(
       ControlMessage message, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
       throws IOException {
-    if (CANCEL.equals(message.type())) {
+    if ("CANCEL".equals(message.type())) {
       cancellation.add(message.runId());
     }
-    // Acknowledged like every listener, since the container uses manual acks.
+    // Manual acks, as for every listener.
     channel.basicAck(deliveryTag, false);
   }
 }
