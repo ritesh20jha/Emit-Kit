@@ -298,6 +298,36 @@ class WRK04LintDiffVersionTest {
     assertThat(reload(runId).getChangeType()).isEqualTo(ChangeType.PATCH);
   }
 
+  @Test
+  void lintSpec_terminalRun_parksWithoutWriting() {
+    config.setLintFailOn(LintFailOn.ERROR);
+    String runId = runWith(ERROR_SPEC, T3, RunStatus.SUCCESS).getId();
+
+    assertThat(lint.execute(context(reload(runId)))).isEqualTo(new StepResult.Park());
+    assertThat(lintResults.findByRunId(runId)).isEmpty();
+  }
+
+  @Test
+  void diffSpec_terminalRun_parksWithoutWriting() {
+    String runId = runWith(PETS_V1, T3, RunStatus.FAILED).getId();
+
+    assertThat(diff.execute(context(reload(runId)))).isEqualTo(new StepResult.Park());
+    assertThat(reload(runId).getDiffSummary()).isNull();
+  }
+
+  @Test
+  void calcVersion_terminalRun_parksWithoutWriting() {
+    String runId = runWith(PETS_V1, T3, RunStatus.RUNNING).getId();
+    diff.execute(context(reload(runId)));
+    GenerationRun finished = reload(runId);
+    finished.setStatus(RunStatus.CANCELLED);
+    runs.saveAndFlush(finished);
+
+    assertThat(calc.execute(context(reload(runId)))).isEqualTo(new StepResult.Park());
+    assertThat(reload(runId).getSdkVersion()).isNull();
+    assertThat(reload(runId).getChangeType()).isNull();
+  }
+
   /**
    * The project's snapshot of the spec, stored as PARSE_SPEC stores it: one per content hash, so
    * runs of the same content share it.
