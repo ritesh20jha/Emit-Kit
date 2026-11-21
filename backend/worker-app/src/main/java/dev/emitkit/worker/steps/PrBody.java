@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 /**
  * Renders the pull request body: the changelog from the spec diff, then the lint summary and a link
@@ -71,6 +72,18 @@ final class PrBody {
     }
     lines.sort(Comparator.comparing(Line::breaking).reversed());
     return lines;
+  }
+
+  /**
+   * The changelog stored with a released version: the lines of the body's changes section, one
+   * bullet per line, or a sentence saying there were none.
+   */
+  static String changelog(SpecDiff diff) {
+    List<Line> changes = lines(diff);
+    if (changes.isEmpty()) {
+      return "No API changes were recorded for this run.";
+    }
+    return changes.stream().map(line -> "- " + line.text()).collect(Collectors.joining("\n"));
   }
 
   private static String endpoint(OpRef op) {
