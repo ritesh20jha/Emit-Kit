@@ -23,6 +23,9 @@ emitkit:
     work-dir: ${java.io.tmpdir}/emitkit
     work-dir-retention: 1h
     work-dir-sweep-interval: 10m
+  # Run links in pull requests point at the web app. The api-app reads the same key.
+  web:
+    base-url: http://localhost:5173
   ai:
     gemini:
       default-model: gemini-2.5-flash

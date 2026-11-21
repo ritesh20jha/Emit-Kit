@@ -23,6 +23,8 @@ dependencies {
     implementation(libs.jackson.databind)
     implementation(libs.docker.java.core)
     implementation(libs.docker.java.transport.httpclient5)
+    // PR bodies and breaking-change comments are markdown, rendered from templates without escaping.
+    implementation(libs.jmustache)
     implementation(libs.commons.compress)
     // Live run logs: lines are published to Redis and buffered to Postgres. Boot's module supplies
     // the auto-configured StringRedisTemplate; lettuce is its optional client.

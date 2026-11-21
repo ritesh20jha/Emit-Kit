@@ -243,12 +243,24 @@ public class GenerationRun extends BaseEntity {
     return branchName;
   }
 
+  public void setBranchName(String branchName) {
+    this.branchName = branchName;
+  }
+
   public String getPrUrl() {
     return prUrl;
   }
 
+  public void setPrUrl(String prUrl) {
+    this.prUrl = prUrl;
+  }
+
   public Integer getPrNumber() {
     return prNumber;
+  }
+
+  public void setPrNumber(Integer prNumber) {
+    this.prNumber = prNumber;
   }
 
   public Instant getCreatedAt() {
