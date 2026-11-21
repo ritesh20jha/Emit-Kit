@@ -57,6 +57,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +80,14 @@ jobs:
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Accessibility and mobile specs
+      - name: End-to-end specs
         working-directory: frontend
-        run: pnpm exec playwright test --project=chromium e2e/a11y.spec.ts e2e/mobile.spec.ts
+        run: pnpm test:e2e
+
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: frontend/test-results
+          if-no-files-found: ignore

@@ -8,3 +8,4 @@ coverage
 .vite
 .tanstack
 dist-e2e
+public/mockServiceWorker.js

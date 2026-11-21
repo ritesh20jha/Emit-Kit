@@ -1,22 +1,18 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { blockingViolations } from './support/axe';
 import { PROJECT, setTheme, V1_ROUTES } from './support/v1Routes';
-
-const BLOCKING = ['serious', 'critical'];
 
 for (const route of V1_ROUTES) {
   for (const theme of ['light', 'dark'] as const) {
     test(`${route.path} has no serious or critical axe violations [${theme}]`, async ({ page }) => {
       await setTheme(page, theme);
       await page.goto(route.path);
+      // The theme is checked too, so a renamed storage key cannot quietly turn the dark runs into light ones.
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await expect(route.ready(page)).toBeVisible();
       await page.waitForLoadState('networkidle');
 
-      const results = await new AxeBuilder({ page }).analyze();
-      const blocking = results.violations
-        .filter((violation) => BLOCKING.includes(violation.impact ?? ''))
-        .map((violation) => `${violation.id} (${violation.impact}): ${violation.nodes.map((n) => n.target.join(' ')).join(', ')}`);
-      expect(blocking).toEqual([]);
+      expect(await blockingViolations(page)).toEqual([]);
     });
   }
 }
@@ -27,14 +23,11 @@ for (const theme of ['light', 'dark'] as const) {
     await page.setViewportSize({ width: 360, height: 740 });
     await setTheme(page, theme);
     await page.goto(`/projects/${PROJECT}/runs`);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Open navigation' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
 
-    const results = await new AxeBuilder({ page }).analyze();
-    const blocking = results.violations
-      .filter((violation) => BLOCKING.includes(violation.impact ?? ''))
-      .map((violation) => `${violation.id} (${violation.impact}): ${violation.nodes.map((n) => n.target.join(' ')).join(', ')}`);
-    expect(blocking).toEqual([]);
+    expect(await blockingViolations(page)).toEqual([]);
   });
 }
