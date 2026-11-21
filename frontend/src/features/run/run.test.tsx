@@ -45,6 +45,14 @@ test("clicking a step filters logs", async () => {
   expect(screen.getByRole("button", { name: /run generators/i })).toHaveAttribute("aria-pressed", "true");
 });
 
+test.each(["/runs/r1", "/runs/r1/logs"])("the Logs tab is the current section on %s", async (path) => {
+  serveRun(detail());
+  renderRoute(path);
+
+  expect(await screen.findByRole("link", { name: "Logs" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Files" })).not.toHaveAttribute("aria-current");
+});
+
 test.each([
   { status: "RUNNING", role: "ADMIN", artifact: false, cancel: true, rerun: false, download: false },
   { status: "QUEUED", role: "VIEWER", artifact: false, cancel: false, rerun: false, download: false },

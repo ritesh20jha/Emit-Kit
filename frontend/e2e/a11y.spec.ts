@@ -6,9 +6,10 @@ const BLOCKING = ['serious', 'critical'];
 
 for (const route of V1_ROUTES) {
   for (const theme of ['light', 'dark'] as const) {
-    test(`${route} has no serious or critical axe violations [${theme}]`, async ({ page }) => {
+    test(`${route.path} has no serious or critical axe violations [${theme}]`, async ({ page }) => {
       await setTheme(page, theme);
-      await page.goto(route);
+      await page.goto(route.path);
+      await expect(route.ready(page)).toBeVisible();
       await page.waitForLoadState('networkidle');
 
       const results = await new AxeBuilder({ page }).analyze();

@@ -1,9 +1,11 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { type KeyboardEvent, useRef } from "react";
 
 export interface RouteTab {
   to: string;
   label: string;
+  /** Other paths that also show this tab as current, such as a section's index route that renders the same view. */
+  alsoActiveAt?: string[];
 }
 
 export interface RouteTabsProps {
@@ -18,6 +20,7 @@ export interface RouteTabsProps {
  */
 export function RouteTabs({ tabs, label = "Sections" }: RouteTabsProps) {
   const links = useRef<(HTMLAnchorElement | null)[]>([]);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   function moveFocus(event: KeyboardEvent<HTMLUListElement>) {
     const current = links.current.findIndex((link) => link === event.target);
@@ -50,6 +53,8 @@ export function RouteTabs({ tabs, label = "Sections" }: RouteTabsProps) {
               to={tab.to}
               onFocus={(event) => event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" })}
               activeOptions={{ exact: true, includeSearch: false }}
+              // Link marks only its own path as current, so an extra path is marked here. A current link sets its own.
+              aria-current={tab.alsoActiveAt?.includes(pathname) ? "page" : undefined}
               className="-mb-px inline-flex h-9 items-center border-b-2 border-transparent px-3 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) hover:text-fg aria-[current=page]:border-accent aria-[current=page]:text-fg"
             >
               {tab.label}
