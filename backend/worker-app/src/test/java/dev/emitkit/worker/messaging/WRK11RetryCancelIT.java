@@ -216,6 +216,7 @@ class WRK11RetryCancelIT {
     assertThat(lintCalls).hasValue(2);
     assertThat(fakes.vcs().calls("openPr")).hasSize(1);
     // Both attempts' lines and the retry notice are stored, in one unbroken seq run.
+    awaitLogLine("Retrying in 200ms");
     assertThat(logLines())
         .extracting(GenerationRunLog::getMessage)
         .contains("lint attempt 1", "Retrying in 200ms", "lint attempt 2");
@@ -242,6 +243,8 @@ class WRK11RetryCancelIT {
     assertThat(run.getFailureCode()).isEqualTo("INTERNAL");
     assertThat(run.getFailureMessage()).isEqualTo("Internal error");
     assertThat(run.getFinishedAt()).isNotNull();
+    // FAILED is committed before the failure's own log lines are saved, so wait for the last one.
+    awaitLogLine("Internal error");
     assertThat(logLines())
         .extracting(GenerationRunLog::getMessage)
         .contains("before the crash", "Internal error")
@@ -450,6 +453,13 @@ class WRK11RetryCancelIT {
     return logs.findByRunIdAndSeqGreaterThanOrderBySeq(runId, 0);
   }
 
+  /** Waits until a line with exactly {@code message} is saved; the status can commit before it. */
+  private void awaitLogLine(String message) {
+    await()
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> logLines().stream().anyMatch(line -> message.equals(line.getMessage())));
+  }
+
   /** The saved lines carry seqs 1..n in order: no duplicates and no gaps. */
   private void assertSeqContiguous() {
     List<Integer> seqs = logLines().stream().map(GenerationRunLog::getSeq).toList();
@@ -463,7 +473,8 @@ class WRK11RetryCancelIT {
   private void assertFlushStopped(RunLogger closed) {
     // A probe line takes a seq the run may already hold, and the unique (run_id, seq) rejects that
     // one. Four lines leave at least one seq past the run's last line, and that one is saved if the
-    // flush still runs.
+    // flush still runs. This relies on the run writing fewer than four lines after the closed
+    // logger's seq; the tests here write at most two.
     for (int i = 0; i < 4; i++) {
       closed.info("written after close " + i);
     }
