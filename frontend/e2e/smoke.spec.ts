@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('home page renders the EmitKit heading', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'EmitKit' })).toBeVisible();
+test('login page renders the sign-in heading', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Sign in to EmitKit' })).toBeVisible();
 });

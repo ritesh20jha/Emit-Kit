@@ -1,3 +1,4 @@
+import "@/lib/shims/buffer";
 import SwaggerParser from "@apidevtools/swagger-parser";
 import { type Document, parseDocument } from "yaml";
 import type { ValidationIssue } from "./validation";

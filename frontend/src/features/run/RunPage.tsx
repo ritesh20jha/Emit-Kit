@@ -39,7 +39,7 @@ function RunLayout({ run, children }: { run: RunDetail; children: ReactNode }) {
           <RouteTabs
             label="Run sections"
             tabs={[
-              { to: base, label: "Logs" },
+              { to: `${base}/logs`, label: "Logs", alsoActiveAt: [base] },
               { to: `${base}/files`, label: "Files" },
               { to: `${base}/lint`, label: "Lint" },
               { to: `${base}/changes`, label: "Changes" },

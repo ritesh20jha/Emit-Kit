@@ -26,6 +26,7 @@ export default defineConfig({
     // It generates src/routeTree.gen.ts, which is committed.
     tanstackRouter({
       target: "react",
+      autoCodeSplitting: true,
       routeFileIgnorePattern: "\\.test\\.",
     }),
     react(),
