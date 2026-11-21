@@ -33,6 +33,7 @@ export const qk = {
     one: (id: string) => ["runs", id],
     logs: (id: string) => ["runs", id, "logs"],
     files: (id: string) => ["runs", id, "files"],
+    lint: (id: string) => ["runs", id, "lint"],
   },
   versions: (projectId: string) => ["projects", projectId, "versions"],
   /** Lint issues for one text. The text is the key, so an unchanged text is linted once. */

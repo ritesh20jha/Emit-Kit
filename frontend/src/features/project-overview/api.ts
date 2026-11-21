@@ -25,8 +25,13 @@ export function recentRunsQuery(projectId: string) {
   });
 }
 
-/** One run in full, which carries its lint counts. */
-export function runQuery(runId: string) {
+/** An active run is read again this often when polled, as a fallback to the refresh on each new step. */
+const POLL_INTERVAL_MS = 10_000;
+const ACTIVE: ReadonlySet<RunDetail["status"]> = new Set(["QUEUED", "RUNNING", "AWAITING_APPROVAL"]);
+export const isActive = (status: RunDetail["status"]): boolean => ACTIVE.has(status);
+
+/** One run in full, which carries its lint counts. `poll` re-reads it every 10 s while it is active (the run page does). */
+export function runQuery(runId: string, poll = false) {
   return queryOptions({
     queryKey: qk.runs.one(runId),
     queryFn: async (): Promise<RunDetail> => {
@@ -34,6 +39,7 @@ export function runQuery(runId: string) {
       if (!response.ok) throw toAppError(response, error);
       return data as RunDetail;
     },
+    refetchInterval: poll ? (query) => (query.state.data && isActive(query.state.data.status) ? POLL_INTERVAL_MS : false) : undefined,
   });
 }
 

@@ -4,6 +4,24 @@ import type { paths } from "./generated/schema";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/** The run files endpoint's `{path}` is a manifest path, whose '/' separators the contract says to keep unencoded. */
+const MANIFEST_PATH_ENDPOINT = /\/files\/\{path\}$/;
+
+/**
+ * Fills the path template. Each value is percent-encoded whole, except a manifest path, whose segments are encoded one
+ * by one so the slashes survive. openapi-fetch's default serializer would encode the slashes too.
+ */
+function serializePath(pathname: string, params: Record<string, unknown>): string {
+  return pathname.replace(/\{([^}]+)\}/g, (template, name: string) => {
+    const value = params[name];
+    if (value === undefined || value === null) return template;
+    if (name === "path" && MANIFEST_PATH_ENDPOINT.test(pathname)) {
+      return String(value).split("/").map(encodeURIComponent).join("/");
+    }
+    return encodeURIComponent(String(value));
+  });
+}
+
 /** Reads a cookie by name. Returns undefined when it is absent. */
 export function readCookie(name: string): string | undefined {
   const prefix = `${name}=`;
@@ -52,6 +70,7 @@ const sessionMiddleware: Middleware = {
 export const api = createClient<paths>({
   baseUrl: `${window.location.origin}/api/v1`,
   credentials: "include",
+  pathSerializer: serializePath,
   // Looked up per call, not captured at import, so MSW can patch fetch after this module loads.
   fetch: (request) => globalThis.fetch(request),
 });
