@@ -73,21 +73,29 @@ public final class FinalizeStep implements PipelineStep {
     String changelog =
         release ? PrBody.changelog(CommitOutputStep.parseDiff(run.getDiffSummary())) : null;
 
-    Optional<Boolean> recorded = finish(runId, calc.version(), release, changelog);
-    if (recorded.isEmpty()) {
+    Optional<Recording> recording = finish(runId, calc.version(), release, changelog);
+    if (recording.isEmpty()) {
       // The run is already terminal: whoever finished it owns the log and the work dir.
       return new StepResult.Park();
     }
+    if (recording.get() == Recording.ALREADY_RELEASED) {
+      ctx.log()
+          .warn(
+              "Version "
+                  + calc.version()
+                  + " was already released by another run; not recorded again");
+    }
     ctx.log().done();
     workDir.delete(runId);
-    return new StepResult.Continue(new Output(calc.version(), recorded.get()));
+    return new StepResult.Continue(
+        new Output(calc.version(), recording.get() == Recording.RECORDED));
   }
 
   /**
    * In one transaction, on the locked run: sets SUCCESS and inserts the version when it is to be
    * released and not yet recorded. Empty, writing nothing, if the run has become terminal.
    */
-  private Optional<Boolean> finish(
+  private Optional<Recording> finish(
       String runId, String version, boolean release, String changelog) {
     return transactions.execute(tx ->
         runs.findByIdForUpdate(runId)
@@ -95,21 +103,31 @@ public final class FinalizeStep implements PipelineStep {
             .map(run -> {
               run.setStatus(RunStatus.SUCCESS);
               run.setFinishedAt(clock.instant());
-              return release && insertVersion(run, version, changelog);
+              return release ? insertVersion(run, version, changelog) : Recording.NOT_RELEASED;
             }));
   }
 
   /** Inserts the version unless the project already released it. */
-  private boolean insertVersion(GenerationRun run, String version, String changelog) {
+  private Recording insertVersion(GenerationRun run, String version, String changelog) {
     String projectId = run.getProjectId();
     if (sdkVersions.existsByProjectIdAndVersion(projectId, version)) {
-      return false;
+      return Recording.ALREADY_RELEASED;
     }
     ChangeType changeType = Objects.requireNonNull(run.getChangeType(), "changed run has no type");
     sdkVersions.save(
         new SdkVersion(
             null, projectId, version, run.getId(), changeType, changelog, clock.instant()));
-    return true;
+    return Recording.RECORDED;
+  }
+
+  /** What the run did with its version. */
+  private enum Recording {
+    /** A changed version, not yet released: its row was inserted. */
+    RECORDED,
+    /** A changed version that the project had already released: no row was inserted. */
+    ALREADY_RELEASED,
+    /** An unchanged version, or a dry run: nothing to record. */
+    NOT_RELEASED
   }
 
   /** The version the run ended with, and whether this run recorded it. */

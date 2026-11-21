@@ -132,7 +132,19 @@ class WRK10FinalizeTest {
 
     assertThat(output(result)).isEqualTo(new FinalizeStep.Output(LAST_VERSION, false));
     assertThat(versions.rows).isEmpty();
+    assertThat(log.warnings).isEmpty();
     assertThat(run.getStatus()).isEqualTo(RunStatus.SUCCESS);
+  }
+
+  @Test
+  void changedWithoutChanges_storesEmptyChangelog() {
+    givenRun(ChangeType.PATCH, false, null);
+
+    step.execute(context());
+
+    assertThat(versions.rows)
+        .singleElement()
+        .satisfies(row -> assertThat(row.getChangelog()).isEmpty());
   }
 
   @Test
@@ -171,6 +183,9 @@ class WRK10FinalizeTest {
     assertThat(versions.rows)
         .singleElement()
         .satisfies(row -> assertThat(row.getRunId()).isEqualTo(RUN_ID));
+    assertThat(log.warnings)
+        .containsExactly(
+            "Version " + NEW_VERSION + " was already released by another run; not recorded again");
     assertThat(log.doneCalls).isEqualTo(2);
   }
 
@@ -232,16 +247,19 @@ class WRK10FinalizeTest {
     return ((StepResult.Continue) result).output();
   }
 
-  /** Counts the calls to {@code done()}. The other lines are not kept. */
+  /** Counts the calls to {@code done()} and keeps the warnings. The other lines are not kept. */
   private static final class CountingLogger implements RunLogger {
 
     int doneCalls;
+    final List<String> warnings = new ArrayList<>();
 
     @Override
     public void info(String message) {}
 
     @Override
-    public void warn(String message) {}
+    public void warn(String message) {
+      warnings.add(message);
+    }
 
     @Override
     public void error(String message) {}

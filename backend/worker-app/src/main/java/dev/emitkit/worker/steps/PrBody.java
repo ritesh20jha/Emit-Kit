@@ -76,14 +76,10 @@ final class PrBody {
 
   /**
    * The changelog stored with a released version: the lines of the body's changes section, one
-   * bullet per line, or a sentence saying there were none.
+   * bullet per line. An empty string when there are none, as sdk_versions stores it (V4).
    */
   static String changelog(SpecDiff diff) {
-    List<Line> changes = lines(diff);
-    if (changes.isEmpty()) {
-      return "No API changes were recorded for this run.";
-    }
-    return changes.stream().map(line -> "- " + line.text()).collect(Collectors.joining("\n"));
+    return lines(diff).stream().map(line -> "- " + line.text()).collect(Collectors.joining("\n"));
   }
 
   private static String endpoint(OpRef op) {
