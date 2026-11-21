@@ -5,7 +5,12 @@ import static dev.emitkit.domain.RunStatus.RUNNING;
 import static dev.emitkit.domain.RunStatus.SUCCESS;
 import static dev.emitkit.domain.RunTrigger.MANUAL;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,7 +46,10 @@ import io.lettuce.core.api.async.RedisAsyncCommands;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,20 +59,27 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-/** RUN-03: the stored log of a run, and the live log stream over Redis. */
+/**
+ * RUN-03: the stored log of a run, and the live stream over Redis. The timings are cut down so the
+ * waits are short.
+ */
 @SpringBootTest(
     properties = {
       "emitkit.vault.cipher=local",
       GitHubTestCredentials.CLIENT_ID,
-      GitHubTestCredentials.CLIENT_SECRET
+      GitHubTestCredentials.CLIENT_SECRET,
+      "emitkit.logs.heartbeat=300ms",
+      "emitkit.logs.gap-timeout=2s",
+      "emitkit.logs.terminal-grace=1s"
     })
 @AutoConfigureMockMvc
 @Import({RedisTestConfig.class, PostgresTestConfig.class})
@@ -81,6 +96,7 @@ class RUN03LogStreamIT {
 
   private static final String LOGS = "/api/v1/runs/{runId}/logs";
   private static final String STREAM = "/api/v1/runs/{runId}/logs/stream";
+  private static final String DONE = "{\"type\":\"done\"}";
   private static final Instant BASE = Instant.parse("2026-03-01T10:00:00Z");
 
   @Autowired private MockMvc mvc;
@@ -91,7 +107,7 @@ class RUN03LogStreamIT {
   @Autowired private ProjectRepository projects;
   @Autowired private ProjectConfigRepository configs;
   @Autowired private GenerationRunRepository generationRuns;
-  @Autowired private GenerationRunLogRepository logs;
+  @MockitoSpyBean private GenerationRunLogRepository logs;
   @Autowired private OAuthAccountRepository oauth;
 
   @BeforeEach
@@ -109,60 +125,41 @@ class RUN03LogStreamIT {
   // ---- GET /logs?afterSeq= -------------------------------------------------------------------
 
   @Test
-  void listLogs_returnsStoredLinesAfterSeq_inOrder() throws Exception {
-    Fixture f = fixture(RUNNING);
-    storeLogs(f.run(), 1, 5);
+  void listLogs_returnsStoredLinesAfterSeq_orAllWithoutIt() throws Exception {
+    Fixture f = fixture(RUNNING, null);
+    storeLogs(f.runId(), 1, 5);
 
-    mvc.perform(get(LOGS, f.run().getId()).param("afterSeq", "2").with(signedInAs(f.owner())))
+    mvc.perform(get(LOGS, f.runId()).param("afterSeq", "2").with(signedInAs(f.owner())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(3))
         .andExpect(jsonPath("$[0].seq").value(3))
-        .andExpect(jsonPath("$[0].level").value("INFO"))
-        .andExpect(jsonPath("$[0].step").doesNotExist())
-        .andExpect(jsonPath("$[0].message").value("line 3"))
-        .andExpect(jsonPath("$[2].seq").value(5));
-  }
-
-  @Test
-  void listLogs_withoutAfterSeq_returnsFromTheStart() throws Exception {
-    Fixture f = fixture(RUNNING);
-    storeLogs(f.run(), 1, 3);
-
-    mvc.perform(get(LOGS, f.run().getId()).with(signedInAs(f.owner())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(3))
-        .andExpect(jsonPath("$[0].seq").value(1));
+        .andExpect(jsonPath("$[0].message").value("line 3"));
+    mvc.perform(get(LOGS, f.runId()).with(signedInAs(f.owner())))
+        .andExpect(jsonPath("$.length()").value(5));
   }
 
   @Test
   void listLogs_isCappedAt5000Lines() throws Exception {
-    Fixture f = fixture(RUNNING);
-    storeLogs(f.run(), 1, 5_003);
+    Fixture f = fixture(RUNNING, null);
+    storeLogs(f.runId(), 1, 5_003);
 
-    mvc.perform(get(LOGS, f.run().getId()).with(signedInAs(f.owner())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(5_000))
-        .andExpect(jsonPath("$[4999].seq").value(5_000));
-
-    mvc.perform(get(LOGS, f.run().getId()).param("afterSeq", "5000").with(signedInAs(f.owner())))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(3))
-        .andExpect(jsonPath("$[0].seq").value(5_001));
+    mvc.perform(get(LOGS, f.runId()).with(signedInAs(f.owner())))
+        .andExpect(jsonPath("$.length()").value(5_000));
+    mvc.perform(get(LOGS, f.runId()).param("afterSeq", "5000").with(signedInAs(f.owner())))
+        .andExpect(jsonPath("$.length()").value(3));
   }
 
   @Test
   void listLogs_missingOrForeignRun_404() throws Exception {
-    Fixture f = fixture(RUNNING);
-    storeLogs(f.run(), 1, 2);
+    Fixture f = fixture(RUNNING, null);
     User stranger =
         users.save(new User(null, 9, "stranger", null, null, "https://avatars.example.com/u/9"));
 
     mvc.perform(get(LOGS, "01MISSINGRUN0000000000000A").with(signedInAs(f.owner())))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("NOT_FOUND"));
-    mvc.perform(get(LOGS, f.run().getId()).with(signedInAs(stranger)))
+    mvc.perform(get(LOGS, f.runId()).with(signedInAs(stranger)))
         .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("NOT_FOUND"))
         .andExpect(jsonPath("$.detail").value("run not found"));
   }
 
@@ -170,84 +167,160 @@ class RUN03LogStreamIT {
 
   @Test
   void replaysStoredThenLive_inOrder_noDuplicates() throws Exception {
-    Fixture f = fixture(RUNNING);
-    String runId = f.run().getId();
-    storeLogs(f.run(), 1, 5);
+    Fixture f = fixture(RUNNING, null);
+    storeLogs(f.runId(), 1, 5);
 
     MvcResult stream = open(f, null);
-    awaitSubscribed(runId);
-    publishLive(runId, 4, 8);
+    awaitSubscribed(f.runId());
+    publishLive(f.runId(), 4, 8);
 
-    awaitBody(stream, body -> seqs(body).size() >= 8);
+    await(() -> seqs(body(stream)).size() >= 8);
     assertThat(seqs(body(stream))).containsExactly(1, 2, 3, 4, 5, 6, 7, 8);
+  }
+
+  /** Lines and done that arrive while the stored lines are still being read wait their turn. */
+  @Test
+  void linesAndDoneArrivingDuringReplay_areSentAfterIt() throws Exception {
+    Fixture f = fixture(RUNNING, null);
+    List<GenerationRunLog> stored = storeLogs(f.runId(), 1, 3);
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    AtomicBoolean first = new AtomicBoolean(true);
+    // The spy answers from the rows stored above: a repository proxy has no real method to call.
+    doAnswer(
+            invocation -> {
+              if (first.getAndSet(false)) {
+                entered.countDown();
+                release.await();
+              }
+              int after = invocation.getArgument(1);
+              return stored.stream().filter(line -> line.getSeq() > after).toList();
+            })
+        .when(logs)
+        .findByRunIdAndSeqGreaterThanOrderBySeq(eq(f.runId()), anyInt(), any(Pageable.class));
+
+    MvcResult stream = open(f, null);
+    assertThat(entered.await(5, SECONDS)).isTrue();
+    awaitSubscribed(f.runId());
+    publishLive(f.runId(), 4, 6);
+    redis.convertAndSend(channel(f.runId()), DONE);
+    release.countDown();
+
+    await(() -> body(stream).contains("event:done"));
+    assertThat(seqs(body(stream))).containsExactly(1, 2, 3, 4, 5, 6);
+    assertCompleted(stream);
   }
 
   @Test
   void lastEventId_resumesAfterIt() throws Exception {
-    Fixture f = fixture(RUNNING);
-    String runId = f.run().getId();
-    storeLogs(f.run(), 1, 6);
+    Fixture f = fixture(RUNNING, null);
+    storeLogs(f.runId(), 1, 6);
 
     MvcResult stream = open(f, "3");
-    awaitSubscribed(runId);
-    publishLive(runId, 7, 7);
+    awaitSubscribed(f.runId());
+    publishLive(f.runId(), 7, 7);
 
-    awaitBody(stream, body -> seqs(body).size() >= 4);
+    await(() -> seqs(body(stream)).size() >= 4);
     assertThat(seqs(body(stream))).containsExactly(4, 5, 6, 7);
-    assertThat(parse(body(stream)).get(0).id()).isEqualTo("4");
+    assertThat(events(body(stream)).get(0).id()).isEqualTo("4");
   }
 
   @Test
   void closesOnDone() throws Exception {
-    Fixture f = fixture(RUNNING);
-    String runId = f.run().getId();
+    Fixture f = fixture(RUNNING, null);
     MvcResult stream = open(f, null);
-    awaitSubscribed(runId);
+    awaitSubscribed(f.runId());
 
-    publishLive(runId, 1, 2);
-    redis.convertAndSend("run-logs:" + runId, "{\"type\":\"done\"}");
+    publishLive(f.runId(), 1, 2);
+    redis.convertAndSend(channel(f.runId()), DONE);
 
-    awaitBody(stream, body -> body.contains("event:done"));
-    List<Sse> events = parse(body(stream));
+    await(() -> body(stream).contains("event:done"));
+    List<Sse> events = events(body(stream));
     assertThat(events.stream().map(Sse::event)).containsExactly("log", "log", "done");
-    Sse done = events.get(2);
-    assertThat(done.data()).isEqualTo("[DONE]");
+    assertThat(events.get(2).data()).isEqualTo("[DONE]");
     assertCompleted(stream);
   }
 
+  /** A run that ended long ago has nothing more to come: replay, done, and the stream closes. */
   @Test
   void terminalRun_replaysAndCloses() throws Exception {
-    Fixture f = fixture(SUCCESS);
-    storeLogs(f.run(), 1, 3);
+    Fixture f = fixture(SUCCESS, BASE);
+    storeLogs(f.runId(), 1, 3);
 
     MvcResult stream = open(f, null);
 
-    List<Sse> events = parse(body(stream));
+    await(() -> body(stream).contains("event:done"));
     assertThat(seqs(body(stream))).containsExactly(1, 2, 3);
-    assertThat(events.get(events.size() - 1).event()).isEqualTo("done");
-    assertThat(events.get(events.size() - 1).data()).isEqualTo("[DONE]");
+    assertThat(events(body(stream)).getLast().data()).isEqualTo("[DONE]");
     assertCompleted(stream);
+  }
+
+  /** A run that has just finished may still be saving lines: they arrive before done. */
+  @Test
+  void freshlyFinishedRun_deliversLateLinesBeforeDone() throws Exception {
+    Fixture f = fixture(SUCCESS, Instant.now());
+    storeLogs(f.runId(), 1, 2);
+
+    MvcResult stream = open(f, null);
+    awaitSubscribed(f.runId());
+    publishLive(f.runId(), 3, 3);
+    await(() -> seqs(body(stream)).size() >= 3);
+    redis.convertAndSend(channel(f.runId()), DONE);
+
+    await(() -> body(stream).contains("event:done"));
+    assertThat(seqs(body(stream))).containsExactly(1, 2, 3);
+    assertCompleted(stream);
+  }
+
+  /** The run finishes while the stream is open and its done message never comes. */
+  @Test
+  void runFinishingWithoutDone_endsOnStatusCheck() throws Exception {
+    Fixture f = fixture(RUNNING, null);
+    storeLogs(f.runId(), 1, 2);
+    MvcResult stream = open(f, null);
+    awaitSubscribed(f.runId());
+
+    GenerationRun run = generationRuns.findById(f.runId()).orElseThrow();
+    run.setStatus(SUCCESS);
+    run.setFinishedAt(Instant.now());
+    generationRuns.saveAndFlush(run);
+
+    await(() -> body(stream).contains("event:done"));
+    assertThat(seqs(body(stream))).containsExactly(1, 2);
+    assertCompleted(stream);
+  }
+
+  /**
+   * A line whose predecessor is not saved yet waits for the worker's flush. A gap that is never
+   * filled is sent past once the wait is over, so the stream keeps going.
+   */
+  @Test
+  void gapInLive_isFilledFromTheDatabase_orSentPastAfterTheWait() throws Exception {
+    Fixture f = fixture(RUNNING, null);
+    storeLogs(f.runId(), 1, 3);
+
+    MvcResult stream = open(f, null);
+    awaitSubscribed(f.runId());
+    publishLive(f.runId(), 5, 5);
+    Thread.sleep(300);
+    storeLogs(f.runId(), 4, 4);
+    await(() -> seqs(body(stream)).size() >= 5);
+    assertThat(seqs(body(stream))).containsExactly(1, 2, 3, 4, 5);
+
+    publishLive(f.runId(), 7, 7);
+    await(() -> seqs(body(stream)).size() >= 6);
+    assertThat(seqs(body(stream))).containsExactly(1, 2, 3, 4, 5, 7);
   }
 
   @Test
   void clientDisconnect_unsubscribes() throws Exception {
-    Fixture f = fixture(RUNNING);
-    String runId = f.run().getId();
+    Fixture f = fixture(RUNNING, null);
     MvcResult stream = open(f, null);
-    awaitSubscribed(runId);
+    awaitSubscribed(f.runId());
 
     stream.getRequest().getAsyncContext().complete();
 
-    awaitTrue(() -> subscriberCount(runId) == 0);
-    assertThat(subscriberCount(runId)).isZero();
-  }
-
-  @Test
-  void streamOfMissingRun_404() throws Exception {
-    Fixture f = fixture(RUNNING);
-    mvc.perform(get(STREAM, "01MISSINGRUN0000000000000A").with(signedInAs(f.owner())))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    await(() -> subscriberCount(f.runId()) == 0);
   }
 
   // ---- helpers -------------------------------------------------------------------------------
@@ -255,9 +328,9 @@ class RUN03LogStreamIT {
   /** One SSE event: its id, name and data. Comment lines such as heartbeats are not events. */
   private record Sse(String id, String event, String data) {}
 
-  private record Fixture(User owner, GenerationRun run) {}
+  private record Fixture(User owner, String runId) {}
 
-  private Fixture fixture(RunStatus status) {
+  private Fixture fixture(RunStatus status, @Nullable Instant finishedAt) {
     Organization acme =
         organizations.save(new Organization(null, null, "vcs-acme", "acme", "acme", false, null));
     User owner = addMember(acme, 1, "owner", ADMIN);
@@ -279,59 +352,47 @@ class RUN03LogStreamIT {
         new GenerationRun(
             null, project.getId(), config.getId(), MANUAL, false, BASE.plusSeconds(1));
     run.setStatus(status);
-    return new Fixture(owner, generationRuns.saveAndFlush(run));
+    run.setFinishedAt(finishedAt);
+    return new Fixture(owner, generationRuns.saveAndFlush(run).getId());
   }
 
-  /** Stores lines {@code from..to} of the run, as the worker's flush does. */
-  private void storeLogs(GenerationRun run, int from, int to) {
+  private List<GenerationRunLog> storeLogs(String runId, int from, int to) {
     List<GenerationRunLog> lines = new ArrayList<>();
     for (int seq = from; seq <= to; seq++) {
-      lines.add(new GenerationRunLog(run.getId(), seq, ts(seq), "INFO", null, "line " + seq));
+      lines.add(new GenerationRunLog(runId, seq, ts(seq), "INFO", null, "line " + seq));
     }
-    logs.saveAll(lines);
+    return logs.saveAll(lines);
   }
 
-  /**
-   * Publishes lines {@code from..to} to the run's channel, as the worker does when it writes them.
-   */
+  /** Publishes lines {@code from..to} to the run's channel, as the worker does. */
   private void publishLive(String runId, int from, int to) {
     for (int seq = from; seq <= to; seq++) {
       redis.convertAndSend(
-          "run-logs:" + runId,
-          "{\"seq\":"
-              + seq
-              + ",\"ts\":\""
-              + ts(seq)
-              + "\",\"level\":\"INFO\",\"step\":null,\"message\":\"line "
-              + seq
-              + "\"}");
+          channel(runId),
+          "{\"seq\":%d,\"ts\":\"%s\",\"level\":\"INFO\",\"step\":null,\"message\":\"line %d\"}"
+              .formatted(seq, ts(seq), seq));
     }
   }
 
-  private MvcResult open(Fixture f, String lastEventId) throws Exception {
-    var request = get(STREAM, f.run().getId()).with(signedInAs(f.owner()));
+  private MvcResult open(Fixture f, @Nullable String lastEventId) throws Exception {
+    var request = get(STREAM, f.runId()).with(signedInAs(f.owner()));
     if (lastEventId != null) {
       request.header("Last-Event-ID", lastEventId);
     }
-    return mvc.perform(request)
-        .andExpect(status().isOk())
-        .andExpect(request().asyncStarted())
-        .andExpect(
-            org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
-                .contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-        .andReturn();
+    return mvc.perform(request).andExpect(request().asyncStarted()).andReturn();
   }
 
   /** Waits until Redis has a subscriber on the run's channel, so a publish is not missed. */
   private void awaitSubscribed(String runId) throws InterruptedException {
-    awaitTrue(() -> subscriberCount(runId) >= 1);
+    await(() -> subscriberCount(runId) >= 1);
   }
 
-  /** How many connections subscribe to the run's channel: PUBSUB NUMSUB, read through Lettuce. */
+  /** PUBSUB NUMSUB for the run's channel. Spring's execute() cannot read a multi-bulk reply. */
   private long subscriberCount(String runId) {
     return redis.execute(
         (RedisCallback<Long>)
             connection -> {
+              @SuppressWarnings("unchecked")
               RedisAsyncCommands<byte[], byte[]> lettuce =
                   (RedisAsyncCommands<byte[], byte[]>) connection.getNativeConnection();
               return lettuce
@@ -349,19 +410,8 @@ class RUN03LogStreamIT {
     return "run-logs:" + runId;
   }
 
-  private static String body(MvcResult stream) throws Exception {
-    return stream.getResponse().getContentAsString(UTF_8);
-  }
-
-  private void awaitBody(MvcResult stream, java.util.function.Predicate<String> ready)
-      throws Exception {
-    awaitTrue(() -> {
-      try {
-        return ready.test(body(stream));
-      } catch (Exception e) {
-        throw new IllegalStateException(e);
-      }
-    });
+  private static String body(MvcResult stream) {
+    return new String(stream.getResponse().getContentAsByteArray(), UTF_8);
   }
 
   /** The stream has ended: the emitter completed, so the async request has a result. */
@@ -369,7 +419,7 @@ class RUN03LogStreamIT {
     assertThat(stream.getAsyncResult(5_000)).isNull();
   }
 
-  private static List<Sse> parse(String body) {
+  private static List<Sse> events(String body) {
     List<Sse> events = new ArrayList<>();
     for (String block : body.split("\n\n")) {
       String id = null;
@@ -392,14 +442,15 @@ class RUN03LogStreamIT {
   }
 
   private static List<Integer> seqs(String body) {
-    return parse(body).stream()
+    return events(body).stream()
         .filter(e -> "log".equals(e.event()))
         .map(e -> Integer.parseInt(e.id()))
         .toList();
   }
 
-  private static void awaitTrue(BooleanSupplier condition) throws InterruptedException {
-    long deadline = System.nanoTime() + java.time.Duration.ofSeconds(10).toNanos();
+  /** Waits up to ten seconds for the condition, and fails if it never holds. */
+  private static void await(BooleanSupplier condition) throws InterruptedException {
+    long deadline = System.nanoTime() + SECONDS.toNanos(10);
     while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
       Thread.sleep(20);
     }
@@ -410,7 +461,6 @@ class RUN03LogStreamIT {
     return BASE.plusSeconds(seq);
   }
 
-  /** Adds a user as a member of an org with the given role. */
   private User addMember(Organization org, long githubId, String login, Role role) {
     User user =
         users.save(

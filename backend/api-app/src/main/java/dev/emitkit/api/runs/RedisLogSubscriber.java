@@ -19,31 +19,26 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Listens to a run's Redis channel {@code run-logs:{runId}}, to which the worker publishes each log
- * line as it is written, and the done message when the run finishes. The message format belongs to
- * the worker ({@code LogLineMessage} and {@code RedisRunLogger}), and api-app cannot depend on
- * worker-app, so the format is read here: a line is {@code {seq, ts, level, step, message}} and the
- * done message is {@code {"type":"done"}}.
+ * Listens to a run's channel {@code run-logs:{runId}}. The worker's messages are a line {@code
+ * {seq, ts, level, step, message}} and, once the run finishes, {@code {"type":"done"}}. The format
+ * belongs to the worker ({@code LogLineMessage}, {@code RedisRunLogger}); api-app cannot depend on
+ * worker-app, so it is read here.
  */
 @Component
 class RedisLogSubscriber {
 
   private static final Logger LOG = LoggerFactory.getLogger(RedisLogSubscriber.class);
   private static final JsonMapper JSON = JsonMapper.builder().build();
-  private static final String DONE = "done";
 
   private final RedisMessageListenerContainer container = new RedisMessageListenerContainer();
 
   /**
-   * One thread dispatches every message. The container's default starts a thread per message, and
-   * then two lines of a run could be handled out of order, which the stream's seq check would drop.
+   * One thread dispatches every message, and it only queues work. The container's default starts a
+   * thread per message, so two lines of a run could be handled out of order.
    */
   private final ExecutorService dispatcher =
-      Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "run-log-dispatch");
-        thread.setDaemon(true);
-        return thread;
-      });
+      Executors.newSingleThreadExecutor(
+          Thread.ofPlatform().daemon().name("run-log-dispatch").factory());
 
   RedisLogSubscriber(RedisConnectionFactory connections) {
     container.setConnectionFactory(connections);
@@ -64,9 +59,8 @@ class RedisLogSubscriber {
   }
 
   /**
-   * Starts listening to the run's channel. Each line goes to {@code lines} and the done message to
-   * {@code done}, both on a Redis thread. The returned action removes the listener, and the Redis
-   * subscription with it once no listener is left on the channel.
+   * Listens to the run's channel: each line goes to {@code lines}, the done message to {@code
+   * done}. The returned action removes the listener, and the subscription with it.
    */
   Runnable subscribe(String runId, Consumer<LogLine> lines, Runnable done) {
     ChannelTopic topic = new ChannelTopic("run-logs:" + runId);
@@ -84,7 +78,7 @@ class RedisLogSubscriber {
       LOG.warn("run {}: ignored a log message that does not parse", runId);
       return;
     }
-    if (DONE.equals(message.type())) {
+    if ("done".equals(message.type())) {
       done.run();
     } else if (message.seq() != null) {
       lines.accept(
@@ -93,7 +87,7 @@ class RedisLogSubscriber {
     }
   }
 
-  /** The worker's message: {@code type} is set only on the done message, the rest on a line. */
+  /** The worker's message: {@code type} is set only on done, the rest only on a line. */
   private record Message(
       @Nullable String type,
       @Nullable Integer seq,

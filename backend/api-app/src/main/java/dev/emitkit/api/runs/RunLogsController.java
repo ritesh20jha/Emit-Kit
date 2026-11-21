@@ -62,7 +62,6 @@ public class RunLogsController {
           @RequestHeader(name = "Last-Event-ID", required = false)
           @Nullable Integer lastEventId) {
     GenerationRun run = runs.require(runId, Permission.RUN_VIEW);
-    return logs.stream(
-        run.getId(), run.getStatus().isTerminal(), lastEventId == null ? 0 : lastEventId);
+    return logs.stream(run.getId(), lastEventId == null ? 0 : lastEventId);
   }
 }

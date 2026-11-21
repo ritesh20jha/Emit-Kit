@@ -1,17 +1,26 @@
 package dev.emitkit.api.runs;
 
+import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunLog;
 import dev.emitkit.domain.GenerationRunLogRepository;
+import dev.emitkit.domain.GenerationRunRepository;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
+import java.util.TreeMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -19,36 +28,53 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter.SseEventBuilder;
 
 /**
- * Reads the stored log lines of a run and streams them live. A stream replays the stored lines
- * after the client's last seq, then forwards the lines the worker publishes, so a line is neither
- * missed nor sent twice: a line that arrives while the replay runs is buffered and sent after it.
+ * Streams a run's log lines. A stream subscribes to the run's channel, replays the stored lines
+ * after the client's last seq, then sends the live lines in seq order, never twice. The worker
+ * publishes a line before it saves it, so a live line can run ahead of the database: a seq gap is
+ * filled from the database for a bounded wait. Each stream works on its own serial queue, so a slow
+ * client stalls only its own stream.
  */
 @Service
 public class LogStreamService {
+
+  private static final Logger LOG = LoggerFactory.getLogger(LogStreamService.class);
 
   /** The most lines a page returns: one GET response, and one replay page. */
   static final int MAX_LINES = 5_000;
 
   static final Duration TIMEOUT = Duration.ofMinutes(30);
-  static final Duration HEARTBEAT = Duration.ofSeconds(15);
 
   private final GenerationRunLogRepository logs;
+  private final GenerationRunRepository runs;
   private final RedisLogSubscriber subscriber;
-  private final ScheduledExecutorService heartbeats =
-      Executors.newSingleThreadScheduledExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "run-log-heartbeat");
-        thread.setDaemon(true);
-        return thread;
-      });
+  private final Duration heartbeat;
+  private final Duration gapPoll;
+  private final Duration gapTimeout;
+  private final Duration grace;
+  private final ScheduledExecutorService timers =
+      Executors.newSingleThreadScheduledExecutor(
+          Thread.ofPlatform().daemon().name("run-log-timer").factory());
 
-  public LogStreamService(GenerationRunLogRepository logs, RedisLogSubscriber subscriber) {
+  public LogStreamService(
+      GenerationRunLogRepository logs,
+      GenerationRunRepository runs,
+      RedisLogSubscriber subscriber,
+      @Value("${emitkit.logs.heartbeat:15s}") Duration heartbeat,
+      @Value("${emitkit.logs.gap-poll:500ms}") Duration gapPoll,
+      @Value("${emitkit.logs.gap-timeout:5s}") Duration gapTimeout,
+      @Value("${emitkit.logs.terminal-grace:3s}") Duration grace) {
     this.logs = logs;
+    this.runs = runs;
     this.subscriber = subscriber;
+    this.heartbeat = heartbeat;
+    this.gapPoll = gapPoll;
+    this.gapTimeout = gapTimeout;
+    this.grace = grace;
   }
 
   @PreDestroy
   void shutdown() {
-    heartbeats.shutdownNow();
+    timers.shutdownNow();
   }
 
   /** Up to {@link #MAX_LINES} stored lines of a run after {@code afterSeq}, in order. */
@@ -60,12 +86,9 @@ public class LogStreamService {
         .toList();
   }
 
-  /**
-   * A live stream of a run's lines after {@code lastEventId}. A {@code terminal} run has no more
-   * lines to come: the stream replays what is stored, sends done and ends.
-   */
-  public SseEmitter stream(String runId, boolean terminal, int lastEventId) {
-    return new Stream(runId, lastEventId).open(terminal);
+  /** A live stream of a run's lines after {@code lastEventId}. */
+  public SseEmitter stream(String runId, int lastEventId) {
+    return new Stream(runId, lastEventId).open();
   }
 
   private static LogLine toLine(GenerationRunLog line) {
@@ -74,88 +97,153 @@ public class LogStreamService {
   }
 
   /**
-   * One open stream. Its state changes under its own lock: the request thread, the Redis listener
-   * and the heartbeat all write to the same emitter.
+   * One open stream. Its state and emitter are touched only on {@link #serial}, one step at a time.
+   * The Redis dispatch thread, the timers and the emitter callbacks only queue work or close.
    */
   private final class Stream {
 
     private final String runId;
     private final SseEmitter emitter = new SseEmitter(TIMEOUT.toMillis());
 
-    /** Lines that arrived from Redis before the replay of the stored lines ended. */
-    private final List<LogLine> buffered = new ArrayList<>();
+    /** One step at a time, in the order queued: a thread per stream, which ends with the stream. */
+    private final ExecutorService serial =
+        Executors.newSingleThreadExecutor(Thread.ofVirtual().name("run-log-stream").factory());
+
+    /** Live lines not yet sent, by seq. A line waits until the lines before it are sent. */
+    private final TreeMap<Integer, LogLine> pending = new TreeMap<>();
+
+    private final AtomicReference<Runnable> unsubscribe = new AtomicReference<>();
+    private volatile boolean finished;
+    private volatile @Nullable ScheduledFuture<?> beat;
 
     /** The seq of the last line sent, or the client's Last-Event-ID to begin with. */
     private int lastSent;
 
-    /** False until the replay ends. Lines and done that arrive before then are held back. */
-    private boolean live;
+    /** True once the run is seen as ended: done is due from the worker, or after a grace. */
+    private boolean ending;
 
-    private boolean doneSeen;
-    private volatile boolean finished;
-    private @Nullable Runnable unsubscribe;
-    private @Nullable ScheduledFuture<?> heartbeat;
+    private boolean gapPollQueued;
+
+    /** When the current gap was first seen, in nanoTime; 0 when there is none. */
+    private long gapSince;
 
     Stream(String runId, int lastEventId) {
       this.runId = runId;
       this.lastSent = lastEventId;
     }
 
-    SseEmitter open(boolean terminal) {
+    SseEmitter open() {
       emitter.onCompletion(this::close);
       emitter.onTimeout(this::close);
       emitter.onError(error -> close());
-      // Subscribe before reading the stored lines, so no line can fall between the two.
-      if (!terminal) {
-        attach(subscriber.subscribe(runId, this::onLine, this::onDone));
-      }
-      try {
-        replayStored();
-        goLive(terminal);
-      } catch (RuntimeException e) {
-        // A failed read must not leave the Redis listener or the heartbeat behind.
-        close();
-        throw e;
-      }
+      submit(this::start);
       return emitter;
     }
 
-    /** Stores the subscription's remover, or runs it at once if the stream has already ended. */
-    private synchronized void attach(Runnable remover) {
-      if (finished) {
-        remover.run();
-      } else {
-        unsubscribe = remover;
+    private void start() {
+      try {
+        // Subscribe before reading the stored lines, so no line can fall between the two.
+        Runnable remover = subscriber.subscribe(runId, this::onLine, this::onDone);
+        unsubscribe.set(remover);
+        if (finished) {
+          runRemover();
+        }
+        readStored();
+        GenerationRun ended = endedRun();
+        if (ended != null) {
+          beginEnding(ended);
+        }
+        if (!finished) {
+          ScheduledFuture<?> ticks =
+              timers.scheduleAtFixedRate(
+                  () -> submit(this::tick),
+                  heartbeat.toMillis(),
+                  heartbeat.toMillis(),
+                  TimeUnit.MILLISECONDS);
+          beat = ticks;
+          if (finished) {
+            ticks.cancel(false);
+          }
+        }
+      } catch (RuntimeException e) {
+        LOG.warn("run {}: could not start the log stream", runId, e);
+        close();
+        emitter.complete();
       }
     }
 
-    private synchronized void onLine(LogLine line) {
-      if (finished) {
-        return;
-      }
-      if (live) {
-        forward(line);
-      } else {
-        buffered.add(line);
+    /** Queues a step. Once the stream has closed, a step queued late is dropped. */
+    private void submit(Runnable step) {
+      try {
+        serial.execute(step);
+      } catch (RejectedExecutionException closed) {
+        // The stream has ended, so there is nothing left to do.
       }
     }
 
-    private synchronized void onDone() {
-      if (finished) {
-        return;
+    /** Redis dispatch thread: queues the line. */
+    private void onLine(LogLine line) {
+      submit(() -> {
+        if (!finished && line.seq() > lastSent) {
+          pending.put(line.seq(), line);
+          drain();
+        }
+      });
+    }
+
+    /** Redis dispatch thread: queues the finish. */
+    private void onDone() {
+      submit(this::finishNow);
+    }
+
+    /** Sends the pending lines that are in order. A gap waits for the database, up to a bound. */
+    private void drain() {
+      while (!finished && !pending.isEmpty()) {
+        int first = pending.firstKey();
+        if (first <= lastSent) {
+          pending.pollFirstEntry();
+          continue;
+        }
+        if (first == lastSent + 1) {
+          gapSince = 0;
+        } else {
+          if (gapSince == 0) {
+            gapSince = System.nanoTime();
+          }
+          if (System.nanoTime() - gapSince < gapTimeout.toNanos()) {
+            scheduleGapPoll();
+            return;
+          }
+          LOG.warn(
+              "run {}: log lines {}..{} were not stored, sent without them",
+              runId,
+              lastSent + 1,
+              first - 1);
+        }
+        send(pending.pollFirstEntry().getValue());
       }
-      if (live) {
-        finish();
-      } else {
-        doneSeen = true;
+      gapSince = 0;
+    }
+
+    private void scheduleGapPoll() {
+      if (!gapPollQueued) {
+        gapPollQueued = true;
+        timers.schedule(
+            () ->
+                submit(() -> {
+                  gapPollQueued = false;
+                  if (!finished) {
+                    readStored();
+                    drain();
+                  }
+                }),
+            gapPoll.toMillis(),
+            TimeUnit.MILLISECONDS);
       }
     }
 
-    /**
-     * Sends the stored lines after {@code lastSent}, a page at a time, until none are left. Runs
-     * without the lock: Redis lines that arrive meanwhile wait in the buffer.
-     */
-    private void replayStored() {
+    /** Sends the stored lines after {@code lastSent}, a page at a time, until none are left. */
+    private void readStored() {
       while (!finished) {
         List<GenerationRunLog> page =
             logs.findByRunIdAndSeqGreaterThanOrderBySeq(
@@ -172,32 +260,6 @@ public class LogStreamService {
       }
     }
 
-    /** Ends the replay: sends the buffered lines, then forwards the rest as they arrive. */
-    private synchronized void goLive(boolean terminal) {
-      live = true;
-      for (LogLine line : buffered) {
-        if (finished) {
-          break;
-        }
-        forward(line);
-      }
-      buffered.clear();
-      if (terminal || doneSeen) {
-        finish();
-      } else if (!finished) {
-        heartbeat =
-            heartbeats.scheduleAtFixedRate(
-                this::beat, HEARTBEAT.toMillis(), HEARTBEAT.toMillis(), TimeUnit.MILLISECONDS);
-      }
-    }
-
-    /** Sends a line unless the client has it already. */
-    private void forward(LogLine line) {
-      if (line.seq() > lastSent) {
-        send(line);
-      }
-    }
-
     private void send(LogLine line) {
       if (write(
           SseEmitter.event()
@@ -208,22 +270,61 @@ public class LogStreamService {
       }
     }
 
-    /** Sends the done event and ends the stream. The caller holds the lock. */
-    private void finish() {
-      if (finished) {
+    /**
+     * The run has ended, but the worker may still be saving its last lines, since it sets the
+     * status first. Done goes out when the worker's done message arrives, after a grace, or at once
+     * if the run ended long ago.
+     */
+    private void beginEnding(GenerationRun run) {
+      if (ending) {
         return;
       }
-      boolean delivered = write(SseEmitter.event().name("done").data("[DONE]"));
-      close();
-      if (delivered) {
-        emitter.complete();
+      ending = true;
+      Instant endedAt = run.getFinishedAt();
+      if (endedAt != null && endedAt.isBefore(Instant.now().minus(grace))) {
+        finishNow();
+      } else {
+        timers.schedule(() -> submit(this::finishNow), grace.toMillis(), TimeUnit.MILLISECONDS);
       }
     }
 
-    private synchronized void beat() {
-      if (!finished) {
-        write(SseEmitter.event().comment("heartbeat"));
+    /** Heartbeat, and the check for a run that ended without its done message. */
+    private void tick() {
+      if (!finished && write(SseEmitter.event().comment("heartbeat"))) {
+        GenerationRun ended = ending ? null : endedRun();
+        if (ended != null) {
+          beginEnding(ended);
+        }
       }
+    }
+
+    private @Nullable GenerationRun endedRun() {
+      return runs.findById(runId).filter(run -> run.getStatus().isTerminal()).orElse(null);
+    }
+
+    /** Reads what the database has, sends what is still missing, then done. Ends the stream. */
+    private void finishNow() {
+      if (finished) {
+        return;
+      }
+      try {
+        readStored();
+      } catch (RuntimeException e) {
+        LOG.warn("run {}: could not read the last log lines", runId, e);
+      }
+      for (LogLine line : pending.values()) {
+        if (finished) {
+          break;
+        }
+        if (line.seq() > lastSent) {
+          send(line);
+        }
+      }
+      pending.clear();
+      if (write(SseEmitter.event().name("done").data("[DONE]"))) {
+        emitter.complete();
+      }
+      close();
     }
 
     /** Writes one event. A failed write means the client has gone, so the stream closes. */
@@ -237,18 +338,21 @@ public class LogStreamService {
       }
     }
 
-    /** Stops the heartbeat and removes the Redis listener. Safe to call more than once. */
-    private synchronized void close() {
-      if (finished) {
-        return;
-      }
+    /** Stops the heartbeat and removes the Redis listener. Safe from any thread, and repeatable. */
+    private void close() {
       finished = true;
-      if (heartbeat != null) {
-        heartbeat.cancel(false);
+      serial.shutdown();
+      ScheduledFuture<?> ticks = beat;
+      if (ticks != null) {
+        ticks.cancel(false);
       }
-      if (unsubscribe != null) {
-        unsubscribe.run();
-        unsubscribe = null;
+      runRemover();
+    }
+
+    private void runRemover() {
+      Runnable remover = unsubscribe.getAndSet(null);
+      if (remover != null) {
+        remover.run();
       }
     }
   }
