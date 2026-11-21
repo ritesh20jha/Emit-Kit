@@ -34,4 +34,4 @@ export function changeItems(diff: SpecDiff | null): ChangeItem[] {
 }
 
 /** The breaking items of a diff, in list order. */
-export const breakingChanges = (diff: SpecDiff | null): ChangeItem[] => changeItems(diff).filter((item) => item.breaking);
+export const breakingChanges = (diff: SpecDiff | null) => changeItems(diff).filter((item) => item.breaking);

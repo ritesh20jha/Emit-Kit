@@ -33,9 +33,7 @@ export function ApprovalBanner({ run, orgId }: { run: RunDetail; orgId: string }
           <Textarea id="approval-comment" maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} />
           <div className="flex flex-wrap gap-2">
             <Button loading={decide.isPending} onClick={() => decide.mutate({ decision: "APPROVED", comment })}>Approve</Button>
-            <Button variant="secondary" loading={decide.isPending} onClick={() => decide.mutate({ decision: "REJECTED", comment })}>
-              Reject
-            </Button>
+            <Button variant="secondary" loading={decide.isPending} onClick={() => decide.mutate({ decision: "REJECTED", comment })}>Reject</Button>
           </div>
         </div>
       ) : (

@@ -1,11 +1,16 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse, type RequestHandler } from "msw";
-import { beforeEach, expect, test } from "vitest";
+import type { ReactNode } from "react";
+import { beforeEach, expect, test, vi } from "vitest";
+import type { LogLine } from "@/features/run-logs";
 import type { components } from "@/lib/api/generated/schema";
+import { qk } from "@/lib/api/queryKeys";
 import { project, projectHandlers } from "@/test/msw/handlers/projects";
 import { server } from "@/test/msw/server";
 import { renderRoute, stubViewport } from "@/test/renderRoute";
+import { runQuery, useRefreshRunOnStep } from "./api";
 
 type RunDetail = components["schemas"]["RunDetail"];
 
@@ -154,23 +159,16 @@ test("files tab selects file from ?path", async () => {
 });
 
 test("changes tab lists breaking first", async () => {
-  serveRun(
-    detail({
-      diffSummary: {
-        added: [{ method: "POST", path: "/pets", operationId: "createPet" }],
-        removed: [{ method: "DELETE", path: "/pets/{id}", operationId: "deletePet" }],
-        modified: [
-          {
-            op: { method: "GET", path: "/invoices", operationId: "listInvoices" },
-            changes: [
-              { kind: "DESCRIPTION_CHANGED", location: "summary", breaking: false },
-              { kind: "RESPONSE_PROPERTY_REMOVED", location: "response.200.total", breaking: true },
-            ],
-          },
-        ],
-      },
-    }),
-  );
+  serveRun(detail({
+    diffSummary: {
+      added: [{ method: "POST", path: "/pets", operationId: "createPet" }],
+      removed: [{ method: "DELETE", path: "/pets/{id}", operationId: "deletePet" }],
+      modified: [{ op: { method: "GET", path: "/invoices", operationId: "listInvoices" }, changes: [
+        { kind: "DESCRIPTION_CHANGED", location: "summary", breaking: false },
+        { kind: "RESPONSE_PROPERTY_REMOVED", location: "response.200.total", breaking: true },
+      ] }],
+    },
+  }));
   renderRoute("/runs/r1/changes");
 
   const list = await screen.findByRole("list", { name: "Changes" });
@@ -180,4 +178,35 @@ test("changes tab lists breaking first", async () => {
   expect(items[1]).toMatch(/^Breaking change.*response\.200\.total/);
   expect(items[2]).toMatch(/^Change.*summary/);
   expect(items[3]).toMatch(/^Added operation.*POST \/pets/);
+});
+
+const line = (step: LogLine["step"]): LogLine => ({ seq: 1, ts: "2026-11-13T15:00:00Z", level: "INFO", message: "working", step });
+
+test("reads the run again once per new step in the log", () => {
+  const queryClient = new QueryClient();
+  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const { rerender } = renderHook(({ lines }: { lines: LogLine[] }) => useRefreshRunOnStep("r1", lines), { wrapper, initialProps: { lines: [line("RUN_GENERATORS")] } });
+  expect(invalidate).toHaveBeenCalledTimes(1);
+  expect(invalidate).toHaveBeenLastCalledWith({ queryKey: qk.runs.one("r1") });
+
+  rerender({ lines: [line("RUN_GENERATORS"), line("RUN_GENERATORS")] }); // more lines, same step: no read
+  expect(invalidate).toHaveBeenCalledTimes(1);
+  rerender({ lines: [line("RUN_GENERATORS"), line("COMMIT_OUTPUT")] });
+  expect(invalidate).toHaveBeenCalledTimes(2);
+});
+
+/** The polling run query, called as TanStack Query calls it with the cached run. */
+function intervalFor(status: RunDetail["status"]) {
+  const { refetchInterval } = runQuery("r1", true);
+  if (typeof refetchInterval !== "function") throw new Error("runQuery should poll with a function");
+  return refetchInterval({ state: { data: detail({ status }) } } as never);
+}
+
+test("polls every 10 seconds while the run is active", () => {
+  for (const status of ["QUEUED", "RUNNING", "AWAITING_APPROVAL"] as const) expect(intervalFor(status)).toBe(10_000);
+});
+
+test("stops polling once the run has ended", () => {
+  for (const status of ["SUCCESS", "FAILED", "CANCELLED"] as const) expect(intervalFor(status)).toBe(false);
 });

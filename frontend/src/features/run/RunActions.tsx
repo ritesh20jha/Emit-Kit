@@ -18,9 +18,7 @@ export function RunActions({ run, orgId }: { run: RunDetail; orgId: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       {canCancel && (
-        <Button variant="secondary" onClick={() => setConfirming(true)}>
-          Cancel run
-        </Button>
+        <Button variant="secondary" onClick={() => setConfirming(true)}>Cancel run</Button>
       )}
       {canRerun && (
         <Button variant="secondary" loading={rerun.isPending} onClick={() => rerun.mutate(run.id, { onSuccess: openRun })}>

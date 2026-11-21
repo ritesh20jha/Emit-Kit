@@ -11,7 +11,5 @@ function LogsRoute() {
   const { runId } = Route.useParams();
   const logs = useRunLogs(runId);
   useRefreshRunOnStep(runId, logs.lines);
-  return (
-    <LogView lines={logs.lines} status={logs.status} filters={logs.filters} onFiltersChange={logs.setFilters} onRetry={logs.retry} />
-  );
+  return <LogView lines={logs.lines} status={logs.status} filters={logs.filters} onFiltersChange={logs.setFilters} onRetry={logs.retry} />;
 }

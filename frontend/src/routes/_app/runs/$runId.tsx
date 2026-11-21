@@ -8,9 +8,5 @@ export const Route = createFileRoute("/_app/runs/$runId")({
 
 function RunRoute() {
   const { runId } = Route.useParams();
-  return (
-    <RunPage runId={runId}>
-      <Outlet />
-    </RunPage>
-  );
+  return <RunPage runId={runId}><Outlet /></RunPage>;
 }

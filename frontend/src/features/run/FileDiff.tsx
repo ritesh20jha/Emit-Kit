@@ -53,11 +53,8 @@ function DiffView({ path, diff }: { path: string; diff: string }) {
   useEffect(() => {
     if (!host.current) return;
     const { original, modified } = splitUnifiedDiff(diff);
-    const extensions = [EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.lineWrapping, theme];
-    const view = new EditorView({
-      parent: host.current,
-      state: EditorState.create({ doc: modified, extensions: [...extensions, unifiedMergeView({ original, mergeControls: false })] }),
-    });
+    const extensions = [EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.lineWrapping, theme, unifiedMergeView({ original, mergeControls: false })];
+    const view = new EditorView({ parent: host.current, state: EditorState.create({ doc: modified, extensions }) });
     return () => view.destroy();
   }, [diff]);
   return <div ref={host} role="region" aria-label={`Diff of ${path}`} className="max-h-[70vh] min-w-0 overflow-auto rounded-card border border-border bg-bg-subtle font-mono text-xs" />;

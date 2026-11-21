@@ -22,22 +22,16 @@ export function LintTable({ runId }: { runId: string }) {
           <EmptyState icon={ShieldCheck} title="No lint issues" description="The spec passed lint with no findings." />
         ) : (
           <Table label="Lint issues">
-            <THead>
-              <Tr>
-                <Th>Severity</Th><Th>Rule</Th><Th>Location</Th><Th>Message</Th>
-              </Tr>
-            </THead>
+            <THead><Tr><Th>Severity</Th><Th>Rule</Th><Th>Location</Th><Th>Message</Th></Tr></THead>
             <TBody>
-              {[...rows]
-                .sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank)
-                .map((row, index) => (
-                  <Tr key={index}>
-                    <Td className={cn("font-medium", SEVERITY[row.severity].tone)}>{SEVERITY[row.severity].label}</Td>
-                    <Td className="font-mono text-xs">{row.ruleId}</Td>
-                    <Td className="font-mono text-xs">{row.line ? `${row.jsonPath}:${row.line}` : row.jsonPath}</Td>
-                    <Td>{row.message}</Td>
-                  </Tr>
-                ))}
+              {[...rows].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank).map((row, index) => (
+                <Tr key={index}>
+                  <Td className={cn("font-medium", SEVERITY[row.severity].tone)}>{SEVERITY[row.severity].label}</Td>
+                  <Td className="font-mono text-xs">{row.ruleId}</Td>
+                  <Td className="font-mono text-xs">{row.line ? `${row.jsonPath}:${row.line}` : row.jsonPath}</Td>
+                  <Td>{row.message}</Td>
+                </Tr>
+              ))}
             </TBody>
           </Table>
         )

@@ -28,21 +28,11 @@ export function StepTimeline({ runId, steps }: { runId: string; steps: StepState
         const isSelected = selected === name;
         return (
           <li key={name} className="min-w-0 flex-1">
-            <button
-              type="button"
-              aria-pressed={isSelected}
-              onClick={() => void navigate({ href: `/runs/${runId}?step=${name}` })}
-              className={cn(
-                "flex w-full items-start gap-2 rounded-control border px-2 py-1.5 text-left hover:bg-bg-subtle",
-                isSelected ? "border-border-strong bg-bg-subtle" : "border-transparent",
-              )}
-            >
+            <button type="button" aria-pressed={isSelected} onClick={() => void navigate({ href: `/runs/${runId}?step=${name}` })} className={cn("flex w-full items-start gap-2 rounded-control border px-2 py-1.5 text-left hover:bg-bg-subtle", isSelected ? "border-border-strong bg-bg-subtle" : "border-transparent")}>
               <Icon aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", tone, step.status === "RUNNING" && "motion-safe:animate-spin")} />
               <span className="flex min-w-0 flex-col">
                 <span className="text-sm leading-snug text-fg">{STEP_LABELS[name]}</span>
-                <span className="text-xs text-fg-muted">
-                  {label} · <span className="font-mono">{formatDuration(step.durationMs)}</span>
-                </span>
+                <span className="text-xs text-fg-muted">{label} · <span className="font-mono">{formatDuration(step.durationMs)}</span></span>
               </span>
             </button>
           </li>

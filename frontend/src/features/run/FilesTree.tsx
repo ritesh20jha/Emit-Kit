@@ -20,7 +20,7 @@ interface Row {
   entry?: ManifestEntry;
 }
 
-/** The manifest as tree lines: each folder once, before its first file, then the files, indented by depth. */
+/** Each folder once, before its first file, then the files, indented by depth. */
 function toRows(entries: ManifestEntry[]): Row[] {
   const folders = new Set<string>();
   return entries.flatMap((entry) => {
@@ -35,15 +35,8 @@ function toRows(entries: ManifestEntry[]): Row[] {
   });
 }
 
-export interface FilesTreeProps {
-  runId: string;
-  /** The file whose diff is open, from ?path=. */
-  selected?: string;
-  onSelect: (path: string) => void;
-}
-
-/** The run's generated files as a tree, each file with its status. */
-export function FilesTree({ runId, selected, onSelect }: FilesTreeProps) {
+/** The run's generated files as a tree, each file with its status. `selected` is the file whose diff is open, from ?path=. */
+export function FilesTree({ runId, selected, onSelect }: { runId: string; selected?: string; onSelect: (path: string) => void }) {
   const files = useQuery(filesQuery(runId));
   return (
     <QueryBody query={files} label="the files" noAccess="view this run">
@@ -55,20 +48,12 @@ export function FilesTree({ runId, selected, onSelect }: FilesTreeProps) {
             <ul className="flex flex-col gap-0.5">
               {toRows(entries).map((row) => {
                 const indent = { paddingLeft: `${row.depth * 0.75 + 0.5}rem` };
-                if (!row.entry) {
-                  return <li key={row.key} style={indent} className="py-1 font-mono text-xs text-fg-muted">{row.name}</li>;
-                }
+                if (!row.entry) return <li key={row.key} style={indent} className="py-1 font-mono text-xs text-fg-muted">{row.name}</li>;
                 const { label, tone } = STATUS[row.entry.status];
                 const isSelected = selected === row.key;
                 return (
                   <li key={row.key}>
-                    <button
-                      type="button"
-                      style={indent}
-                      aria-current={isSelected ? "true" : undefined}
-                      onClick={() => onSelect(row.key)}
-                      className={cn("flex w-full items-center gap-2 rounded-control py-1 pr-2 text-left font-mono text-xs text-fg hover:bg-bg-subtle", isSelected && "bg-bg-muted")}
-                    >
+                    <button type="button" style={indent} aria-current={isSelected ? "true" : undefined} onClick={() => onSelect(row.key)} className={cn("flex w-full items-center gap-2 rounded-control py-1 pr-2 text-left font-mono text-xs text-fg hover:bg-bg-subtle", isSelected && "bg-bg-muted")}>
                       <span className="min-w-0 flex-1 truncate">{row.name}</span>
                       <span className={cn("shrink-0 font-sans", tone)}>{label}</span>
                     </button>
