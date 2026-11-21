@@ -26,11 +26,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Runs each generation job once per delivery. Only one worker runs a run at a time: a delivery that
- * finds the run locked is dropped, and the worker holding the lock finishes or retries it. A
- * transient failure is routed after the lock is released, so the retry is not dropped as a
- * duplicate. The message is acknowledged once it is handled. If routing itself fails, the message
- * is left unacknowledged and the broker redelivers it.
+ * Runs each generation job per delivery. A run that another delivery holds is dropped. Transient
+ * failures are routed after the lock is released, and the message is acked once it is handled.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -72,8 +69,8 @@ class GenerationJobListener {
   void onJob(GenerationJob job, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
       throws IOException {
     String runId = job.runId();
-    LOG.info("Received generation job runId={} attempt={}", runId, job.attempt());
     MDC.put("runId", runId);
+    LOG.info("Received generation job runId={} attempt={}", runId, job.attempt());
     try {
       Optional<RunLock.Lease> lease = locks.tryAcquire(runId);
       if (lease.isEmpty()) {

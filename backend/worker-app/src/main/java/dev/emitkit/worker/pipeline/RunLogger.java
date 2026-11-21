@@ -53,4 +53,11 @@ public interface RunLogger {
 
   /** Marks the end of the run's log. */
   void done();
+
+  /**
+   * Saves the buffered lines and stops periodic flushing, without publishing the end-of-log
+   * message. For a run that stops before {@link #done}, so a later logger can continue its log.
+   * Safe to call more than once and after {@code done}. Does nothing by default.
+   */
+  default void close() {}
 }

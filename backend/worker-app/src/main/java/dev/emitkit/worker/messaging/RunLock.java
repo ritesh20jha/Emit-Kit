@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -13,9 +14,9 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.stereotype.Component;
 
 /**
- * Lets one worker run a generation run at a time. Takes a session-level PostgreSQL advisory lock on
- * a connection of its own, held until the lease is closed. A worker that dies drops the connection,
- * which releases the lock, and the broker redelivers the message it had not acknowledged.
+ * Lets one worker run a generation run at a time, with a session-level PostgreSQL advisory lock on
+ * a connection of its own. A worker that dies loses its session, and the broker redelivers the
+ * message it had not acknowledged.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -66,6 +67,14 @@ class RunLock {
     }
   }
 
+  private static void dropAllLocks(Connection connection, String runId) {
+    try (Statement statement = connection.createStatement()) {
+      statement.execute("select pg_advisory_unlock_all()");
+    } catch (SQLException e) {
+      LOG.warn("could not drop the locks of generation run {}", runId, e);
+    }
+  }
+
   private static void closeQuietly(Connection connection) {
     try {
       connection.close();
@@ -74,7 +83,7 @@ class RunLock {
     }
   }
 
-  /** A held lock. Closing it releases the lock and returns its connection to the pool. */
+  /** A held lock. Closing it releases the lock and returns the connection to the pool. */
   static final class Lease implements AutoCloseable {
 
     private final Connection connection;
@@ -85,16 +94,23 @@ class RunLock {
       this.runId = runId;
     }
 
+    /**
+     * Releases the lock. If that fails or finds no lock, all of the connection's locks are dropped,
+     * so a pooled session cannot keep the run locked.
+     */
     @Override
     public void close() {
+      boolean released = false;
       try {
-        queryBoolean(connection, UNLOCK, runId);
+        released = queryBoolean(connection, UNLOCK, runId);
       } catch (SQLException e) {
-        // Closing the connection ends the session, which releases the lock anyway.
         LOG.warn("could not release the lock of generation run {}", runId, e);
-      } finally {
-        closeQuietly(connection);
       }
+      if (!released) {
+        LOG.warn("lock of generation run {} was not released; dropping all locks", runId);
+        dropAllLocks(connection, runId);
+      }
+      closeQuietly(connection);
     }
   }
 }

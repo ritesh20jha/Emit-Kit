@@ -251,6 +251,24 @@ class WRK02RunLoggerIT {
   }
 
   @Test
+  void closeSavesBufferedLinesStopsFlushingAndPublishesNoDone() {
+    RunLogger log = open();
+    log.info("kept");
+
+    log.close();
+
+    assertThat(stored()).containsExactly("kept");
+    log.info("after close");
+    // Published at once, but no longer flushed: the periodic task would have saved it by now.
+    await().atMost(5, SECONDS).until(() -> received.stream().anyMatch(m -> m.contains("after")));
+    await()
+        .during(Duration.ofSeconds(3))
+        .atMost(Duration.ofSeconds(5))
+        .until(() -> stored().size() == 1);
+    assertThat(received()).noneMatch(DONE::equals);
+  }
+
+  @Test
   void redisTimeoutsAreBoundedSoAStalledRedisCannotHoldTheStep() {
     assertThat(redisProperties.getTimeout()).isEqualTo(Duration.ofSeconds(2));
     assertThat(redisProperties.getConnectTimeout()).isEqualTo(Duration.ofSeconds(2));

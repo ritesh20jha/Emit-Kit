@@ -16,9 +16,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Routes a delivery whose attempt failed transiently: parks the job in the retry queue for its
- * attempt, or dead-letters it once the attempts are spent and fails the run. Called after the run's
- * lock is released, so the retry is not dropped as a duplicate of the attempt that scheduled it.
+ * Parks a transiently failed job in the retry queue for its attempt, or dead-letters it and fails
+ * the run once the retries are spent. Called after the run's lock is released.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -61,7 +60,7 @@ class RetryRouter {
     rabbit.convertAndSend("", Queues.retryQueueFor(next), new GenerationJob(runId, next));
     RunLogger log = loggers.create(runId);
     log.warn("Retrying in " + describe(properties.retryTtls().get(next - 1)));
-    log.flush();
+    log.close();
   }
 
   private void giveUp(GenerationJob job, TransientException failure) {

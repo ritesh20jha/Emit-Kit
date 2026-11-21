@@ -17,9 +17,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Ends a run that was cancelled: deletes the branch it cut, if it cut one, and marks the run
- * CANCELLED. A run that already finished is left alone, so the branch of a finished run that has a
- * pull request is never deleted.
+ * Deletes a cancelled run's branch and marks it CANCELLED. A finished run is left alone, so the
+ * branch of a finished run with a pull request is kept.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")

@@ -236,7 +236,7 @@ class WRK01PipelineRunnerTest {
     assertThat(run.getFailureMessage()).isEqualTo("2 errors");
     assertThat(run.getFinishedAt()).isNotNull();
     assertThat(order).containsExactly(FETCH_SPEC, PARSE_SPEC, LINT_SPEC);
-    assertThat(logCalls).endsWith("error", "done");
+    assertThat(logCalls).endsWith("error", "done", "close");
   }
 
   @Test

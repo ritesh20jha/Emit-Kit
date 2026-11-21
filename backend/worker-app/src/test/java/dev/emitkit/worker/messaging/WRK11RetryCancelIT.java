@@ -14,6 +14,8 @@ import dev.emitkit.common.messaging.GenerationJob;
 import dev.emitkit.common.messaging.Queues;
 import dev.emitkit.domain.ChangeType;
 import dev.emitkit.domain.GenerationRun;
+import dev.emitkit.domain.GenerationRunLog;
+import dev.emitkit.domain.GenerationRunLogRepository;
 import dev.emitkit.domain.GenerationRunRepository;
 import dev.emitkit.domain.Organization;
 import dev.emitkit.domain.OrganizationRepository;
@@ -81,9 +83,7 @@ import org.testcontainers.rabbitmq.RabbitMQContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * The job listener against RabbitMQ, PostgreSQL and Redis: retries, the dead-letter queue,
- * cancellation and duplicate deliveries. Every step is a fake except FINALIZE, which is the real
- * step. Retry delays are 200 ms so the tests run quickly.
+ * The job listener against RabbitMQ, PostgreSQL and Redis. Fake steps, except the real FINALIZE.
  */
 @SpringBootTest(
     classes = WRK11RetryCancelIT.TestApp.class,
@@ -118,6 +118,7 @@ class WRK11RetryCancelIT {
   @Autowired private ProjectConfigRepository configs;
   @Autowired private GenerationRunRepository runs;
   @Autowired private SdkVersionRepository sdkVersions;
+  @Autowired private GenerationRunLogRepository logs;
   @Autowired private RabbitTemplate rabbit;
   @Autowired private RabbitAdmin admin;
   @Autowired private Fakes fakes;
@@ -190,7 +191,9 @@ class WRK11RetryCancelIT {
     fakes.on(
         LINT_SPEC,
         ctx -> {
-          if (lintCalls.incrementAndGet() == 1) {
+          int call = lintCalls.incrementAndGet();
+          ctx.log().info("lint attempt " + call);
+          if (call == 1) {
             throw new TransientException(ErrorCode.STORAGE_ERROR, "blip");
           }
           return new StepResult.Continue("LINT_SPEC-out");
@@ -204,10 +207,15 @@ class WRK11RetryCancelIT {
     assertThat(run.getAttempt()).isEqualTo(1);
     assertThat(lintCalls).hasValue(2);
     assertThat(fakes.vcs().calls("openPr")).hasSize(1);
+    // Both attempts' lines and the retry notice are stored, with distinct seqs.
+    assertThat(logLines())
+        .extracting(GenerationRunLog::getMessage)
+        .contains("lint attempt 1", "Retrying in 200ms", "lint attempt 2");
+    assertThat(logLines()).extracting(GenerationRunLog::getSeq).doesNotHaveDuplicates();
   }
 
   @Test
-  void threeTransientFailures_goToDlq_andFail() {
+  void fourthTransientFailure_goesToDlq_andFails() {
     AtomicInteger lintCalls = new AtomicInteger();
     fakes.on(
         LINT_SPEC,
@@ -241,10 +249,12 @@ class WRK11RetryCancelIT {
     await().atMost(Duration.ofSeconds(10)).until(() -> reload().getCurrentStep() == SYNTAX_CHECK);
     assertThat(fakes.vcs().branches(repo)).contains(branch);
 
-    updateRun(r -> r.setCancelRequested(true));
+    // Only the control message: the DB flag stays unset, so the cancel can only come from the
+    // listener, which must act well before the registry's five-second database recheck.
     rabbit.convertAndSend(Queues.CONTROL_EXCHANGE, "", new ControlMessage("CANCEL", runId));
 
-    await().atMost(Duration.ofSeconds(10)).until(() -> reload().getStatus() == RunStatus.CANCELLED);
+    await().atMost(Duration.ofSeconds(3)).until(() -> reload().getStatus() == RunStatus.CANCELLED);
+    assertThat(reload().isCancelRequested()).isFalse();
     assertThat(killed).isTrue();
     assertThat(fakes.vcs().branches(repo)).doesNotContain(branch);
     assertThat(reload().getFinishedAt()).isNotNull();
@@ -288,6 +298,10 @@ class WRK11RetryCancelIT {
       killed.set(true);
       throw e;
     }
+  }
+
+  private List<GenerationRunLog> logLines() {
+    return logs.findByRunIdAndSeqGreaterThanOrderBySeq(runId, 0);
   }
 
   private void publish(GenerationJob job) {
@@ -368,9 +382,7 @@ class WRK11RetryCancelIT {
   }
 
   /**
-   * Boots JPA, Flyway and RabbitMQ with the worker's topology and listeners, and fake steps. Not a
-   * {@code @SpringBootConfiguration}: RabbitTopologyIT, in this package, would find it when it
-   * searches for its own configuration.
+   * Boots the listeners against the containers. Not @SpringBootConfiguration: see RabbitTopologyIT.
    */
   @Configuration(proxyBeanMethods = false)
   @EnableAutoConfiguration
@@ -400,23 +412,14 @@ class WRK11RetryCancelIT {
           Proxy.newProxyInstance(
               VcsProvider.class.getClassLoader(),
               new Class<?>[] {VcsProvider.class},
-              (proxy, method, args) -> {
-                switch (method.getName()) {
-                  case "forProject" -> {
-                    return fakes.vcs();
-                  }
-                  case "hashCode" -> {
-                    return System.identityHashCode(proxy);
-                  }
-                  case "equals" -> {
-                    return proxy == args[0];
-                  }
-                  case "toString" -> {
-                    return "fake VcsProvider";
-                  }
-                  default -> throw new UnsupportedOperationException(method.getName());
-                }
-              });
+              (proxy, method, args) ->
+                  switch (method.getName()) {
+                    case "forProject" -> fakes.vcs();
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    case "toString" -> "fake VcsProvider";
+                    default -> throw new UnsupportedOperationException(method.getName());
+                  });
     }
 
     @Bean

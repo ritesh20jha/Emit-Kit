@@ -10,11 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
-/**
- * Receives the control commands the API publishes to every worker. A cancel is recorded in the
- * registry: the run stops at its next check if this worker is running it, and the record costs
- * nothing if it is not.
- */
+/** Records each CANCEL from the API's fanout in the registry, and acks it. */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
 @ConditionalOnProperty(
