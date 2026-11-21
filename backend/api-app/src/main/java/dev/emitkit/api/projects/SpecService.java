@@ -2,9 +2,12 @@ package dev.emitkit.api.projects;
 
 import dev.emitkit.api.access.Permission;
 import dev.emitkit.api.access.ProjectAccess;
+import dev.emitkit.api.runs.RunService;
 import dev.emitkit.common.error.AppException;
 import dev.emitkit.common.error.ErrorCode;
+import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.Project;
+import dev.emitkit.domain.RunTrigger;
 import dev.emitkit.vcs.CommitRef;
 import dev.emitkit.vcs.FileContent;
 import dev.emitkit.vcs.GitBlob;
@@ -16,6 +19,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,12 +37,18 @@ public class SpecService {
 
   static final String DEFAULT_MESSAGE = "Update API spec (EmitKit)";
 
+  private static final String RUN_NOT_STARTED = "Could not start generation run";
+
+  private static final Logger LOG = LoggerFactory.getLogger(SpecService.class);
+
   private final ProjectAccess projectAccess;
   private final VcsProvider vcsProvider;
+  private final RunService runs;
 
-  public SpecService(ProjectAccess projectAccess, VcsProvider vcsProvider) {
+  public SpecService(ProjectAccess projectAccess, VcsProvider vcsProvider, RunService runs) {
     this.projectAccess = projectAccess;
     this.vcsProvider = vcsProvider;
+    this.runs = runs;
   }
 
   /**
@@ -55,15 +66,20 @@ public class SpecService {
   }
 
   /**
-   * Saves the spec of a project as one commit on the default branch. The request's {@code generate}
-   * flag is accepted and ignored here; generation runs are started elsewhere.
+   * Saves the spec of a project as one commit on the default branch. With {@code generate}, a
+   * manual run is then started on the saved spec. The run's permission is checked before the
+   * commit, so a caller who may not start runs gets nothing committed.
    *
-   * @throws AppException NOT_FOUND or FORBIDDEN as for {@link #get}, with SPEC_EDIT; SPEC_TOO_LARGE
-   *     when the content is over 2 MB in UTF-8, checked before any VCS call; SPEC_CONFLICT when the
-   *     file changed since the request's sha was read, with the current sha in {@code currentSha}
+   * @throws AppException NOT_FOUND or FORBIDDEN as for {@link #get}, with SPEC_EDIT, and with
+   *     RUN_TRIGGER too when {@code generate} is set; SPEC_TOO_LARGE when the content is over 2 MB
+   *     in UTF-8, checked before any VCS call; SPEC_CONFLICT when the file changed since the
+   *     request's sha was read, with the current sha in {@code currentSha}
    */
-  public SaveSpecResponse save(String projectId, SaveSpecRequest request) {
+  public SaveSpecResponse save(String projectId, SaveSpecRequest request, String userId) {
     Project project = projectAccess.require(projectId, Permission.SPEC_EDIT);
+    if (request.generate()) {
+      projectAccess.require(projectId, Permission.RUN_TRIGGER);
+    }
     if (request.content().getBytes(StandardCharsets.UTF_8).length > MAX_SPEC_BYTES) {
       throw new AppException(ErrorCode.SPEC_TOO_LARGE, "spec is larger than 2 MB");
     }
@@ -83,7 +99,30 @@ public class SpecService {
     } catch (VcsConflictException e) {
       throw saveConflict(vcs, project, request.sha(), e);
     }
-    return new SaveSpecResponse(commit.sha(), GitBlob.sha(request.content()), null, null);
+    String newSha = GitBlob.sha(request.content());
+    if (!request.generate()) {
+      return new SaveSpecResponse(commit.sha(), newSha, null, null);
+    }
+    return startRun(projectId, userId, commit.sha(), newSha);
+  }
+
+  /**
+   * Starts a manual run on the spec just committed. The commit stands whatever happens here, so a
+   * run that cannot start is reported in {@code runError} instead of failing the save.
+   */
+  private SaveSpecResponse startRun(
+      String projectId, String userId, String commitSha, String newSha) {
+    try {
+      GenerationRun run = runs.create(projectId, RunTrigger.MANUAL, false, userId, null);
+      return new SaveSpecResponse(commitSha, newSha, run.getId(), null);
+    } catch (AppException e) {
+      return new SaveSpecResponse(
+          commitSha, newSha, null, new ProblemSummary(e.code().name(), e.getMessage()));
+    } catch (RuntimeException e) {
+      LOG.error("Could not start generation run for project {}", projectId, e);
+      return new SaveSpecResponse(
+          commitSha, newSha, null, new ProblemSummary(ErrorCode.INTERNAL.name(), RUN_NOT_STARTED));
+    }
   }
 
   /**
