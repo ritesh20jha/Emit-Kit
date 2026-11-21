@@ -48,6 +48,10 @@ import dev.emitkit.worker.steps.WorkDir;
 import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -224,7 +228,7 @@ class WRK11RetryCancelIT {
     await().atMost(Duration.ofSeconds(20)).until(() -> reload().getStatus() == RunStatus.FAILED);
     GenerationRun run = reload();
     assertThat(run.getFailureCode()).isEqualTo("STORAGE_ERROR");
-    assertThat(run.getFailureMessage()).isEqualTo("Gave up after 3 attempts: blip");
+    assertThat(run.getFailureMessage()).isEqualTo("Gave up after 3 retries: blip");
     assertThat(run.getFinishedAt()).isNotNull();
     assertThat(run.getAttempt()).isEqualTo(3);
     // The first delivery and three retries: the fourth failure is the one that dead-letters.
@@ -275,6 +279,87 @@ class WRK11RetryCancelIT {
 
     assertThat(fetches).hasValue(1);
     assertThat(fakes.vcs().calls("openPr")).hasSize(1);
+  }
+
+  @Test
+  void lockHeldByAnotherSession_reparksTheJob_andRunsAfterRelease() throws Exception {
+    try (Connection holder = holdLock()) {
+      publish(new GenerationJob(runId, 0));
+
+      // The job is parked, not dropped: the run stays queued while the lock is held elsewhere.
+      await()
+          .during(Duration.ofSeconds(1))
+          .atMost(Duration.ofSeconds(3))
+          .until(() -> reload().getStatus() == RunStatus.QUEUED);
+      releaseLock(holder);
+    }
+
+    awaitTerminal();
+    assertThat(reload().getStatus()).isEqualTo(RunStatus.SUCCESS);
+    assertThat(fakes.vcs().calls("openPr")).hasSize(1);
+  }
+
+  @Test
+  void lockHeldForFinishedRun_isDroppedNotReparked() throws Exception {
+    updateRun(r -> r.setStatus(RunStatus.SUCCESS));
+
+    try (Connection holder = holdLock()) {
+      publish(new GenerationJob(runId, 0));
+
+      // Acked and dropped: nothing sits in the retry queue or comes back to the jobs queue.
+      await()
+          .during(Duration.ofSeconds(1))
+          .atMost(Duration.ofSeconds(3))
+          .until(
+              () -> queueDepth(Queues.retryQueueFor(1)) == 0 && queueDepth(Queues.JOBS_QUEUE) == 0);
+      releaseLock(holder);
+    }
+  }
+
+  @Test
+  void staleJob_countsRetriesFromTheRun() {
+    // The run has already used three retries; a redelivered attempt-0 job must not get more.
+    updateRun(r -> r.setAttempt(3));
+    AtomicInteger lintCalls = new AtomicInteger();
+    fakes.on(
+        LINT_SPEC,
+        ctx -> {
+          lintCalls.incrementAndGet();
+          throw new TransientException(ErrorCode.STORAGE_ERROR, "blip");
+        });
+
+    publish(new GenerationJob(runId, 0));
+
+    await().atMost(Duration.ofSeconds(10)).until(() -> reload().getStatus() == RunStatus.FAILED);
+    assertThat(lintCalls).hasValue(1);
+    assertThat(reload().getFailureMessage()).isEqualTo("Gave up after 3 retries: blip");
+    assertThat(reload().getAttempt()).isEqualTo(3);
+    assertThat(rabbit.receiveAndConvert(Queues.DLQ, 5000)).isEqualTo(new GenerationJob(runId, 0));
+  }
+
+  /** A second session that holds the run's advisory lock, as another worker's delivery would. */
+  private Connection holdLock() throws SQLException {
+    Connection holder =
+        DriverManager.getConnection(
+            POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+    try (PreparedStatement lock = holder.prepareStatement("select pg_advisory_lock(hashtext(?))")) {
+      lock.setString(1, runId);
+      lock.execute();
+    }
+    return holder;
+  }
+
+  private void releaseLock(Connection holder) throws SQLException {
+    try (PreparedStatement unlock =
+        holder.prepareStatement("select pg_advisory_unlock(hashtext(?))")) {
+      unlock.setString(1, runId);
+      unlock.execute();
+    }
+  }
+
+  private long queueDepth(String queue) {
+    return ((Number) admin.getQueueProperties(queue).get(RabbitAdmin.QUEUE_MESSAGE_COUNT))
+        .longValue();
   }
 
   private static StepResult blockUntilCancelled(RunContext ctx, AtomicBoolean killed)

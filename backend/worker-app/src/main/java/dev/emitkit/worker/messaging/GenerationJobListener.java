@@ -75,7 +75,12 @@ class GenerationJobListener {
       LOG.info("Received generation job runId={} attempt={}", runId, job.attempt());
       Optional<RunLock.Lease> lease = locks.tryAcquire(runId);
       if (lease.isEmpty()) {
-        LOG.info("generation run {} is held by another delivery; dropping this one", runId);
+        if (isUnfinished(runId)) {
+          LOG.info("generation run {} is held by another delivery; re-parking this one", runId);
+          retries.repark(job);
+        } else {
+          LOG.info("generation run {} is held and already finished; dropping this one", runId);
+        }
         channel.basicAck(deliveryTag, false);
         return;
       }
@@ -95,6 +100,11 @@ class GenerationJobListener {
     } finally {
       MDC.remove("runId");
     }
+  }
+
+  /** Whether the run exists and has not finished, so a delivery that lost the lock must retry. */
+  private boolean isUnfinished(String runId) {
+    return runs.findById(runId).map(run -> !run.getStatus().isTerminal()).orElse(false);
   }
 
   private static void pauseBeforeRequeue() {
