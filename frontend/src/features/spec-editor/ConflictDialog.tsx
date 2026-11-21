@@ -13,6 +13,8 @@ export interface ConflictDialogProps {
   conflict: AppError;
   /** The editor's text, which is "mine" in a merge. */
   mine: string;
+  /** The spec's format, which the merge view highlights by. */
+  format: string;
   /** Whether the editor has unsaved edits. Reload asks first when it has. */
   dirty: boolean;
   onDismiss: () => void;
@@ -28,7 +30,7 @@ export interface ConflictDialogProps {
  * Shown when a save is rejected as SPEC_CONFLICT. It offers the server's version (Reload) or a side-by-side merge
  * (Compare). The server's spec is read as soon as the conflict arrives, so Compare has it ready.
  */
-export function ConflictDialog({ projectId, conflict, mine, dirty, onDismiss, onReload, onMerged, onConflict }: ConflictDialogProps) {
+export function ConflictDialog({ projectId, conflict, mine, format, dirty, onDismiss, onReload, onMerged, onConflict }: ConflictDialogProps) {
   const queryClient = useQueryClient();
   const sha = typeof conflict.extra.currentSha === "string" ? conflict.extra.currentSha : "";
   const current = useQuery(currentSpecQuery(projectId, sha));
@@ -60,11 +62,13 @@ export function ConflictDialog({ projectId, conflict, mine, dirty, onDismiss, on
     }
   }
 
+  // A merge in progress is only left through Reload or Save merged, so Escape and an outside click cannot discard it.
   return (
     <>
       <Dialog
         open={!confirming}
         onOpenChange={(open) => !open && onDismiss()}
+        dismissible={!comparing}
         wide={comparing}
         title="Someone else changed this file."
         description="Your edits are not saved. Reload to take the saved version, or compare the two and save a merge."
@@ -90,7 +94,7 @@ export function ConflictDialog({ projectId, conflict, mine, dirty, onDismiss, on
             <QueryBody query={current} label="the saved spec" noAccess="edit this spec">
               {(saved) => (
                 <Suspense fallback={<Skeleton className="h-full" />}>
-                  <MergeView key={sha} theirs={saved.content} mine={merged} onMineChange={setMerged} onReady={() => setReadySha(sha)} />
+                  <MergeView key={sha} theirs={saved.content} mine={merged} format={format} onMineChange={setMerged} onReady={() => setReadySha(sha)} />
                 </Suspense>
               )}
             </QueryBody>

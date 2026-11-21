@@ -12,7 +12,7 @@ function asId(value: unknown): string | undefined {
   return typeof text === "string" && text !== "" ? text : undefined;
 }
 
-/** Reads the search params. A stale or malformed id is dropped, so the page still opens on the default pair. */
+/** Reads the search params. Empty and non-text values are dropped; any other id is kept as given (see asId). */
 export function parseDiffSearch(search: Record<string, unknown>): DiffSearch {
   const result: DiffSearch = {};
   const from = asId(search.from);

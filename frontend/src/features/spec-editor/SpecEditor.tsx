@@ -106,6 +106,7 @@ function EditorSession({ projectId, loaded, onConflict }: { projectId: string; l
           projectId={projectId}
           conflict={conflict}
           mine={text}
+          format={loaded.format}
           dirty={dirty}
           onDismiss={() => setConflict(null)}
           onReload={(spec) => adopt(spec.content, spec.sha)}

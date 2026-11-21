@@ -1,3 +1,4 @@
+import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -12,6 +13,7 @@ vi.mock("./validation", () => ({ validateSpec: vi.fn(async () => []) }));
 
 const SPEC = "openapi: 3.0.3\ninfo:\n  title: Billing\n  version: 1.0.0\npaths: {}\n";
 const THEIRS = "openapi: 3.0.3\ninfo:\n  title: Billing\n  version: 2.0.0\npaths: {}\n";
+const THEIRS_2 = "openapi: 3.0.3\ninfo:\n  title: Billing\n  version: 3.0.0\npaths: {}\n";
 const CONFLICT = { code: "SPEC_CONFLICT", status: 409, currentSha: "theirs" };
 const SERVER_ERROR = { code: "INTERNAL", status: 500, title: "Server error" };
 
@@ -63,6 +65,39 @@ test("the merge view shows the server's spec on the left and the user's text on 
   expect(theirs.state.doc.toString()).toBe(THEIRS);
   expect(mine.state.doc.toString()).toBe(`${SPEC}\n# mine`);
   expect(theirs.state.readOnly).toBe(true);
+  expect(screen.getByLabelText("Saved version (read-only)")).toBeInTheDocument();
+  expect(screen.getByLabelText("Your version")).toBeInTheDocument();
+});
+
+test("undo works in the right pane", async () => {
+  server.use(http.put("/api/v1/projects/p1/spec", () => HttpResponse.json(CONFLICT, { status: 409 })));
+  await openMerge();
+  const [, mine] = mergePanes();
+  const before = mine.state.doc.toString();
+
+  typeAtEnd(mine, "\n# merged");
+  act(() => undo(mine));
+
+  expect(mine.state.doc.toString()).toBe(before);
+});
+
+test("the merge view offers revert controls for the saved version's changes", async () => {
+  server.use(http.put("/api/v1/projects/p1/spec", () => HttpResponse.json(CONFLICT, { status: 409 })));
+  await openMerge();
+
+  expect(document.querySelector('[data-testid="merge-view"] .cm-merge-revert')).not.toBeNull();
+});
+
+test("Escape and an outside click keep a merge in progress", async () => {
+  server.use(http.put("/api/v1/projects/p1/spec", () => HttpResponse.json(CONFLICT, { status: 409 })));
+  await openMerge();
+  typeAtEnd(mergePanes()[1], "\n# merged");
+
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(document.querySelector<HTMLElement>(".bg-scrim") as HTMLElement);
+
+  expect(screen.getByRole("dialog", { name: /someone else changed this file/i })).toBeVisible();
+  expect(mergePanes()[1].state.doc.toString()).toBe(`${SPEC}\n# mine\n# merged`);
 });
 
 test("an edit in the merge view's right pane is what Save merged sends", async () => {
@@ -77,7 +112,13 @@ test("an edit in the merge view's right pane is what Save merged sends", async (
 
 test("a second conflict on Save merged keeps the dialog open and the user's merge", async () => {
   let puts = 0;
+  let gets = 0;
   server.use(
+    http.get("/api/v1/projects/:id/spec", () => {
+      gets += 1;
+      const content = gets === 1 ? SPEC : gets === 2 ? THEIRS : THEIRS_2;
+      return HttpResponse.json({ content, format: "yaml", sha: `sha${gets}` });
+    }),
     http.put("/api/v1/projects/p1/spec", () => {
       puts += 1;
       return HttpResponse.json({ ...CONFLICT, currentSha: puts === 1 ? "theirs" : "theirs-2" }, { status: 409 });
@@ -89,6 +130,8 @@ test("a second conflict on Save merged keeps the dialog open and the user's merg
   await userEvent.click(screen.getByRole("button", { name: "Save merged" }));
 
   await waitFor(() => expect(lastPutBody().sha).toBe("theirs"));
+  // The new conflict's server text is on the left once its pane is up, and only then can Save merged be used.
+  await waitFor(() => expect(mergePanes()[0].state.doc.toString()).toBe(THEIRS_2));
   await waitFor(() => expect(screen.getByRole("button", { name: "Save merged" })).toBeEnabled());
   const dialog = screen.getByRole("dialog", { name: /someone else changed this file/i });
   expect(mergePanes()[1].state.doc.toString()).toBe(`${SPEC}\n# mine\n# merged`);

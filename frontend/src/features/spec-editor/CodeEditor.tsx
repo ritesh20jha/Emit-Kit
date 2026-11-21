@@ -76,13 +76,18 @@ function extensionsFor(format: string, handlers: { current: Handlers }): Extensi
     search({ top: true }),
     syntaxHighlighting(highlight),
     highlightActiveLine(),
-    format === "json" ? json() : yaml(),
+    languageFor(format),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) handlers.current.onChange(update.state.doc.toString());
     }),
     theme,
   ];
+}
+
+/** The language for a spec's format: JSON or YAML. The merge view uses it too. */
+export function languageFor(format: string): Extension {
+  return format === "json" ? json() : yaml();
 }
 
 /** Syntax colours are design tokens too, so dark mode keeps their contrast. */
