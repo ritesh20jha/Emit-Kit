@@ -75,19 +75,23 @@ class HOOK01WebhookIT {
 
     @Bean
     @Primary
-    RecordingDispatcher recordingDispatcher() {
-      return new RecordingDispatcher();
+    RecordingDispatcher recordingDispatcher(PushHandler push, MergeTagHandler mergeTag) {
+      return new RecordingDispatcher(push, mergeTag);
     }
   }
 
   /**
-   * Records the projects it is asked to handle, and answers as the HOOK-02 stub does. It can be
+   * Records the projects it is asked to handle, and answers as the real dispatcher does. It can be
    * told to fail its next call, as a dispatcher whose work broke would.
    */
   static class RecordingDispatcher extends WebhookDispatcher {
 
     private final List<Project> calls = new ArrayList<>();
     private boolean failNextCall;
+
+    RecordingDispatcher(PushHandler push, MergeTagHandler mergeTag) {
+      super(push, mergeTag);
+    }
 
     @Override
     public WebhookOutcome handle(Project project, WebhookEvent event) {
