@@ -91,20 +91,7 @@ function EmptyRuns({
   onClearFilters: () => void;
   onFirstPage: () => void;
 }) {
-  if (search.status !== undefined || search.trigger !== undefined) {
-    return (
-      <EmptyState
-        icon={History}
-        title="No runs match these filters."
-        description="Try another status or trigger."
-        action={
-          <Button variant="secondary" size="sm" onClick={onClearFilters}>
-            Clear filters
-          </Button>
-        }
-      />
-    );
-  }
+  // A cursor page is checked first: its emptiness says nothing about the filters, and the first page is the way back.
   if (search.cursor !== undefined) {
     return (
       <EmptyState
@@ -114,6 +101,20 @@ function EmptyRuns({
         action={
           <Button variant="secondary" size="sm" onClick={onFirstPage}>
             First page
+          </Button>
+        }
+      />
+    );
+  }
+  if (search.status !== undefined || search.trigger !== undefined) {
+    return (
+      <EmptyState
+        icon={History}
+        title="No runs match these filters."
+        description="Try another status or trigger."
+        action={
+          <Button variant="secondary" size="sm" onClick={onClearFilters}>
+            Clear filters
           </Button>
         }
       />

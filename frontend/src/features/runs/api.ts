@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { failureFeedback, toAppError } from "@/lib/api/appError";
 import { api } from "@/lib/api/client";
 import type { components } from "@/lib/api/generated/schema";
@@ -21,17 +21,23 @@ const MOVING: ReadonlySet<RunStatus> = new Set(["QUEUED", "RUNNING"]);
 const hasMovingRun = (page: PageRunSummary | undefined): boolean =>
   page?.items.some((run) => MOVING.has(run.status)) ?? false;
 
-/** One page of the project's runs for these filters, polled while a run is queued or running. */
-export function runsQuery(projectId: string, search: RunSearch) {
+/**
+ * One page of the project's runs for these filters, polled while a run is queued or running. The router's search also
+ * carries any unknown URL keys, so only the three run filters are taken, for both the request and the cache key.
+ * The previous page stays on screen while a new filter or page loads.
+ */
+export function runsQuery(projectId: string, { status, trigger, cursor }: RunSearch) {
+  const filters = { status, trigger, cursor };
   return queryOptions({
-    queryKey: qk.runs.list(projectId, { ...search }),
+    queryKey: qk.runs.list(projectId, filters),
     queryFn: async (): Promise<PageRunSummary> => {
       const { data, error, response } = await api.GET("/projects/{id}/runs", {
-        params: { path: { id: projectId }, query: { ...search, limit: PAGE_SIZE } },
+        params: { path: { id: projectId }, query: { ...filters, limit: PAGE_SIZE } },
       });
       if (!response.ok) throw toAppError(response, error);
       return data as PageRunSummary;
     },
+    placeholderData: keepPreviousData,
     refetchInterval: (query) => (hasMovingRun(query.state.data) ? POLL_INTERVAL_MS : false),
   });
 }

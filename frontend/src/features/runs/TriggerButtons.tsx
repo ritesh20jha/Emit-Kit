@@ -14,10 +14,15 @@ export function TriggerButtons({ project }: { project: ProjectDetail }) {
   const open = (dryRun: boolean) => start.mutate(dryRun, { onSuccess: (run) => void navigate({ to: runPath(run.id) }) });
   return (
     <div className="flex flex-wrap gap-2">
-      <Button variant="secondary" loading={start.isPending && start.variables === true} onClick={() => open(true)}>
+      <Button
+        variant="secondary"
+        loading={start.isPending && start.variables === true}
+        disabled={start.isPending}
+        onClick={() => open(true)}
+      >
         Dry run
       </Button>
-      <Button loading={start.isPending && start.variables === false} onClick={() => open(false)}>
+      <Button loading={start.isPending && start.variables === false} disabled={start.isPending} onClick={() => open(false)}>
         Trigger run
       </Button>
     </div>

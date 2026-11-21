@@ -6,6 +6,8 @@ import type { components } from "@/lib/api/generated/schema";
 import { projectHandlers, run, runDetail, runs } from "@/test/msw/handlers/projects";
 import { server } from "@/test/msw/server";
 import { renderRoute } from "@/test/renderRoute";
+import { runsQuery } from "./api";
+import type { RunSearch } from "./schemas";
 
 type RunSummary = components["schemas"]["RunSummary"];
 type PageRunSummary = components["schemas"]["PageRunSummary"];
@@ -20,13 +22,13 @@ Element.prototype.scrollIntoView = () => {};
 /** Every list request, so a test can check the query string that went over the wire. */
 let requests: URLSearchParams[] = [];
 
-/** Answers the list request with `handler`, recording each query string. */
-function serveRuns(handler: (params: URLSearchParams) => PageRunSummary) {
+/** Answers the list request with `handler`, which may wait, recording each query string. */
+function serveRuns(handler: (params: URLSearchParams) => PageRunSummary | Promise<PageRunSummary>) {
   server.use(
-    http.get(RUNS_PATH, ({ request }) => {
+    http.get(RUNS_PATH, async ({ request }) => {
       const params = new URL(request.url).searchParams;
       requests.push(params);
-      return HttpResponse.json(handler(params));
+      return HttpResponse.json(await handler(params));
     }),
   );
 }
@@ -75,7 +77,9 @@ test("filters live in the URL", async () => {
   await waitFor(() => expect(router.state.location.search).toEqual({ status: "FAILED" }));
   expect(lastRequest()?.get("status")).toBe("FAILED");
   expect(lastRequest()?.has("cursor")).toBe(false);
-  expect(await within(await screen.findByRole("table", { name: "Runs" })).findByText("Failed")).toBeInTheDocument();
+  const table = await screen.findByRole("table", { name: "Runs" });
+  await waitFor(() => expect(within(table).queryAllByText("Succeeded")).toHaveLength(0));
+  expect(within(table).getByText("Failed")).toBeInTheDocument();
 
   await user.click(screen.getByRole("combobox", { name: "Run trigger" }));
   await user.click(await screen.findByRole("option", { name: "Webhook" }));
@@ -192,4 +196,77 @@ test("a forbidden list shows the no-access state", async () => {
   server.use(http.get(RUNS_PATH, () => HttpResponse.json({ code: "FORBIDDEN" }, { status: 403 })));
   renderRoute("/projects/p1/runs");
   expect(await screen.findByText(/You need admin access to view runs/)).toBeInTheDocument();
+});
+
+test("unknown URL keys never reach the list request or its query key", async () => {
+  renderRoute("/projects/p1/runs?foo=x&status=FAILED");
+  await screen.findByRole("table", { name: "Runs" });
+  expect(lastRequest()?.has("foo")).toBe(false);
+  expect(lastRequest()?.get("status")).toBe("FAILED");
+  expect(runsQuery("p1", { status: "FAILED", foo: "x" } as RunSearch).queryKey).toEqual([
+    "projects",
+    "p1",
+    "runs",
+    { status: "FAILED" },
+  ]);
+});
+
+test("a filter change keeps the previous rows on screen while the new page loads", async () => {
+  const user = userEvent.setup();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  serveRuns(async (params) => {
+    if (params.get("status") === "FAILED") await gate;
+    return filterRuns(params);
+  });
+  renderRoute("/projects/p1/runs");
+  const table = await screen.findByRole("table", { name: "Runs" });
+
+  await user.click(screen.getByRole("combobox", { name: "Run status" }));
+  await user.click(await screen.findByRole("option", { name: "Failed" }));
+
+  // The new request is still pending, and the table has not collapsed to a skeleton.
+  await waitFor(() => expect(lastRequest()?.get("status")).toBe("FAILED"));
+  expect(screen.getByRole("table", { name: "Runs" })).toBe(table);
+  expect(within(table).getAllByText("Succeeded").length).toBeGreaterThan(0);
+
+  release();
+  await waitFor(() => expect(within(table).queryAllByText("Succeeded")).toHaveLength(0));
+});
+
+test("while one trigger is pending, the other is disabled and only one POST is sent", async () => {
+  const user = userEvent.setup();
+  const posts: unknown[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  server.use(
+    http.post(RUNS_PATH, async ({ request }) => {
+      posts.push(await request.json());
+      await gate;
+      return HttpResponse.json(runDetail(run("r9", "QUEUED", "MANUAL", 0, null)), { status: 201 });
+    }),
+  );
+  const router = renderRoute("/projects/p1/runs");
+
+  await user.click(await screen.findByRole("button", { name: "Dry run" }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: "Trigger run" })).toBeDisabled());
+  expect(screen.getByRole("button", { name: "Dry run" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Trigger run" }));
+  expect(posts).toEqual([{ dryRun: true }]);
+
+  release();
+  await waitFor(() => expect(router.state.location.pathname).toBe("/runs/r9"));
+  expect(posts).toEqual([{ dryRun: true }]);
+});
+
+test("an empty page reached by a cursor says so, even with filters set", async () => {
+  serveRuns(() => ({ items: [], nextCursor: null }));
+  renderRoute("/projects/p1/runs?status=FAILED&cursor=page-2");
+  expect(await screen.findByRole("heading", { name: "No runs on this page." })).toBeInTheDocument();
+  expect(screen.queryByText("No runs match these filters.")).not.toBeInTheDocument();
 });
