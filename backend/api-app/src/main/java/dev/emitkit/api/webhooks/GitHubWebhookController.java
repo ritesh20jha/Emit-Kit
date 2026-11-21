@@ -23,9 +23,10 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Receives GitHub deliveries at {@code /webhooks/github}. A delivery names its repository, and the
- * projects connected to that repository are its candidates: the first candidate whose webhook
- * secret verifies the signature owns the delivery. A verified delivery is de-duplicated, then
- * answered; push and pull_request events are handed to the {@link WebhookDispatcher}.
+ * projects connected to that repository, as source or as separate output, are its candidates: the
+ * first candidate whose webhook secret verifies the signature owns the delivery. A verified
+ * delivery is de-duplicated, then answered; push and pull_request events are handed to the {@link
+ * WebhookDispatcher}.
  *
  * <p>Hidden from the OpenAPI document: GitHub calls this endpoint, the SPA never does.
  */
@@ -135,7 +136,7 @@ class GitHubWebhookController {
     List<Project> candidates =
         repo == null
             ? List.of()
-            : projects.findByRepoFullName(repo).stream()
+            : projects.findByRepoFullNameOrOutputRepoFullName(repo, repo).stream()
                 .filter(project -> project.getWebhookSecretEnc() != null)
                 .toList();
     if (candidates.isEmpty()) {

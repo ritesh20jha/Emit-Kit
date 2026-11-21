@@ -14,6 +14,13 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
   /** Matches across organizations: the same repository can be connected in several of them. */
   List<Project> findByRepoFullName(String repoFullName);
 
+  /**
+   * Matches a repository as a project's source or as its separate output repository. A webhook
+   * delivery passes its repository name for both.
+   */
+  List<Project> findByRepoFullNameOrOutputRepoFullName(
+      String repoFullName, String outputRepoFullName);
+
   boolean existsByOrgIdAndRepoFullName(String orgId, String repoFullName);
 
   /**
