@@ -239,7 +239,7 @@ class HOOK02PushMergeIT {
         deliver(delivery("pull_request", pullRequest(repo, "closed", true, foreign, merge)));
 
     assertThat(response.status()).isEqualTo(200);
-    assertThat(response.body()).isEqualTo("{\"status\":\"ignored\",\"reason\":\"other-project\"}");
+    assertThat(response.body()).isEqualTo("{\"status\":\"ignored\",\"reason\":\"run-not-found\"}");
     assertThat(vcs.calls("createTag")).isEmpty();
     assertThat(vcs.tags(repo)).isEmpty();
   }
@@ -258,7 +258,49 @@ class HOOK02PushMergeIT {
   }
 
   @Test
-  void closedActionOtherThanClosed_ignored() throws Exception {
+  void mergedBranchOnWrongRepo_ignored() throws Exception {
+    String sourceRepo = newRepo("wrong-source");
+    String outputRepo = newRepo("wrong-output");
+    Project project = connect(sourceRepo, outputRepo, OutputMode.SEPARATE, List.of(OutputKind.SDK));
+    GenerationRun run = webhookRun(project);
+    String merge = commit(sourceRepo, "merged");
+
+    Response response =
+        deliver(delivery("pull_request", pullRequest(sourceRepo, "closed", true, run, merge)));
+
+    assertThat(response.status()).isEqualTo(200);
+    assertThat(response.body()).isEqualTo("{\"status\":\"ignored\",\"reason\":\"repo\"}");
+    assertThat(vcs.calls("createTag")).isEmpty();
+    assertThat(vcs.tags(sourceRepo)).isEmpty();
+    assertThat(vcs.tags(outputRepo)).isEmpty();
+  }
+
+  @Test
+  void pushWithSpecRemovedInSecondCommit_createsRun() throws Exception {
+    String repo = newRepo("removed-second");
+    Project project = connect(repo, null, OutputMode.APPEND, List.of(OutputKind.SDK));
+    Map<String, Object> payload =
+        Map.of(
+            "ref", "refs/heads/main",
+            "repository", Map.of("full_name", repo),
+            "commits",
+                List.of(
+                    Map.of(
+                        "added", List.of(), "modified", List.of("README.md"), "removed", List.of()),
+                    Map.of(
+                        "added", List.of(), "modified", List.of(), "removed", List.of(SPEC_PATH))));
+
+    Response response = deliver(delivery("push", payload));
+
+    assertThat(response.status()).isEqualTo(200);
+    List<GenerationRun> created = runsOf(project);
+    assertThat(created).hasSize(1);
+    assertThat(response.body())
+        .isEqualTo("{\"status\":\"queued\",\"runId\":\"" + created.get(0).getId() + "\"}");
+  }
+
+  @Test
+  void prOpened_ignored() throws Exception {
     String repo = newRepo("opened");
     Project project = connect(repo, null, OutputMode.APPEND, List.of(OutputKind.SDK));
     GenerationRun run = webhookRun(project);

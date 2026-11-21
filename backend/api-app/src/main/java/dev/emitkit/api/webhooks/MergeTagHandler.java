@@ -7,6 +7,7 @@ import dev.emitkit.common.error.ErrorCode;
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunRepository;
 import dev.emitkit.domain.OutputKind;
+import dev.emitkit.domain.OutputMode;
 import dev.emitkit.domain.Project;
 import dev.emitkit.domain.ProjectConfig;
 import dev.emitkit.domain.ProjectConfigRepository;
@@ -55,12 +56,20 @@ class MergeTagHandler {
     if (!branch.matches()) {
       return WebhookOutcome.ignored("branch");
     }
-    GenerationRun run = runs.findById(branch.group(1)).orElse(null);
-    if (run == null) {
-      return WebhookOutcome.ignored("run-not-found");
+    // Tags go to the repository the run's output lives in. A pull request on the other repository
+    // is not this run's merge, whichever project it belongs to.
+    String repo = payload.path("repository").path("full_name").asStringOpt().orElseThrow();
+    String target =
+        project.getOutputMode() == OutputMode.SEPARATE
+            ? project.getOutputRepoFullName()
+            : project.getRepoFullName();
+    if (!repo.equals(target)) {
+      return WebhookOutcome.ignored("repo");
     }
-    if (!run.getProjectId().equals(project.getId())) {
-      return WebhookOutcome.ignored("other-project");
+    // A run of another project reads as an unknown run, so the run id's existence stays hidden.
+    GenerationRun run = runs.findById(branch.group(1)).orElse(null);
+    if (run == null || !run.getProjectId().equals(project.getId())) {
+      return WebhookOutcome.ignored("run-not-found");
     }
     if (run.getSdkVersion() == null) {
       return WebhookOutcome.ignored("no-version");
@@ -70,7 +79,6 @@ class MergeTagHandler {
       return WebhookOutcome.ignored("no-merge-commit");
     }
     List<String> tags = tagsFor(run);
-    String repo = payload.path("repository").path("full_name").asStringOpt().orElseThrow();
     VcsClient vcs = vcsProvider.forProject(project.getCreatedBy());
     boolean created = false;
     for (String tag : tags) {
