@@ -97,7 +97,7 @@ const highlight = HighlightStyle.define([
 ]);
 
 /** Colours come from the design tokens, so the editor follows light and dark mode with the rest of the app. */
-const theme = EditorView.theme({
+export const theme = EditorView.theme({
   "&": { height: "100%", color: "var(--color-fg)", backgroundColor: "var(--color-bg)", fontSize: "13px" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", lineHeight: "20px" },
   ".cm-content": { caretColor: "var(--color-fg)" },

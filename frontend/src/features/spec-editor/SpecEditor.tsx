@@ -6,6 +6,7 @@ import { AppError, failureFeedback } from "@/lib/api/appError";
 import { ConfirmDialog, Skeleton, toast } from "@/ui";
 import { type SaveSpecResponse, type SpecResponse, specQuery, useSaveSpec, useStartRun, useViewRun } from "./api";
 import type { CodeEditorHandle } from "./CodeEditor";
+import { ConflictDialog } from "./ConflictDialog";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { useProblems } from "./problems";
 import { SpecToolbar } from "./SpecToolbar";
@@ -14,7 +15,7 @@ const CodeEditor = lazy(() => import("./CodeEditor"));
 
 export interface SpecEditorProps {
   projectId: string;
-  /** Called with a save rejected as SPEC_CONFLICT (409). The conflict dialog is the caller's to build. */
+  /** Called with a save rejected as SPEC_CONFLICT (409). The editor shows its own conflict dialog as well. */
   onConflict?: (error: AppError) => void;
 }
 
@@ -35,6 +36,9 @@ export function SpecEditor({ projectId, onConflict }: SpecEditorProps) {
 function EditorSession({ projectId, loaded, onConflict }: { projectId: string; loaded: SpecResponse; onConflict?: (error: AppError) => void }) {
   const [text, setText] = useState(loaded.content);
   const [base, setBase] = useState({ content: loaded.content, sha: loaded.sha });
+  // A reload or merge replaces the editor's text. CodeEditor reads its text once, so a new revision remounts it.
+  const [revision, setRevision] = useState(0);
+  const [conflict, setConflict] = useState<AppError | null>(null);
   const editor = useRef<CodeEditorHandle>(null);
   const dirty = text !== base.content;
 
@@ -52,9 +56,19 @@ function EditorSession({ projectId, loaded, onConflict }: { projectId: string; l
       setBase({ content, sha: saved.newSha });
       reportSaved(saved);
     } catch (error) {
-      if (error instanceof AppError && error.status === 409 && onConflict) onConflict(error);
-      else toast.error(failureFeedback(error));
+      if (error instanceof AppError && error.status === 409) {
+        setConflict(error);
+        onConflict?.(error);
+      } else toast.error(failureFeedback(error));
     }
+  }
+
+  /** The editor now holds `content`, saved at `sha`: that is both its text and its base. */
+  function adopt(content: string, sha: string) {
+    setText(content);
+    setBase({ content, sha });
+    setRevision((current) => current + 1);
+    setConflict(null);
   }
 
   /** A saved spec whose run did not start keeps the save; the toast offers the run again. */
@@ -72,7 +86,7 @@ function EditorSession({ projectId, loaded, onConflict }: { projectId: string; l
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="h-[60vh] min-h-72 overflow-hidden rounded-card border border-border">
           <Suspense fallback={<Skeleton className="h-full" />}>
-            <CodeEditor ref={editor} initialText={loaded.content} format={loaded.format} problems={problems.problems} onChange={setText} onSave={() => void saveText(false)} />
+            <CodeEditor key={revision} ref={editor} initialText={base.content} format={loaded.format} problems={problems.problems} onChange={setText} onSave={() => void saveText(false)} />
           </Suspense>
         </div>
         <ProblemsPanel view={problems} onJump={(line) => editor.current?.jumpTo(line)} />
@@ -87,6 +101,21 @@ function EditorSession({ projectId, loaded, onConflict }: { projectId: string; l
         tone="danger"
         onConfirm={async () => blocker.proceed?.()}
       />
+      {conflict && (
+        <ConflictDialog
+          projectId={projectId}
+          conflict={conflict}
+          mine={text}
+          dirty={dirty}
+          onDismiss={() => setConflict(null)}
+          onReload={(spec) => adopt(spec.content, spec.sha)}
+          onMerged={(content, sha) => {
+            adopt(content, sha);
+            toast.success("Merged and saved");
+          }}
+          onConflict={setConflict}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,10 @@ export const qk = {
     one: (id: string) => ["projects", id],
     config: (id: string) => ["projects", id, "config"],
     spec: (id: string) => ["projects", id, "spec"],
+    /** The server's spec as of a conflicting sha. Under the spec key, so a save invalidates it too. */
+    currentSpec: (id: string, sha: string) => ["projects", id, "spec", "current", sha],
+    snapshots: (id: string) => ["projects", id, "spec", "snapshots"],
+    specDiff: (id: string, from: string, to: string) => ["projects", id, "spec", "diff", from, to],
   },
   runs: {
     list: (projectId: string, filters: Record<string, unknown> = {}) => ["projects", projectId, "runs", filters],
