@@ -11,6 +11,11 @@ public interface LintResultRepository extends JpaRepository<LintResult, String> 
   /** The findings of a run. */
   List<LintResult> findByRunId(String runId);
 
+  /**
+   * Deletes the findings of a run, so a retried LINT_SPEC replaces them. Call inside a transaction.
+   */
+  void deleteByRunId(String runId);
+
   /** How many findings a run has at each severity. A severity with no findings has no entry. */
   @Query(
       "select new dev.emitkit.domain.SeverityCount(l.severity, count(l))"
