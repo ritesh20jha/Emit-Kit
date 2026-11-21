@@ -1,7 +1,7 @@
 package dev.emitkit.api.runs;
 
-import dev.emitkit.common.error.AppException;
-import dev.emitkit.common.error.ErrorCode;
+import dev.emitkit.api.access.Permission;
+import dev.emitkit.domain.GenerationRun;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -18,17 +18,26 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** The log of a run, read whole or streamed live. Bodies are stubs for now. */
+/** The log of a run, read whole or streamed live. */
 @RestController
 @Tag(name = "Run logs", description = "The log of a run, read whole or streamed.")
 public class RunLogsController {
+
+  private final RunService runs;
+  private final LogStreamService logs;
+
+  public RunLogsController(RunService runs, LogStreamService logs) {
+    this.runs = runs;
+    this.logs = logs;
+  }
 
   @GetMapping("/api/v1/runs/{runId}/logs")
   @Operation(summary = "List the log lines of a run, after the given sequence number")
   public List<LogLine> listLogs(
       @PathVariable("runId") String runId,
       @RequestParam(name = "afterSeq", required = false) @Nullable Integer afterSeq) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    GenerationRun run = runs.require(runId, Permission.RUN_VIEW);
+    return logs.after(run.getId(), afterSeq == null ? 0 : afterSeq);
   }
 
   @GetMapping(
@@ -52,6 +61,8 @@ public class RunLogsController {
       @Parameter(description = "The seq of the last log line the client received")
           @RequestHeader(name = "Last-Event-ID", required = false)
           @Nullable Integer lastEventId) {
-    throw new AppException(ErrorCode.NOT_IMPLEMENTED, "not implemented");
+    GenerationRun run = runs.require(runId, Permission.RUN_VIEW);
+    return logs.stream(
+        run.getId(), run.getStatus().isTerminal(), lastEventId == null ? 0 : lastEventId);
   }
 }

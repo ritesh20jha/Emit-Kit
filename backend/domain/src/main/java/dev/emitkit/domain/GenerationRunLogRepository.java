@@ -2,6 +2,7 @@ package dev.emitkit.domain;
 
 import java.time.Instant;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -13,6 +14,10 @@ public interface GenerationRunLogRepository extends JpaRepository<GenerationRunL
 
   /** Lines of a run after {@code seq}, in order. Pass 0 to read from the start. */
   List<GenerationRunLog> findByRunIdAndSeqGreaterThanOrderBySeq(String runId, int seq);
+
+  /** The first page of lines of a run after {@code seq}, in order, as {@code page} sizes it. */
+  List<GenerationRunLog> findByRunIdAndSeqGreaterThanOrderBySeq(
+      String runId, int seq, Pageable page);
 
   /** The highest {@code seq} written for a run, or 0 if it has no lines yet. */
   @Query("select coalesce(max(l.seq), 0) from GenerationRunLog l where l.runId = :runId")

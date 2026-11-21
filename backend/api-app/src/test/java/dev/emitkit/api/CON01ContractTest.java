@@ -17,6 +17,7 @@ import dev.emitkit.api.orgs.OrgSyncService;
 import dev.emitkit.api.projects.ConfigService;
 import dev.emitkit.api.projects.ProjectService;
 import dev.emitkit.api.projects.SpecService;
+import dev.emitkit.api.runs.LogStreamService;
 import dev.emitkit.api.runs.RunFilesService;
 import dev.emitkit.api.runs.RunService;
 import dev.emitkit.api.runs.VersionService;
@@ -90,6 +91,7 @@ class CON01ContractTest {
   @MockitoBean private ProjectAccess projectAccess;
   @MockitoBean private RunService runService;
   @MockitoBean private RunFilesService runFilesService;
+  @MockitoBean private LogStreamService logStreamService;
   @MockitoBean private VersionService versionService;
   @MockitoBean private WebhookVerifier webhookVerifier;
   @MockitoBean private ProjectRepository projects;
