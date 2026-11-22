@@ -17,7 +17,7 @@ const BASE_URL = required("BASE_URL").replace(/\/$/, "");
 const SESSION = required("SESSION");
 const PROJECT_ID = required("PROJECT_ID");
 
-// A run that has not finished by then counts as a failure, so a stuck run cannot hang k6.
+// A run that has not finished by then is cancelled and counts as a failure, so it cannot hang k6.
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_INTERVAL_S = 5;
 const TERMINAL = ["SUCCESS", "FAILED", "CANCELLED"];
@@ -43,6 +43,16 @@ export const options = {
   },
 };
 
+// One request before any load: a bad SESSION fails here once, not as 8 identical run failures.
+export function setup() {
+  http.cookieJar().set(BASE_URL, "SESSION", SESSION);
+  const res = http.get(`${BASE_URL}/api/v1/projects/${PROJECT_ID}`);
+  if (res.status !== 200) {
+    const hint = res.status === 401 || res.status === 403 ? "check SESSION" : "check PROJECT_ID";
+    throw new Error(`preflight GET project failed: HTTP ${res.status} (${hint})`);
+  }
+}
+
 export default function () {
   http.cookieJar().set(BASE_URL, "SESSION", SESSION);
 
@@ -54,12 +64,13 @@ export default function () {
     runFailures.add(true);
     return;
   }
+  const csrfHeaders = { "Content-Type": "application/json", "X-XSRF-TOKEN": xsrf[0] };
 
   const started = Date.now();
   const created = http.post(
     `${BASE_URL}/api/v1/projects/${PROJECT_ID}/runs`,
     JSON.stringify({ dryRun: true }),
-    { headers: { "Content-Type": "application/json", "X-XSRF-TOKEN": xsrf[0] } },
+    { headers: csrfHeaders },
   );
   check(created, { "run started (201)": (r) => r.status === 201 });
   const runId = created.status === 201 ? created.json("id") : null;
@@ -70,15 +81,18 @@ export default function () {
   }
 
   let status = null;
+  let pollFailed = false;
   while (Date.now() - started < RUN_TIMEOUT_MS) {
     sleep(POLL_INTERVAL_S);
     const res = http.get(`${BASE_URL}/api/v1/runs/${runId}`);
     if (res.status !== 200) {
       console.error(`polling run ${runId} failed: HTTP ${res.status}`);
+      pollFailed = true;
       break;
     }
     status = res.json("status");
-    if (TERMINAL.includes(status)) {
+    // AWAITING_APPROVAL only resolves with a reviewer, so do not wait for it.
+    if (TERMINAL.includes(status) || status === "AWAITING_APPROVAL") {
       break;
     }
   }
@@ -87,8 +101,22 @@ export default function () {
   const succeeded = status === "SUCCESS";
   if (succeeded) {
     runDuration.add(elapsed);
-  } else {
-    console.error(`run ${runId} ended as ${status ?? "no status"} after ${elapsed} ms`);
+  } else if (status === "AWAITING_APPROVAL") {
+    console.error(
+      `run ${runId} is AWAITING_APPROVAL: set the project's breakingGate to ALLOW (perf/README.md)`,
+    );
+  } else if (!pollFailed && !TERMINAL.includes(status)) {
+    console.error(`run ${runId} did not finish within ${RUN_TIMEOUT_MS} ms`);
+  } else if (!pollFailed) {
+    console.error(`run ${runId} ended as ${status} after ${elapsed} ms`);
+  }
+
+  // Best effort: a run left parked or stuck would hold a slot on the project. The result is logged only.
+  if (!succeeded && !pollFailed && !TERMINAL.includes(status)) {
+    const cancel = http.post(`${BASE_URL}/api/v1/runs/${runId}/cancel`, null, {
+      headers: csrfHeaders,
+    });
+    console.error(`cancel run ${runId}: HTTP ${cancel.status}`);
   }
   runFailures.add(!succeeded);
 }

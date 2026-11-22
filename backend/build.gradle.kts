@@ -15,7 +15,8 @@ dependencyCheck {
         apiKey.set(providers.environmentVariable("NVD_API_KEY").filter { it.isNotBlank() })
     }
     data {
-        // Under build/ so the CI cache step can restore it between runs.
+        // Under build/ so the CI cache step can restore it between runs. The data lives under
+        // backend/build, so ./gradlew clean forces a cold download (30+ min keyless).
         directory.set(layout.buildDirectory.dir("dependency-check-data").map { it.asFile.path })
     }
 }

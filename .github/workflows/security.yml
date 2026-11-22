@@ -14,8 +14,10 @@ on:
       - 'frontend/package.json'
       - 'frontend/pnpm-lock.yaml'
       - '.github/workflows/security.yml'
+  workflow_dispatch:
   schedule:
-    # Weekly, so a CVE published between pushes still surfaces.
+    # Weekly, so a CVE published between pushes still surfaces. Scheduled runs use the default
+    # branch only, so this takes effect once the workflow is on main.
     - cron: '0 6 * * 1'
 
 permissions:
@@ -59,8 +61,10 @@ jobs:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: ./gradlew dependencyCheckAggregate
 
+      # Saved only on push and schedule, never on PRs (PRs just restore). !cancelled() still saves
+      # after a failed scan, but not after a cancelled job, which can leave H2 mid-write.
       - name: Save NVD data
-        if: always()
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         uses: actions/cache/save@v4
         with:
           path: backend/build/dependency-check-data
@@ -80,8 +84,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: frontend/.nvmrc
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Audit frontend dependencies
         working-directory: frontend
