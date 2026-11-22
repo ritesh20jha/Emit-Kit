@@ -51,10 +51,12 @@ test.describe('24 linting', () => {
     await createExistingProject(page, orgId, REPO, SPEC_PATH);
     await page.goto(`/projects/${projectIdOf(page)}/editor`);
 
-    // The fixture has no tags, so the linter reports a warning on each operation. The panel shows it with its badge.
+    // The fixture has no tags and no summary or description, so the linter reports two warnings on its one operation. The
+    // panel shows each with its own badge, so the badge is found within the item for the tags warning.
     const problems = page.getByRole('region', { name: 'Problems' });
-    await expect(problems.getByText('operation has no tags', { exact: true }), 'the warning is listed').toBeVisible();
-    await expect(problems.getByText('Warning', { exact: true }), 'the warning is badged as a warning').toBeVisible();
+    const tagsItem = problems.getByRole('listitem').filter({ hasText: 'operation has no tags' });
+    await expect(tagsItem.getByText('operation has no tags', { exact: true }), 'the warning is listed').toBeVisible();
+    await expect(tagsItem.getByText('Warning', { exact: true }), 'the warning is badged as a warning').toBeVisible();
   });
 });
 

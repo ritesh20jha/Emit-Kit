@@ -6,11 +6,12 @@
  * The describe blocks need the pipeline (E2E_PIPELINE=1, a stack started with E2E_SANDBOX_SOCKET). With E2E_REQUIRED=1 they
  * fail instead of skipping.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { cancelRunApi, runFacts, saveConfig, startRun } from './support/api';
 import { MOCK_ADMIN, requests, resetJournal } from './support/mockJournal';
 import { addMapping, sweepTempStubs } from './support/mockStubs';
 import { requirePipeline, waitForRun } from './support/pipeline';
+import { runIdOf } from './support/projects';
 import { CREATE_ONLY, ONE_OPERATION, SPEC_PATH, TWO_OPERATIONS, addSpecStub } from './support/specFixtures';
 import { closeSharedProject, openSharedProject, type SharedProject } from './support/sharedProject';
 
@@ -18,13 +19,6 @@ const REPO = 'acme/billing-api';
 // A run takes about 2.5 minutes in the sandbox, so each wait gets room for one run plus a retry, and never sleeps.
 const RUN_TIMEOUT = 6 * 60_000;
 const BLOCK_TIMEOUT = 15 * 60_000;
-
-/** The run id on a run page, read from its URL. */
-function runIdFrom(page: Page): string {
-  const id = /\/runs\/([^/]+)$/.exec(new URL(page.url()).pathname)?.[1];
-  if (!id) throw new Error(`no run id in ${new URL(page.url()).pathname}`);
-  return id;
-}
 
 /** Clears the WireMock scenario states, so a scenario stub added later starts from its first state. */
 async function resetScenarios(): Promise<void> {
@@ -70,6 +64,12 @@ test.describe('32 breaking-change gate (REQUIRE_APPROVAL path)', () => {
     await addSpecStub(ONE_OPERATION);
     const runId = await startRun(page, projectId, false);
     await waitForRun(page.request, projectId, 'AWAITING_APPROVAL', { runId, timeout: RUN_TIMEOUT });
+
+    // The run's Changes tab lists the same removed operation as the approval banner does.
+    await page.goto(`/runs/${runId}/changes`);
+    const changes = page.getByRole('list', { name: 'Changes' });
+    await expect(changes.getByText('Removed operation', { exact: true }), 'the Changes tab labels the removal').toBeVisible();
+    await expect(changes.getByText('GET /invoices/{id}', { exact: true }), 'the Changes tab names the removed operation').toBeVisible();
 
     await page.goto(`/runs/${runId}`);
     const banner = page.getByRole('region', { name: 'Approval needed' });
@@ -145,10 +145,10 @@ test.describe('38 rerun, cancel and retry', () => {
 
     // A finished run can be rerun: the page is reloaded so the actions reflect the finished status.
     await page.reload();
-: the button starts a new run and opens it.
+    // Rerun: the button starts a new run and opens it.
     await page.getByRole('button', { name: 'Rerun', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/runs/(?!${cancelledId}$)[^/]+$`));
-    const rerunId = runIdFrom(page);
+    const rerunId = runIdOf(page);
     const rerun = await runFacts(page, rerunId);
     expect(rerun.parentRunId, 'the rerun links back to the run it repeats').toBe(cancelledId);
     expect(rerun.trigger, 'the rerun is recorded as a rerun').toBe('RERUN');
@@ -207,12 +207,12 @@ test.describe('39 dry run', () => {
     await page.goto(`/projects/${projectId}/runs`);
     await page.getByRole('button', { name: 'Dry run', exact: true }).click();
     await expect(page).toHaveURL(/\/runs\/[^/]+$/);
-    const runId = runIdFrom(page);
+    const runId = runIdOf(page);
     await waitForRun(page.request, projectId, 'SUCCESS', { runId, timeout: RUN_TIMEOUT });
 
     const facts = await runFacts(page, runId);
     expect(facts.dryRun, 'the run is a dry run').toBe(true);
-    expect(facts.prNumber, 'a dry run opens no pull request').toBeNull();
+    expect(facts.prUrl, 'a dry run opens no pull request').toBeNull();
 
     // Nothing was written to GitHub: no branch, tree, commit or pull request.
     const writes = await Promise.all(

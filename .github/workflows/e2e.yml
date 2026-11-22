@@ -33,12 +33,14 @@ concurrency:
 jobs:
   parity:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 150
     env:
       E2E_SANDBOX_SOCKET: /run/emitkit-sandbox/docker.sock
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v4
         with:
@@ -85,17 +87,18 @@ jobs:
       - name: Build toolchain image
         run: docker build -t emitkit/toolchain:test deploy/docker/toolchain
 
-      # The worker asks the sandbox for emitkit/toolchain:<VERSION> (SandboxProperties default), and the sandbox daemon
-      # has its own image store, so the image is loaded there as well as on the host daemon.
+      # The overlay (deploy/compose/docker-compose.e2e.yml) points the worker at emitkit/toolchain:test, not at the
+      # SandboxProperties default emitkit/toolchain:<VERSION>. The sandbox daemon has its own image store, so the image
+      # is loaded there as well as on the host daemon. The inspect fails this step if the load did not land.
       - name: Load toolchain image into the sandbox daemon
         run: |
-          version="$(cat deploy/docker/toolchain/VERSION)"
-          docker tag emitkit/toolchain:test "emitkit/toolchain:${version}"
-          docker save "emitkit/toolchain:${version}" | sudo docker -H "unix://$E2E_SANDBOX_SOCKET" load
+          set -o pipefail
+          docker save emitkit/toolchain:test | sudo docker -H "unix://$E2E_SANDBOX_SOCKET" load
+          sudo docker -H "unix://$E2E_SANDBOX_SOCKET" image inspect emitkit/toolchain:test >/dev/null
 
       # One build at a time. The api and worker Dockerfiles share a Gradle cache mount without sharing=locked, so
-      # parallel builds fail on the journal lock. This replaces COMPOSE_PARALLEL_LIMIT=1 in e2e.sh. The images are
-      # cached, so the --build in e2e.sh up reuses them. Service names: api, worker, and caddy (the web image).
+      # parallel builds fail on the journal lock. The images are pre-built here one at a time, so e2e.sh's own serial
+      # `up --build` is a cache hit. Service names: api, worker, and caddy (the web image).
       - name: Build app images, one at a time
         working-directory: deploy/compose
         run: |
@@ -124,7 +127,7 @@ jobs:
       # Captured before `e2e.sh down` removes the containers. The env file is regenerated, since e2e.sh up may not
       # have written one; compose only needs the required variables to read the project.
       - name: Collect compose logs
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         working-directory: deploy/compose
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-logs"
@@ -134,7 +137,7 @@ jobs:
             logs --no-color --timestamps --tail 2000 > "$RUNNER_TEMP/e2e-logs/compose.log" 2>&1 || true
 
       - name: Upload Playwright report and results
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: parity-playwright
@@ -145,7 +148,7 @@ jobs:
           retention-days: 14
 
       - name: Upload compose logs
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: parity-compose-logs

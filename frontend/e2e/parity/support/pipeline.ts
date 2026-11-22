@@ -102,13 +102,14 @@ export interface DeliveryResult {
 }
 
 /**
- * Sends one GitHub push delivery to /webhooks/github, signed as GitHub signs it: X-Hub-Signature-256 is the HMAC-SHA256
- * of the exact body bytes, keyed with the project's webhook secret. The delivery id is unique unless one is given (a
- * redelivery reuses the id of the delivery it repeats).
+ * Sends one signed GitHub webhook delivery to /webhooks/github: X-Hub-Signature-256 is the HMAC-SHA256 of the exact body
+ * bytes, keyed with the project's webhook secret. The delivery id is unique unless one is given (a redelivery reuses the id
+ * of the delivery it repeats).
  */
-export async function deliverPush(
+export async function deliver(
   request: APIRequestContext,
   secret: string,
+  event: 'push' | 'pull_request',
   payload: Record<string, unknown>,
   deliveryId: string = randomUUID(),
 ): Promise<DeliveryResult & { deliveryId: string }> {
@@ -118,11 +119,21 @@ export async function deliverPush(
     data: raw,
     headers: {
       'Content-Type': 'application/json',
-      'X-GitHub-Event': 'push',
+      'X-GitHub-Event': event,
       'X-GitHub-Delivery': deliveryId,
       'X-Hub-Signature-256': signature,
     },
   });
   const outcome = res.ok() ? ((await res.json()) as DeliveryResult['outcome']) : { status: `http ${res.status()}` };
   return { httpStatus: res.status(), outcome, deliveryId };
+}
+
+/** Sends one GitHub push delivery (see deliver). */
+export function deliverPush(
+  request: APIRequestContext,
+  secret: string,
+  payload: Record<string, unknown>,
+  deliveryId?: string,
+): Promise<DeliveryResult & { deliveryId: string }> {
+  return deliver(request, secret, 'push', payload, deliveryId);
 }

@@ -12,8 +12,9 @@ services:
       - "127.0.0.1:8089:8089"
     volumes:
       - ./e2e/wiremock/mappings:/home/wiremock/mappings:ro
-    # egress is the non-internal network that api and worker share. The host port needs a non-internal network.
-    networks: [egress]
+    # The host port needs a non-internal network, so the mock sits on egress. It also joins app, where the worker
+    # reaches it. The worker is taken off egress below, so no AI or other real internet call can leave from it.
+    networks: [egress, app]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/__admin/health || exit 1"]
       interval: 2s
@@ -34,8 +35,14 @@ services:
       # The api calls these itself, over the egress network.
       SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_TOKEN_URI: http://github:8089/login/oauth/access_token
       SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_USER_INFO_URI: http://github:8089/user
+      # The CORS allowlist (emitkit.cors.allowed-origins). The stack's own address is not listed: behind Caddy the api sees
+      # the request as same-origin, so no CORS header is written for it. security.spec sends this origin to test the allowlist.
+      EMITKIT_CORS_ALLOWEDORIGINS: https://allowed.e2e.test
 
   worker:
+    # app only: the worker has no route to the internet, so the Gemini call of the docs assistant fails (see the
+    # outputs.spec 'docs with an AI key' test). The GitHub mock is reached on app.
+    networks: !override [app]
     environment:
       EMITKIT_GITHUB_API_URL: http://github:8089
       EMITKIT_WORKER_PIPELINE_ENABLED: "true"

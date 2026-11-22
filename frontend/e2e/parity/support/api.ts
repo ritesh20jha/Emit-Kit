@@ -7,15 +7,19 @@ export async function xsrfHeaders(page: Page): Promise<Record<string, string>> {
   return { 'X-XSRF-TOKEN': cookie.value };
 }
 
-/**
- * Saves the project's config as a new version: reads the current one, changes the fields in `patch`, and sends the rest
- * back unchanged. `aiApiKey` is sent only when given; the API keeps the stored key when the field is absent.
- */
-export async function saveConfig(page: Page, projectId: string, patch: Record<string, unknown>, aiApiKey?: string): Promise<void> {
+export interface SaveConfigOptions {
+  /** The AI key, sent only when given. The API keeps the stored key when the field is absent; "" clears it. */
+  aiApiKey?: string;
+  /** Sends `patch` as the whole body, without reading the current config first. The caller then names every field. */
+  full?: boolean;
+}
+
+/** The config fields a save keeps unless the patch changes them (the ConfigRequest fields other than the AI key). */
+async function currentConfigFields(page: Page, projectId: string): Promise<Record<string, unknown>> {
   const current = await page.request.get(`/api/v1/projects/${projectId}/config`);
   expect(current.ok(), `GET config returned ${current.status()}`).toBeTruthy();
   const config = (await current.json()) as Record<string, unknown>;
-  const body = {
+  return {
     outputs: config.outputs,
     sdkLanguages: config.sdkLanguages,
     outputDir: config.outputDir,
@@ -28,9 +32,16 @@ export async function saveConfig(page: Page, projectId: string, patch: Record<st
     lintFailOn: config.lintFailOn,
     aiProvider: config.aiProvider,
     aiModel: config.aiModel,
-    ...patch,
-    ...(aiApiKey === undefined ? {} : { aiApiKey }),
   };
+}
+
+/**
+ * Saves the project's config as a new version. By default it reads the current one, changes the fields in `patch`, and
+ * sends the rest back unchanged; with `full`, `patch` is the whole body.
+ */
+export async function saveConfig(page: Page, projectId: string, patch: object, options: SaveConfigOptions = {}): Promise<void> {
+  const base = options.full ? {} : await currentConfigFields(page, projectId);
+  const body = { ...base, ...patch, ...(options.aiApiKey === undefined ? {} : { aiApiKey: options.aiApiKey }) };
   const res = await page.request.put(`/api/v1/projects/${projectId}/config`, { data: body, headers: await xsrfHeaders(page) });
   expect(res.ok(), `PUT config returned ${res.status()}`).toBeTruthy();
 }
@@ -42,6 +53,19 @@ export async function startRun(page: Page, projectId: string, dryRun: boolean): 
   return ((await res.json()) as { id: string }).id;
 }
 
+/** One line of a run's manifest, from GET /api/v1/runs/{id}/files. */
+export interface ManifestEntry {
+  path: string;
+  status: string;
+}
+
+/** The file manifest of a run: each generated path with its status against the target branch. */
+export async function manifestOf(page: Page, runId: string): Promise<ManifestEntry[]> {
+  const res = await page.request.get(`/api/v1/runs/${runId}/files`);
+  expect(res.ok(), `GET run files returned ${res.status()}`).toBeTruthy();
+  return (await res.json()) as ManifestEntry[];
+}
+
 /** The fields of a run the specs assert on, from GET /api/v1/runs/{id}. */
 export interface RunFacts {
   id: string;
@@ -49,7 +73,7 @@ export interface RunFacts {
   trigger: string;
   dryRun: boolean;
   parentRunId: string | null;
-  prNumber: number | null;
+  prUrl: string | null;
   failureCode: string | null;
   approval: { decision: string | null; comment: string | null } | null;
 }

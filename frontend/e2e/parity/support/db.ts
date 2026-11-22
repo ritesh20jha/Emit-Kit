@@ -21,6 +21,7 @@ function docker(args: string[], input?: string): string {
     return execFileSync('docker', args, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 }).trim();
   } catch (error) {
     const status = (error as { status?: number | null }).status;
+    // eslint-disable-next-line preserve-caught-error -- the cause can quote stdin SQL that holds a secret
     throw new Error(`docker ${args[0]} failed (exit ${status ?? 'unknown'}) against the e2e Postgres container`);
   }
 }

@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { xsrfHeaders } from './api';
 
 /** The id of the acme organization the signed-in user is a member of, read from the API the shell uses. */
 export async function acmeOrgId(page: Page): Promise<string> {
@@ -8,13 +9,6 @@ export async function acmeOrgId(page: Page): Promise<string> {
   const acme = me.orgs.find((org) => org.name === 'acme');
   if (!acme) throw new Error(`expected the acme org, got ${JSON.stringify(me.orgs.map((org) => org.name))}`);
   return acme.orgId;
-}
-
-/** The XSRF header the API wants on a mutation, taken from the cookie the signed-in browser holds. */
-async function xsrfHeaders(page: Page): Promise<Record<string, string>> {
-  const cookie = (await page.context().cookies()).find((c) => c.name === 'XSRF-TOKEN');
-  if (!cookie) throw new Error('no XSRF-TOKEN cookie: sign in before a mutation');
-  return { 'X-XSRF-TOKEN': cookie.value };
 }
 
 /**
@@ -46,5 +40,12 @@ export async function removeAcmeProject(page: Page, repo: string): Promise<void>
 export function projectIdOf(page: Page): string {
   const id = /\/projects\/([^/]+)\/(?:config|editor|runs)/.exec(new URL(page.url()).pathname)?.[1];
   if (!id) throw new Error(`no project id in ${new URL(page.url()).pathname}`);
+  return id;
+}
+
+/** The id of the run whose page the browser is on, read from its URL. */
+export function runIdOf(page: Page): string {
+  const id = /\/runs\/([^/]+)$/.exec(new URL(page.url()).pathname)?.[1];
+  if (!id) throw new Error(`no run id in ${new URL(page.url()).pathname}`);
   return id;
 }

@@ -1,8 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import { cancelRunApi } from './support/api';
 import { login } from './support/login';
 import { bodyOf, onlyRequest, requests, resetJournal } from './support/mockJournal';
 import { createExistingProject } from './support/newProject';
 import { addMapping, removeMapping, sweepTempStubs } from './support/mockStubs';
+import { waitForRun } from './support/pipeline';
 import { acmeOrgId, projectIdOf, removeAcmeProject, removeProjectFor } from './support/projects';
 
 const REPO = 'acme/billing-api';
@@ -68,12 +70,17 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
     await expect(spec(page)).toContainText('operationId: listInvoices');
   });
 
-  // Known product bug, tracked here: the fixture is valid, but the Problems panel shows an Error on it, because the
-  // browser validator's ajv compile is blocked by the page's CSP ('unsafe-eval' is not allowed). test.fail keeps the suite
-  // green while the bug stands, and turns red once the panel shows no problems, so this marker is then removed.
-  test.fail('load: a valid spec shows no problems', async ({ page }) => {
+  // Known product bug, tracked here: the fixture is valid, but the Problems panel shows an Error item on it, because the
+  // browser validator's ajv compile is blocked by the page's CSP ('unsafe-eval' is not allowed); validateSpecText returns
+  // that failure as an issue. The fixture always has server lint findings (warnings and infos, which are not errors), so
+  // the test checks for Error items only. test.fail keeps the suite green while the bug stands, and turns red once the
+  // panel shows no Error item, so this marker is then removed.
+  test.fail('load: a valid spec shows no validation errors', async ({ page }) => {
     await openEditor(page);
-    await expect(page.getByRole('region', { name: 'Problems' }).getByText('No problems found.')).toBeVisible({ timeout: 5000 });
+    const problems = page.getByRole('region', { name: 'Problems' });
+    // The lint findings show only once the panel is ready, so this also waits for the validator to settle.
+    await expect(problems.getByText('operation has no tags', { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(problems.getByRole('listitem').filter({ has: page.getByText('Error', { exact: true }) })).toHaveCount(0);
   });
 
   test('validate', async ({ page }) => {
@@ -151,6 +158,8 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
   });
 
   test('save & generate', async ({ page, request }) => {
+    // A run that the worker has taken can take minutes to stop once cancelled, so this test gets room for the stop below.
+    test.setTimeout(4 * 60_000);
     const projectId = await openEditor(page);
     await typeAtEnd(page, EDIT);
 
@@ -166,11 +175,20 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
     expect(write.sha).toBe(LOADED_SHA);
     expect(Buffer.from(write.content, 'base64').toString('utf8')).toBe(EDITED);
 
-    // The run was created for the project. The worker is not running in the parity stack, so it stays queued.
+    // The run was created for the project. Whether the worker has taken it yet depends on the stack: with the sandbox
+    // socket set (E2E_SANDBOX_SOCKET, the CI pipeline run) it is RUNNING within moments, and without it stays QUEUED.
     const res = await page.request.get(`/api/v1/projects/${projectId}/runs`);
     expect(res.ok(), `GET runs returned ${res.status()}`).toBeTruthy();
-    const { items } = (await res.json()) as { items: { status: string; dryRun: boolean }[] };
-    expect(items.map((run) => run.status)).toEqual(['QUEUED']);
-    expect(items[0]?.dryRun).toBe(false);
+    const { items } = (await res.json()) as { items: { id: string; status: string; dryRun: boolean }[] };
+    expect(items, 'the save created one run').toHaveLength(1);
+    const run = items[0];
+    if (!run) throw new Error('the save created no run');
+    expect(['QUEUED', 'RUNNING'], 'the run is queued or already running').toContain(run.status);
+    expect(run.dryRun).toBe(false);
+
+    // Stop the run, so no sandbox work is left for the specs that follow. A cancel on a RUNNING run only sets a flag, so
+    // the test waits for the worker to report CANCELLED (a QUEUED run is cancelled at once).
+    await cancelRunApi(page, run.id);
+    await waitForRun(page.request, projectId, 'CANCELLED', { runId: run.id, timeout: 3 * 60_000 });
   });
 });

@@ -9,7 +9,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { saveConfig, startRun, xsrfHeaders } from './support/api';
+import { manifestOf, saveConfig, startRun, xsrfHeaders } from './support/api';
 import { bodyOf, onlyRequest, requests, resetJournal } from './support/mockJournal';
 import { addMapping, sweepTempStubs } from './support/mockStubs';
 import { login } from './support/login';
@@ -23,18 +23,6 @@ const RUN_TIMEOUT = 6 * 60_000;
 const BLOCK_TIMEOUT = 15 * 60_000;
 const MAVEN_WORKFLOW = '.github/workflows/emitkit-publish-maven.yml';
 const JAVA_BUILD_FILE = 'sdk/java/build.gradle.kts';
-
-/** One line of a run's manifest, from GET /api/v1/runs/{id}/files. */
-interface ManifestEntry {
-  path: string;
-  status: string;
-}
-
-async function manifestOf(page: Page, runId: string): Promise<ManifestEntry[]> {
-  const res = await page.request.get(`/api/v1/runs/${runId}/files`);
-  expect(res.ok(), `GET run files returned ${res.status()}`).toBeTruthy();
-  return (await res.json()) as ManifestEntry[];
-}
 
 /** The path with each segment percent-encoded, as GET /runs/{id}/files/{path} expects. */
 function encodePath(path: string): string {

@@ -132,20 +132,30 @@ test.describe('9 roles (admin/editor/viewer)', () => {
       await vpage.goto(`/orgs/${orgId}/members`);
       await expect(vpage.getByText(VIEWER.login, { exact: true }), 'the members page loads for a viewer').toBeVisible();
       await expect(vpage.getByRole('combobox', { name: /^Role for / }), 'no role selector for a viewer').toHaveCount(0);
+    } finally {
+      await viewer.context.close();
+    }
+  });
 
-      // UI: Save on the editor is refused, and the edit stays unsaved.
+  // Known gap, tracked here: the editor offers Save to a viewer, so a viewer clicks it and the API refuses the save (asserted
+  // above). The UI should not offer it (SPEC_EDIT gating). test.fail keeps the suite green while the gap stands, and turns
+  // red once no enabled Save button is shown to a viewer, so this marker is then removed.
+  test.fail('9 roles (admin/editor/viewer): the editor offers a viewer no Save (SPEC_EDIT gating)', async ({ page, browser }) => {
+    await login(page);
+    const orgId = await acmeOrgId(page);
+    await removeProjectFor(page, orgId, REPO);
+    await createExistingProject(page, orgId, REPO, SPEC_PATH);
+    const projectId = projectIdOf(page);
+    await addViewerIdentity();
+    await makeViewer(browser, page, orgId);
+
+    const viewer = await signInAsViewer(browser);
+    try {
+      const vpage = viewer.page;
       await vpage.goto(`/projects/${projectId}/editor`);
       const specBox = vpage.getByRole('textbox', { name: 'OpenAPI spec' });
-      await expect(specBox).toBeVisible();
-      await specBox.click();
-      await vpage.keyboard.press('Control+End');
-      await vpage.keyboard.insertText(VIEWER_EDIT);
-      const refused = vpage.waitForResponse(
-        (res) => res.request().method() === 'PUT' && new URL(res.url()).pathname === `/api/v1/projects/${projectId}/spec`,
-      );
-      await vpage.getByRole('button', { name: 'Save', exact: true }).click();
-      expect((await refused).status(), 'the editor save is refused by the API').toBe(403);
-      await expect(vpage.getByRole('status').filter({ hasText: 'Unsaved changes' }), 'the edit is still unsaved').toBeVisible();
+      await expect(specBox).toContainText('title: Billing API');
+      await expect(vpage.getByRole('button', { name: /^Save/, disabled: false }), 'no enabled Save is offered to a viewer').toHaveCount(0);
     } finally {
       await viewer.context.close();
     }

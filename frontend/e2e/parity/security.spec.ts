@@ -8,8 +8,7 @@
  *   screen and no endpoint of its own. It is covered by the backend contract tests, so the entry is skipped here with that
  *   reason, and the checklist line can be ticked from the report.
  *
- * The e2e overlay sets no emitkit.cors.allowed-origins, so the allowlisted origin is refused until the overlay sets it
- * (see the task report). That is the failure this test is meant to show, not a reason to relax the assertion.
+ * The e2e overlay (deploy/compose/docker-compose.e2e.yml) sets emitkit.cors.allowed-origins to ALLOWED_ORIGIN below.
  */
 import { expect, test } from '@playwright/test';
 import { queryRows, sqlString, ulid } from './support/db';
@@ -17,7 +16,6 @@ import { saveConfig } from './support/api';
 import { login } from './support/login';
 import { createExistingProject } from './support/newProject';
 import { acmeOrgId, projectIdOf, removeAcmeProject, removeProjectFor } from './support/projects';
-import { BASE_URL } from './support/session';
 import { webhookSecret } from './support/pipeline';
 
 // The AI key is typed into a request body, which a Playwright trace would record. Traces are off for this file.
@@ -30,6 +28,9 @@ const AI_KEY = 'test-ai-key-123';
 // The fixture's OAuth token (deploy/compose/e2e/wiremock/mappings/oauth.json). Stored tokens must not contain it.
 const PLAIN_TOKEN = 'gho_mock_token';
 const FOREIGN_ORIGIN = 'https://evil.example';
+// The origin the e2e overlay allows (EMITKIT_CORS_ALLOWEDORIGINS). It is not the stack's own address: behind Caddy the api
+// treats a request from its own address as same-origin and writes no CORS header for it.
+const ALLOWED_ORIGIN = 'https://allowed.e2e.test';
 
 test.afterEach(async ({ page }) => {
   await removeAcmeProject(page, REPO);
@@ -44,7 +45,7 @@ test.describe('Secrets and CORS', () => {
     const projectId = ulid(projectIdOf(page));
     // The webhook secret was sent to GitHub on create; the journal holds it raw, in memory only.
     const hookSecret = await webhookSecret(REPO);
-    await saveConfig(page, projectId, {}, AI_KEY);
+    await saveConfig(page, projectId, {}, { aiApiKey: AI_KEY });
 
     // At rest: each secret column holds Vault Transit ciphertext ("vault:v<n>:...") and never the plaintext. Counts only.
     const [tokenRows, tokenEncrypted, tokenPlain] = queryRows(
@@ -79,11 +80,10 @@ test.describe('Secrets and CORS', () => {
     });
     expect(foreignPreflight.status(), 'a foreign preflight is refused').toBe(403);
 
-    // The allowlisted origin (this stack's own address) is answered with credentials allowed. Needs the overlay's allowlist.
-    const allowed = BASE_URL.replace(/\/$/, '');
-    const own = await page.request.get('/api/v1/me', { headers: { Origin: allowed } });
+    // The allowlisted origin is answered with credentials allowed. Needs the overlay's allowlist.
+    const own = await page.request.get('/api/v1/me', { headers: { Origin: ALLOWED_ORIGIN } });
     expect(own.status(), 'the allowlisted origin is served').toBe(200);
-    expect(own.headers()['access-control-allow-origin'], 'the allowlisted origin is echoed back').toBe(allowed);
+    expect(own.headers()['access-control-allow-origin'], 'the allowlisted origin is echoed back').toBe(ALLOWED_ORIGIN);
     expect(own.headers()['access-control-allow-credentials'], 'credentials are allowed for it').toBe('true');
   });
 });

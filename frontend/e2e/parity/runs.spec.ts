@@ -3,7 +3,7 @@ import { login } from './support/login';
 import { bodyOf, onlyRequest, requests, resetJournal } from './support/mockJournal';
 import { createExistingProject } from './support/newProject';
 import { deliverPush, listRuns, pushEvent, requirePipeline, waitForRun, webhookSecret } from './support/pipeline';
-import { acmeOrgId, projectIdOf, removeAcmeProject, removeProjectFor } from './support/projects';
+import { acmeOrgId, projectIdOf, removeAcmeProject, removeProjectFor, runIdOf } from './support/projects';
 
 const REPO = 'acme/billing-api';
 const SPEC_PATH = 'openapi/billing.yaml';
@@ -22,13 +22,6 @@ async function createProject(page: Page, request: APIRequestContext): Promise<st
   await resetJournal(request);
   await createExistingProject(page, orgId, REPO, SPEC_PATH);
   return projectIdOf(page);
-}
-
-/** The run id on the run page, read from its URL. */
-function runIdOf(page: Page): string {
-  const id = /\/runs\/([^/]+)$/.exec(new URL(page.url()).pathname)?.[1];
-  if (!id) throw new Error(`no run id in ${new URL(page.url()).pathname}`);
-  return id;
 }
 
 /** Starts a run from the project's runs page, the way a user does, and returns the run id once the run page opens. */
@@ -102,7 +95,8 @@ test.describe('Live logs, run list, run detail', () => {
   // One run serves all three checks, in the order a user sees them: the live log while the run goes, then the list and
   // the detail once it has succeeded.
   test('Live logs, run list, run detail', async ({ page, request }) => {
-    test.setTimeout(PIPELINE_TIMEOUT);
+    // The first-log wait (4 min) and the wait for the run's end (waitForRun, 5 min) add up to more than PIPELINE_TIMEOUT.
+    test.setTimeout(10 * 60_000);
     const projectId = await createProject(page, request);
 
     const runId = await triggerRunFromUi(page, projectId);

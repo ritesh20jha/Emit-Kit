@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { manifestOf, saveConfig, startRun } from './support/api';
 import { login } from './support/login';
 import { bodyOf, onlyRequest, requests, resetJournal } from './support/mockJournal';
 import { createExistingProject } from './support/newProject';
 import { addMapping, removeMapping, sweepTempStubs } from './support/mockStubs';
 import { acmeOrgId, projectIdOf, removeAcmeProject, removeProjectFor } from './support/projects';
+import { newSessionContext } from './support/session';
 import { requirePipeline, waitForRun, webhookSecret, type RunSummary } from './support/pipeline';
 import { deliverPullRequest, mergedPullRequestEvent } from './support/pullRequestEvent';
 
@@ -16,8 +18,6 @@ const REPO = 'acme/billing-api';
 const OUTPUT_REPO = 'acme/billing-sdk';
 const SPEC_PATH = 'openapi/billing.yaml';
 const SPEC_URL = `/repos/${REPO}/contents/${SPEC_PATH}`;
-// The parity project's baseURL (playwright.config.ts). A context made in beforeAll does not inherit it, so it is repeated.
-const BASE_URL = process.env.E2E_BASE_URL ?? 'https://localhost';
 // A dummy key. It is typed into the config and must never come back or be printed.
 const AI_KEY = 'test-ai-key-123';
 const OUT_DIR = '.emitkit/';
@@ -94,35 +94,16 @@ function sharedRun(): SharedRun {
   return shared;
 }
 
-/** Runs `use` in its own signed-in browser context, for the hooks, which have no page fixture. The context is closed after. */
-async function withSession<T>(browser: Browser, use: (page: Page) => Promise<T>): Promise<T> {
-  const context = await browser.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
+/** Runs `body` in its own signed-in browser context, for the hooks, which have no page fixture. The context is closed after. */
+async function withSession<T>(browser: Browser, body: (page: Page) => Promise<T>): Promise<T> {
+  const context = await newSessionContext(browser);
   try {
     const page = await context.newPage();
     await login(page);
-    return await use(page);
+    return await body(page);
   } finally {
     await context.close();
   }
-}
-
-/** The XSRF header a mutation needs, from the cookie the signed-in browser holds (as support/projects.ts does). */
-async function xsrfHeaders(page: Page): Promise<Record<string, string>> {
-  const cookie = (await page.context().cookies()).find((c) => c.name === 'XSRF-TOKEN');
-  if (!cookie) throw new Error('no XSRF-TOKEN cookie: sign in before a mutation');
-  return { 'X-XSRF-TOKEN': cookie.value };
-}
-
-async function saveConfig(page: Page, projectId: string, config: OutputConfig): Promise<void> {
-  const res = await page.request.put(`/api/v1/projects/${projectId}/config`, { data: config, headers: await xsrfHeaders(page) });
-  expect(res.ok(), `PUT config returned ${res.status()}`).toBeTruthy();
-}
-
-async function startRun(page: Page, projectId: string, dryRun: boolean): Promise<string> {
-  const res = await page.request.post(`/api/v1/projects/${projectId}/runs`, { data: { dryRun }, headers: await xsrfHeaders(page) });
-  expect(res.status(), 'the run was queued').toBe(201);
-  const run = (await res.json()) as { id: string };
-  return run.id;
 }
 
 /** The fields of GET /api/v1/runs/{id} that these tests read. */
@@ -137,13 +118,6 @@ async function runInfo(page: Page, runId: string): Promise<RunInfo> {
   const res = await page.request.get(`/api/v1/runs/${runId}`);
   expect(res.ok(), `GET run returned ${res.status()}`).toBeTruthy();
   return (await res.json()) as RunInfo;
-}
-
-/** The file manifest of a run: each generated path with its status against the target branch. */
-async function manifestOf(page: Page, runId: string): Promise<{ path: string; status: string }[]> {
-  const res = await page.request.get(`/api/v1/runs/${runId}/files`);
-  expect(res.ok(), `GET run files returned ${res.status()}`).toBeTruthy();
-  return (await res.json()) as { path: string; status: string }[];
 }
 
 /** One generated file as the run recorded it. The path keeps its '/' separators. */
@@ -313,7 +287,7 @@ test.describe('Generated outputs, one shared run', () => {
       await resetJournal(page.request);
       await createExistingProject(page, orgId, REPO, SPEC_PATH);
       const projectId = projectIdOf(page);
-      await saveConfig(page, projectId, ALL_OUTPUTS);
+      await saveConfig(page, projectId, ALL_OUTPUTS, { full: true });
       const runId = await startRun(page, projectId, false);
       const run: RunSummary = await waitForRun(page.request, projectId, 'SUCCESS', { runId, timeout: RUN_WAIT });
       if (run.prNumber === null) throw new Error('the shared run opened no pull request');
@@ -402,11 +376,13 @@ test.describe('Generated outputs, one shared run', () => {
       expect(docs.length, 'the shared run committed docs').toBeGreaterThan(0);
       const writesBefore = (await requests({ method: 'POST', urlPath: `/repos/${REPO}/git/trees` })).length;
 
-      await saveConfig(page, run.projectId, { ...ALL_OUTPUTS, aiApiKey: AI_KEY });
+      await saveConfig(page, run.projectId, { ...ALL_OUTPUTS, aiApiKey: AI_KEY }, { full: true });
       try {
-        // The worker has no chat model (spring.ai.model.chat is none), so the docs assistant fails on every call. The
-        // generator catches the failure and writes the template docs, and the run still succeeds. A dry run keeps the
-        // comparison to the generated files and commits nothing.
+        // The worker is on the app network only (docker-compose.e2e.yml), with no route to the internet, so the docs
+        // assistant's call to Gemini fails on every attempt. The generator catches the failure and writes the template
+        // docs, and the run still succeeds. This covers the fallback path only: real AI output needs a configurable Gemini
+        // base URL in the backend (ChatModelFactory pins it). A dry run keeps the comparison to the generated files and
+        // commits nothing.
         const dryRunId = await startRun(page, run.projectId, true);
         await waitForRun(page.request, run.projectId, 'SUCCESS', { runId: dryRunId, timeout: RUN_WAIT });
 
@@ -421,7 +397,7 @@ test.describe('Generated outputs, one shared run', () => {
         }
       } finally {
         // Clears the key (an empty string clears it), so later tests in this group run without AI.
-        await saveConfig(page, run.projectId, { ...ALL_OUTPUTS, aiApiKey: '' });
+        await saveConfig(page, run.projectId, { ...ALL_OUTPUTS, aiApiKey: '' }, { full: true });
       }
     });
   });
@@ -547,7 +523,7 @@ test.describe('APPEND and SEPARATE modes. Custom stubs are not overwritten', () 
     // The default branch already holds the user's custom stub. The run must skip it, not write over it.
     await stub(treeStub(REPO, [SPEC_PATH, CUSTOM_PATH]));
     const projectId = await createAppendProject(page);
-    await saveConfig(page, projectId, SDK_ONLY);
+    await saveConfig(page, projectId, SDK_ONLY, { full: true });
     const runId = await startRun(page, projectId, false);
     await waitForRun(page.request, projectId, 'SUCCESS', { runId, timeout: RUN_WAIT });
 
@@ -572,7 +548,7 @@ test.describe('APPEND and SEPARATE modes. Custom stubs are not overwritten', () 
     await stub(reposStub());
     await stub(treeStub(OUTPUT_REPO, [CUSTOM_PATH]));
     const projectId = await createSeparateProject(page);
-    await saveConfig(page, projectId, SDK_ONLY);
+    await saveConfig(page, projectId, SDK_ONLY, { full: true });
     const runId = await startRun(page, projectId, false);
     await waitForRun(page.request, projectId, 'SUCCESS', { runId, timeout: RUN_WAIT });
 
