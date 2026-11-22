@@ -2,12 +2,18 @@ import { expect, test } from '@playwright/test';
 import { createExistingProject, createNewRepoProject } from './support/newProject';
 import { bodyOf, onlyRequest, requests, resetJournal } from './support/mockJournal';
 import { login } from './support/login';
-import { acmeOrgId, removeProjectFor } from './support/projects';
+import { acmeOrgId, removeAcmeProject, removeProjectFor } from './support/projects';
 
 const EXISTING_REPO = 'acme/billing-api';
 const NEW_REPO = 'acme/billing-starter';
 
 test.describe('Create project from existing repo, and with a new repo + starter spec', () => {
+  // Both fixture projects are removed after each test, so a failed test does not leave one for the next run.
+  test.afterEach(async ({ page }) => {
+    await removeAcmeProject(page, EXISTING_REPO);
+    await removeAcmeProject(page, NEW_REPO);
+  });
+
   test('existing repo', async ({ page, request }) => {
     await login(page);
     const orgId = await acmeOrgId(page);
@@ -18,10 +24,10 @@ test.describe('Create project from existing repo, and with a new repo + starter 
     await createExistingProject(page, orgId, EXISTING_REPO, 'openapi/billing.yaml');
 
     // The spec is read from the host, and linking an existing repository creates none.
-    const specReads = await requests(request, { method: 'GET', urlPath: '/repos/acme/billing-api/contents/openapi/billing.yaml' });
+    const specReads = await requests({ method: 'GET', urlPath: '/repos/acme/billing-api/contents/openapi/billing.yaml' });
     expect(specReads.length, 'the spec is read from the repository').toBeGreaterThan(0);
-    expect(await requests(request, { method: 'POST', urlPath: '/user/repos' })).toHaveLength(0);
-    expect(await requests(request, { method: 'POST', urlPath: '/orgs/acme/repos' })).toHaveLength(0);
+    expect((await requests({ method: 'POST', urlPath: '/user/repos' })).length, 'no repository is created under the user').toBe(0);
+    expect((await requests({ method: 'POST', urlPath: '/orgs/acme/repos' })).length, 'no repository is created under acme').toBe(0);
 
     await page.goto(`/orgs/${orgId}`);
     await expect(page.getByRole('link', { name: EXISTING_REPO, exact: true })).toBeVisible();
@@ -36,12 +42,12 @@ test.describe('Create project from existing repo, and with a new repo + starter 
     await createNewRepoProject(page, orgId, 'billing-starter');
 
     // The repository is created private, with the name the wizard typed.
-    const created = onlyRequest(await requests(request, { method: 'POST', urlPath: '/orgs/acme/repos' }));
+    const created = onlyRequest(await requests({ method: 'POST', urlPath: '/orgs/acme/repos' }));
     expect(bodyOf<{ name: string; private: boolean }>(created)).toMatchObject({ name: 'billing-starter', private: true });
 
     // The starter spec is committed at the default spec path, on the branch the host reports as the default.
     const write = bodyOf<{ branch: string; content: string }>(
-      onlyRequest(await requests(request, { method: 'PUT', urlPath: '/repos/acme/billing-starter/contents/openapi.yaml' })),
+      onlyRequest(await requests({ method: 'PUT', urlPath: '/repos/acme/billing-starter/contents/openapi.yaml' })),
     );
     expect(write.branch).toBe('main');
     expect(Buffer.from(write.content, 'base64').toString('utf8')).toContain('title: "billing-starter"');

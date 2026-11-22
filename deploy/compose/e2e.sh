@@ -4,7 +4,10 @@
 # e2e overlay, which replaces GitHub with WireMock. Never use it in production.
 #   bash deploy/compose/e2e.sh up     generate secrets, start the stack and wait until it is healthy
 #   bash deploy/compose/e2e.sh down   stop it and remove its volumes and the scratch secrets
-# E2E_SANDBOX_SOCKET=/path/to/docker.sock gives the worker a real sandbox daemon socket instead of the placeholder.
+# Two modes, chosen by E2E_SANDBOX_SOCKET:
+#   unset (default)   the worker is not started (--scale worker=0): there is no sandbox daemon, so the pipeline is off.
+#                     The parity suite does not use the worker. Starting it with the placeholder socket only crash-loops.
+#   E2E_SANDBOX_SOCKET=/path/to/docker.sock   the worker starts with that real sandbox daemon socket, pipeline on.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -38,6 +41,12 @@ up() {
   bash gen-env.sh | sed 's/^EMITKIT_SITE_ADDRESS=.*/EMITKIT_SITE_ADDRESS=localhost/' > "$ENV_FILE"
   # Placeholder for the SBX-01 daemon socket; the real one is not in CI. Docker would create a directory for a missing file.
   [ -n "${E2E_SANDBOX_SOCKET:-}" ] || touch "$SECRETS/sandbox.sock"
+  # Without a sandbox daemon the worker cannot pass its startup check, so it is left out rather than crash-looping.
+  WORKER_SCALE=()
+  if [ -z "${E2E_SANDBOX_SOCKET:-}" ]; then
+    WORKER_SCALE=(--scale worker=0)
+    echo "e2e pipeline off: no E2E_SANDBOX_SOCKET, so the worker is not started"
+  fi
 
   compose up -d --wait vault vault-init
   API_VAULT_ROLE_ID=$(cat "$SECRETS/api-role-id")
@@ -46,7 +55,7 @@ up() {
   export API_VAULT_ROLE_ID WORKER_VAULT_ROLE_ID BACKUP_VAULT_ROLE_ID
   # One service at a time: the api and worker Gradle builds share the BuildKit cache mount for /root/.gradle, and
   # running them together makes the second one wait on the other's journal lock until it fails.
-  COMPOSE_PARALLEL_LIMIT=1 compose up -d --wait --build
+  COMPOSE_PARALLEL_LIMIT=1 compose up -d --wait --build ${WORKER_SCALE[@]+"${WORKER_SCALE[@]}"}
   echo "e2e stack up: https://localhost (GitHub mock on http://127.0.0.1:8089)"
 }
 

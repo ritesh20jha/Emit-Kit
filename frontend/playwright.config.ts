@@ -38,6 +38,8 @@ export default defineConfig({
       name: 'parity',
       testMatch: 'parity/**/*.spec.ts',
       fullyParallel: false,
+      // Longer than the sign-in budget in support/login.ts (30 s of retries, then the shell wait), so that budget is reachable.
+      timeout: 60_000,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: process.env.E2E_BASE_URL ?? 'https://localhost',

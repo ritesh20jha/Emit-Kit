@@ -31,3 +31,13 @@ export async function removeProjectFor(page: Page, orgId: string, repoFullName: 
     expect(del.ok(), `DELETE project returned ${del.status()}`).toBeTruthy();
   }
 }
+
+/**
+ * Removes the acme project for `repo` once a test is over, so the next run starts clean even if this one failed midway.
+ * A test that never signed in has no session and nothing to remove.
+ */
+export async function removeAcmeProject(page: Page, repo: string): Promise<void> {
+  const signedIn = (await page.context().cookies()).some((cookie) => cookie.name === 'XSRF-TOKEN');
+  if (!signedIn) return;
+  await removeProjectFor(page, await acmeOrgId(page), repo);
+}

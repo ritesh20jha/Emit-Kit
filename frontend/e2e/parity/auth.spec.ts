@@ -7,7 +7,7 @@ test("GitHub login, org sync, personal org, org switcher", async ({ page, reques
   await login(page);
 
   // Login starts the org sync, which reads the memberships from GitHub.
-  await expect.poll(async () => (await requests(request, { method: 'GET', urlPath: '/user/memberships/orgs' })).length).toBeGreaterThan(0);
+  await expect.poll(async () => (await requests({ method: 'GET', urlPath: '/user/memberships/orgs' })).length).toBeGreaterThan(0);
 
   // The org ids come from the API the shell reads, so the test does not hardcode them.
   const meRes = await page.request.get('/api/v1/me');

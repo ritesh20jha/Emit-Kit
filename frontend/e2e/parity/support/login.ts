@@ -11,7 +11,7 @@ export async function login(page: Page): Promise<void> {
   // The button's click handler exists only once the app has hydrated, and a click before that does nothing. So a click
   // that does not leave the login page is repeated.
   await expect(async () => {
-    await signIn.click();
+    await signIn.click({ timeout: 5_000 });
     await expect(page).not.toHaveURL(/\/login$/, { timeout: 5_000 });
   }).toPass({ timeout: 30_000 });
   // The first sign-in after the stack starts can be slow (api and Caddy warm up), so the wait is longer than the default.
