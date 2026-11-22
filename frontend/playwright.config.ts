@@ -21,7 +21,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: 'visual/**',
+      testIgnore: ['visual/**', 'parity/**'],
       use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
     },
     // Storybook stories: contrast (axe) and screenshots, in light and dark, against a static Storybook build.
@@ -30,8 +30,20 @@ export default defineConfig({
       testMatch: 'visual/**',
       use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:6007' },
     },
+    // Parity suite against the real stack (deploy/compose/e2e.sh up, GitHub replaced by WireMock). The Caddy edge serves
+    // https://localhost with an internal CA, so the certificate is not checked. `pnpm run test:parity` sets E2E_PARITY=1.
+    {
+      name: 'parity',
+      testMatch: 'parity/**/*.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.E2E_BASE_URL ?? 'https://localhost',
+        ignoreHTTPSErrors: true,
+      },
+    },
   ],
-  webServer: [
+  // The parity stack is already running, so the MSW build and storybook are not started for it.
+  webServer: process.env.E2E_PARITY === '1' ? undefined : [
     {
       // Built with VITE_MSW=1 so the browser worker answers the API from fixtures. The worker file is generated into this
       // output only, so the plain build (check:bundle) and the committed tree never carry it.

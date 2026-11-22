@@ -1,5 +1,8 @@
 # Test overlay for the WEB-15 parity suite only. Never use it in production.
-# GitHub is replaced by WireMock, which serves the stateless JSON mappings under e2e/wiremock/mappings.
+# Used with docker-compose.prod.yml and docker-compose.smoke.yml by e2e.sh. GitHub is replaced by WireMock, which serves
+# the stateless JSON mappings under e2e/wiremock/mappings.
+# The smoke overlay hardcodes ./smoke-secrets, so the secret files, the vault-init mount and the sandbox socket are
+# repointed to ./e2e-secrets (the scratch dir e2e.sh writes).
 services:
   github:
     # Pinned to the stable 3.x line; the 4.x tags are betas.
@@ -9,8 +12,41 @@ services:
       - "127.0.0.1:8089:8089"
     volumes:
       - ./e2e/wiremock/mappings:/home/wiremock/mappings:ro
+    # egress is the non-internal network that api and worker share. The host port needs a non-internal network.
+    networks: [egress]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/__admin/health || exit 1"]
       interval: 2s
       timeout: 3s
       retries: 30
+
+  vault-init:
+    volumes: !override
+      - ./vault/init.sh:/init.sh:ro
+      - ./vault/policies:/policies:ro
+      - ./e2e-secrets:/secrets
+
+  api:
+    environment:
+      EMITKIT_GITHUB_API_URL: http://github:8089
+      # The browser is sent here to authorize, so this is the host-published port, not the service name.
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_AUTHORIZATION_URI: http://localhost:8089/login/oauth/authorize
+      # The api calls these itself, over the egress network.
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_TOKEN_URI: http://github:8089/login/oauth/access_token
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_USER_INFO_URI: http://github:8089/user
+
+  worker:
+    environment:
+      EMITKIT_GITHUB_API_URL: http://github:8089
+      EMITKIT_WORKER_PIPELINE_ENABLED: "true"
+    # E2E_SANDBOX_SOCKET picks a real sandbox daemon socket; unset, the placeholder that e2e.sh creates is used.
+    volumes: !override
+      - ${E2E_SANDBOX_SOCKET:-./e2e-secrets/sandbox.sock}:/run/emitkit-sandbox/docker.sock
+
+secrets:
+  api_vault_secret_id:
+    file: ./e2e-secrets/api-secret-id
+  worker_vault_secret_id:
+    file: ./e2e-secrets/worker-secret-id
+  backup_vault_secret_id:
+    file: ./e2e-secrets/backup-secret-id

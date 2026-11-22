@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // The WireMock GitHub stand-in that the parity stack runs (deploy/compose/docker-compose.e2e.yml).
-const MOCK = 'http://localhost:8089';
+const MOCK = 'http://127.0.0.1:8089';
 
 test('GET /user returns the fixture user', async ({ request }) => {
   const res = await request.get(`${MOCK}/user`);
