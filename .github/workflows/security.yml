@@ -29,6 +29,9 @@ concurrency:
 
 jobs:
   dependency-check:
+    # Not run on pull requests: the NVD download is too slow and rate-limited to gate a PR. It runs
+    # on push, weekly and on demand. npm-audit below still runs on PRs.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # Nothing is cached, so every run downloads the NVD feed. Keyless that is rate-limited and slow.
     timeout-minutes: 120
@@ -43,8 +46,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Fork and Dependabot PRs get no secrets, so NVD_API_KEY is empty there. The scan still runs
-      # without a key, which is slower and rate-limited. The gate is never skipped for that reason.
+      # NVD_API_KEY is optional. Without it the scan still runs, but the NVD download is slower and
+      # rate-limited, and can fail.
       - name: OWASP dependency-check
         working-directory: backend
         env:
