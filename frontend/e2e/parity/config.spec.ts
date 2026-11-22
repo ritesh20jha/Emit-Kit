@@ -33,14 +33,20 @@ test('Config: outputs, languages, output dir, npm scope, PyPI name, version stra
   await page.getByRole('combobox', { name: 'Version source' }).click();
   await page.getByRole('option', { name: 'Spec version', exact: true }).click();
   // While the key is in the field, a failure snapshot (error-context.md, under test-results) would record it. So if the
-  // save does not complete, the field is cleared before the failure is rethrown.
+  // save does not complete, the field is cleared before the failure is rethrown. The clear is best effort: once the save
+  // has succeeded the form shows "Key set" and has no field, so the clear fails, and that failure must not replace the
+  // original one.
   const aiKey = page.getByLabel('AI key', { exact: true });
   await aiKey.fill(AI_KEY);
   try {
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Configuration saved')).toBeVisible();
+    // The toast is raised only after the PUT returns, so the save is awaited on its response, not on a timed toast.
+    await Promise.all([
+      page.waitForResponse((res) => res.request().method() === 'PUT' && new URL(res.url()).pathname === `/api/v1/projects/${projectId}/config`),
+      page.getByRole('button', { name: 'Save', exact: true }).click(),
+    ]);
+    await expect(page.getByText('Configuration saved')).toBeVisible({ timeout: 15_000 });
   } catch (error) {
-    await aiKey.fill('');
+    await aiKey.fill('', { timeout: 2_000 }).catch(() => undefined);
     throw error;
   }
 
