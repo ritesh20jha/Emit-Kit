@@ -1,0 +1,159 @@
+# E2E parity (WEB-15): the Playwright parity suite (frontend/e2e/parity) against the real EmitKit stack, with the
+# pipeline on. GitHub is replaced by WireMock (deploy/compose/docker-compose.e2e.yml).
+#
+# Triggers: nightly, on demand, and workflow_call, so CUT-01 can require this workflow before cutover.
+#
+# Runs: gVisor (runsc) install, the dedicated sandbox Docker daemon (deploy/sandbox, decision B in
+# docs/spikes/2026-gvisor-rootless.md), toolchain image load into that daemon, serial app image builds,
+# `deploy/compose/e2e.sh up`, `pnpm run test:parity`, then `e2e.sh down` (always).
+#
+# Env contract (job level):
+#   E2E_SANDBOX_SOCKET  read by deploy/compose/e2e.sh up (worker starts only when set; the socket is bind-mounted
+#                       by docker-compose.e2e.yml). Here it is the dedicated daemon's socket path.
+# Step level, read by the suite:
+#   E2E_PIPELINE=1      pipeline specs run (frontend/e2e/parity/support/pipeline.ts).
+#   E2E_REQUIRED=1      a pipeline spec that cannot run fails instead of skipping.
+#   E2E_PARITY=1        set by the test:parity script itself.
+
+name: E2E Parity
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      E2E_SANDBOX_SOCKET: /run/emitkit-sandbox/docker.sock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Same pinned, sha256-checked runsc install as e2e-backend.yml and backend.yml. The sandbox runs under gVisor
+      # (spec 5.6). Keep RUNSC_VERSION and RUNSC_SHA256 in sync with those two files.
+      - name: Install gVisor runsc
+        env:
+          RUNSC_VERSION: '20261102.0'
+          RUNSC_SHA256: 81e3ecc4bb0d3eb321f5cf357e97a26daea91c6dc70ec30c9240cd481e6cf2da
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/runsc.deb" "https://storage.googleapis.com/gvisor/releases/pool/${RUNSC_VERSION}/binary-amd64/runsc.deb"
+          echo "${RUNSC_SHA256}  $RUNNER_TEMP/runsc.deb" | sha256sum -c -
+          sudo dpkg -i "$RUNNER_TEMP/runsc.deb"
+          sudo runsc install
+          sudo systemctl restart docker
+          timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+          docker info --format '{{json .Runtimes}}'
+
+      # --mode rootful is the only mode the SBX-01 spike left open (rootless is refused by the script). It starts a
+      # dedicated, systemd-managed dockerd with runsc as default runtime, listening on $E2E_SANDBOX_SOCKET, apart from
+      # the host daemon that runs the stack. The self-check then proves gVisor, the network, memory, pids and cpu limits
+      # on that daemon before anything depends on it.
+      - name: Start sandbox daemon
+        run: |
+          sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootful
+          sudo env DOCKER_HOST="unix://$E2E_SANDBOX_SOCKET" bash deploy/sandbox/self-check.sh
+
+      - name: Build toolchain image
+        run: docker build -t emitkit/toolchain:test deploy/docker/toolchain
+
+      # The worker asks the sandbox for emitkit/toolchain:<VERSION> (SandboxProperties default), and the sandbox daemon
+      # has its own image store, so the image is loaded there as well as on the host daemon.
+      - name: Load toolchain image into the sandbox daemon
+        run: |
+          version="$(cat deploy/docker/toolchain/VERSION)"
+          docker tag emitkit/toolchain:test "emitkit/toolchain:${version}"
+          docker save "emitkit/toolchain:${version}" | sudo docker -H "unix://$E2E_SANDBOX_SOCKET" load
+
+      # One build at a time. The api and worker Dockerfiles share a Gradle cache mount without sharing=locked, so
+      # parallel builds fail on the journal lock. This replaces COMPOSE_PARALLEL_LIMIT=1 in e2e.sh. The images are
+      # cached, so the --build in e2e.sh up reuses them. Service names: api, worker, and caddy (the web image).
+      - name: Build app images, one at a time
+        working-directory: deploy/compose
+        run: |
+          bash gen-env.sh > "$RUNNER_TEMP/compose.env"
+          compose() {
+            docker compose -p emitkit-e2e -f docker-compose.prod.yml -f docker-compose.smoke.yml \
+              -f docker-compose.e2e.yml --env-file "$RUNNER_TEMP/compose.env" "$@"
+          }
+          compose build api
+          compose build worker
+          compose build caddy
+
+      - name: Start the e2e stack
+        working-directory: deploy/compose
+        run: bash e2e.sh up
+
+      - name: Run parity suite
+        working-directory: frontend
+        env:
+          E2E_PIPELINE: '1'
+          E2E_REQUIRED: '1'
+          PLAYWRIGHT_HTML_OPEN: never
+        # The config reports with list only; the html reporter adds playwright-report for the failure upload.
+        run: pnpm run test:parity --reporter=list,html
+
+      # Captured before `e2e.sh down` removes the containers. The env file is regenerated, since e2e.sh up may not
+      # have written one; compose only needs the required variables to read the project.
+      - name: Collect compose logs
+        if: failure()
+        working-directory: deploy/compose
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-logs"
+          bash gen-env.sh > "$RUNNER_TEMP/compose.env"
+          docker compose -p emitkit-e2e -f docker-compose.prod.yml -f docker-compose.smoke.yml \
+            -f docker-compose.e2e.yml --env-file "$RUNNER_TEMP/compose.env" \
+            logs --no-color --timestamps --tail 2000 > "$RUNNER_TEMP/e2e-logs/compose.log" 2>&1 || true
+
+      - name: Upload Playwright report and results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-playwright
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-compose-logs
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stop the e2e stack
+        if: always()
+        working-directory: deploy/compose
+        run: bash e2e.sh down
