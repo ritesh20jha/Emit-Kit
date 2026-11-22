@@ -1,17 +1,20 @@
 import { expect, type APIRequestContext } from '@playwright/test';
 
 // The WireMock GitHub stand-in, reached on the host through its published port (deploy/compose/docker-compose.e2e.yml).
-const MOCK_ADMIN = 'http://127.0.0.1:8089/__admin';
+export const MOCK_ADMIN = 'http://127.0.0.1:8089/__admin';
 
 /** A journaled request as the specs see it: only the fields they use, with any secret redacted. */
 export interface JournalEntry {
   request: { method: string; url: string; absoluteUrl: string; body?: string };
+  /** The status the mock answered with, so a test can tell an accepted write from a refused one. */
+  status: number | undefined;
   /** True when the JSON body carried a non-empty `secret`. The value is replaced by "[redacted]" in `body`. */
   hasSecret: boolean;
 }
 
 interface RawEntry {
   request: { method: string; url: string; absoluteUrl: string; body?: string };
+  response?: { status?: number };
 }
 
 /**
@@ -56,12 +59,14 @@ export async function requests(match: { method: string; urlPath: string }): Prom
   const { requests: journal } = (await res.json()) as { requests: RawEntry[] };
   return journal
     .filter((entry) => entry.request.method === match.method && entry.request.url.split('?')[0] === match.urlPath)
-    .map(({ request: raw }) => {
+    .map((journaled) => {
+      const raw = journaled.request;
       // Only the fields below leave this module: headers, the journal's other fields and the raw secret never do.
       const entry = { method: raw.method, url: raw.url, absoluteUrl: raw.absoluteUrl };
-      if (raw.body === undefined) return { request: entry, hasSecret: false };
+      const status = journaled.response?.status;
+      if (raw.body === undefined) return { request: entry, status, hasSecret: false };
       const redacted = redact(raw.body);
-      return { request: { ...entry, body: redacted.body }, hasSecret: redacted.hasSecret };
+      return { request: { ...entry, body: redacted.body }, status, hasSecret: redacted.hasSecret };
     });
 }
 

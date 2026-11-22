@@ -41,3 +41,10 @@ export async function removeAcmeProject(page: Page, repo: string): Promise<void>
   if (!signedIn) return;
   await removeProjectFor(page, await acmeOrgId(page), repo);
 }
+
+/** The id of the project whose config or editor page the browser is on, read from its URL. */
+export function projectIdOf(page: Page): string {
+  const id = /\/projects\/([^/]+)\/(?:config|editor|runs)/.exec(new URL(page.url()).pathname)?.[1];
+  if (!id) throw new Error(`no project id in ${new URL(page.url()).pathname}`);
+  return id;
+}

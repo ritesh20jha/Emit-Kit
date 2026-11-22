@@ -44,6 +44,11 @@
       "name": "PUT /repos/acme/billing-starter/contents/openapi.yaml: commit the starter spec, answering with the file and a fresh commit sha",
       "request": {"method": "PUT", "urlPath": "/repos/acme/billing-starter/contents/openapi.yaml"},
       "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{{#assign 'sha'}}{{randomValue type='HEXADECIMAL' length=40}}{{/assign}}{\"content\":{\"type\":\"file\",\"name\":\"openapi.yaml\",\"path\":\"openapi.yaml\",\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-starter/contents/openapi.yaml\",\"html_url\":\"https://github.com/acme/billing-starter/blob/main/openapi.yaml\"},\"commit\":{\"sha\":\"{{sha}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-starter/git/commits/{{sha}}\",\"html_url\":\"https://github.com/acme/billing-starter/commit/{{sha}}\",\"tree\":{\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\"}}}"}
+    },
+    {
+      "name": "PUT /repos/acme/billing-api/contents/openapi/billing.yaml: save the spec file on the default branch, answering with the file and a fresh commit sha (the stateless default; a conflict test adds a 409 above it)",
+      "request": {"method": "PUT", "urlPath": "/repos/acme/billing-api/contents/openapi/billing.yaml"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{{#assign 'sha'}}{{randomValue type='HEXADECIMAL' length=40}}{{/assign}}{\"content\":{\"type\":\"file\",\"name\":\"billing.yaml\",\"path\":\"openapi/billing.yaml\",\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-api/contents/openapi/billing.yaml\",\"html_url\":\"https://github.com/acme/billing-api/blob/main/openapi/billing.yaml\"},\"commit\":{\"sha\":\"{{sha}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-api/git/commits/{{sha}}\",\"html_url\":\"https://github.com/acme/billing-api/commit/{{sha}}\",\"tree\":{\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\"}}}"}
     }
   ]
 }
