@@ -1,0 +1,19 @@
+{
+  "mappings": [
+    {
+      "name": "GET /user/repos: the repositories octocat can push to",
+      "request": {"method": "GET", "urlPath": "/user/repos"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "[{\"id\":3001,\"name\":\"billing-api\",\"full_name\":\"acme/billing-api\",\"private\":false,\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/billing-api\",\"default_branch\":\"main\",\"pushed_at\":\"2026-11-01T09:00:00Z\",\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}]"}
+    },
+    {
+      "name": "GET /repos/acme/billing-api: the fixture repository, default branch main",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-api"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"id\":3001,\"name\":\"billing-api\",\"full_name\":\"acme/billing-api\",\"private\":false,\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/billing-api\",\"default_branch\":\"main\",\"pushed_at\":\"2026-11-01T09:00:00Z\",\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}"}
+    },
+    {
+      "name": "GET contents of the spec file (base64, 189 bytes, blob sha 1477316f)",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-api/contents/openapi/billing.yaml"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"type\":\"file\",\"encoding\":\"base64\",\"size\":189,\"name\":\"billing.yaml\",\"path\":\"openapi/billing.yaml\",\"sha\":\"1477316fd2c1468876564127fe9185f0f4a0f68f\",\"content\":\"b3BlbmFwaTogMy4wLjMKaW5mbzoKICB0aXRsZTogQmlsbGluZyBBUEkKICB2ZXJzaW9uOiAxLjAuMApwYXRoczoKICAvaW52b2ljZXM6CiAgICBnZXQ6CiAgICAgIG9wZXJhdGlvbklkOiBsaXN0SW52b2ljZXMKICAgICAgcmVzcG9uc2VzOgogICAgICAgICIyMDAiOgogICAgICAgICAgZGVzY3JpcHRpb246IFRoZSBpbnZvaWNlcy4K\",\"html_url\":\"https://github.com/acme/billing-api/blob/main/openapi/billing.yaml\"}"}
+    }
+  ]
+}

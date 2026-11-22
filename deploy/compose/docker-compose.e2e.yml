@@ -1,0 +1,16 @@
+# Test overlay for the WEB-15 parity suite only. Never use it in production.
+# GitHub is replaced by WireMock, which serves the stateless JSON mappings under e2e/wiremock/mappings.
+services:
+  github:
+    # Pinned to the stable 3.x line; the 4.x tags are betas.
+    image: wiremock/wiremock:3.13.2
+    command: ["--global-response-templating", "--port", "8089"]
+    ports:
+      - "127.0.0.1:8089:8089"
+    volumes:
+      - ./e2e/wiremock/mappings:/home/wiremock/mappings:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/__admin/health || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
