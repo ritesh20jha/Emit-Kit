@@ -9,6 +9,16 @@
       "name": "DELETE /repos/acme/billing-api/hooks/{id}: 204 for any id",
       "request": {"method": "DELETE", "urlPathPattern": "/repos/acme/billing-api/hooks/[0-9]+"},
       "response": {"status": 204}
+    },
+    {
+      "name": "POST /repos/acme/billing-starter/hooks: the push webhook of the new repository, id 43",
+      "request": {"method": "POST", "urlPath": "/repos/acme/billing-starter/hooks"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{\"type\":\"Repository\",\"id\":43,\"name\":\"web\",\"active\":true,\"events\":[\"push\",\"pull_request\"],\"config\":{\"content_type\":\"json\",\"insecure_ssl\":\"0\",\"url\":\"{{jsonPath request.body '$.config.url'}}\"}}"}
+    },
+    {
+      "name": "DELETE /repos/acme/billing-starter/hooks/{id}: 204 for any id",
+      "request": {"method": "DELETE", "urlPathPattern": "/repos/acme/billing-starter/hooks/[0-9]+"},
+      "response": {"status": 204}
     }
   ]
 }

@@ -12,6 +12,8 @@ const storybookServer = {
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // The parity stack and its WireMock journal are shared, so its specs run one at a time (E2E_PARITY=1).
+  workers: process.env.E2E_PARITY === '1' ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
@@ -35,6 +37,7 @@ export default defineConfig({
     {
       name: 'parity',
       testMatch: 'parity/**/*.spec.ts',
+      fullyParallel: false,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: process.env.E2E_BASE_URL ?? 'https://localhost',
