@@ -30,7 +30,7 @@ concurrency:
 jobs:
   dependency-check:
     runs-on: ubuntu-latest
-    # Keyless cold NVD downloads are rate-limited and slow. The NVD cache keeps later runs short.
+    # Nothing is cached, so every run downloads the NVD feed. Keyless that is rate-limited and slow.
     timeout-minutes: 120
 
     steps:
@@ -43,16 +43,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # The NVD feed is large and the first download is slow. The key is per run, so each run saves
-      # the refreshed data and the next run restores the newest copy. Restore and save are separate
-      # so the save runs even when the scan fails on a CVSS 7.0+ finding (see backend/build.gradle.kts).
-      - name: Restore NVD data
-        uses: actions/cache/restore@v4
-        with:
-          path: backend/build/dependency-check-data
-          key: nvd-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: nvd-${{ runner.os }}-
-
       # Fork and Dependabot PRs get no secrets, so NVD_API_KEY is empty there. The scan still runs
       # without a key, which is slower and rate-limited. The gate is never skipped for that reason.
       - name: OWASP dependency-check
@@ -60,15 +50,6 @@ jobs:
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: ./gradlew dependencyCheckAggregate
-
-      # Saved only on push and schedule, never on PRs (PRs just restore). !cancelled() still saves
-      # after a failed scan, but not after a cancelled job, which can leave H2 mid-write.
-      - name: Save NVD data
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
-        uses: actions/cache/save@v4
-        with:
-          path: backend/build/dependency-check-data
-          key: nvd-${{ runner.os }}-${{ github.run_id }}
 
   npm-audit:
     runs-on: ubuntu-latest
