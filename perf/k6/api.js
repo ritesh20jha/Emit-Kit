@@ -25,8 +25,24 @@ export const options = {
     // k6 names a group "::non-vcs" in the tag, so the selector needs three colons.
     "http_req_duration{group:::non-vcs}": ["p(95)<300"],
     http_req_failed: ["rate<0.01"],
+    // Failed checks (for example a missing run detail) must fail the run, not just log.
+    checks: ["rate>0.99"],
   },
 };
+
+// Stop before any load if the project has no run, so the run-detail endpoint is never skipped.
+export function setup() {
+  http.cookieJar().set(BASE_URL, "SESSION", SESSION);
+  const runs = http.get(`${BASE_URL}/api/v1/projects/${PROJECT_ID}/runs?limit=1`);
+  if (runs.status !== 200) {
+    throw new Error(`listing runs failed: HTTP ${runs.status}. Check SESSION and PROJECT_ID.`);
+  }
+  if (!runs.json("items.0.id")) {
+    throw new Error(
+      `project ${PROJECT_ID} has no runs. Start one dry run for it first (perf/README.md, Seed data).`,
+    );
+  }
+}
 
 export default function () {
   http.cookieJar().set(BASE_URL, "SESSION", SESSION);

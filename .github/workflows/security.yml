@@ -2,8 +2,18 @@ name: Security
 
 on:
   pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - '.github/workflows/security.yml'
   push:
     branches: [main, docs/java-rebuild-specs]
+    paths:
+      - 'backend/**'
+      - 'frontend/package.json'
+      - 'frontend/pnpm-lock.yaml'
+      - '.github/workflows/security.yml'
   schedule:
     # Weekly, so a CVE published between pushes still surfaces.
     - cron: '0 6 * * 1'
@@ -18,7 +28,8 @@ concurrency:
 jobs:
   dependency-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Keyless cold NVD downloads are rate-limited and slow. The NVD cache keeps later runs short.
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -31,20 +42,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # The NVD feed is large and the first download is slow. The key is per run, so each run saves
-      # the refreshed data and the next run restores the newest copy.
+      # the refreshed data and the next run restores the newest copy. Restore and save are separate
+      # so the save runs even when the scan fails on a CVSS 7.0+ finding (see backend/build.gradle.kts).
       - name: Restore NVD data
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: backend/build/dependency-check-data
           key: nvd-${{ runner.os }}-${{ github.run_id }}
           restore-keys: nvd-${{ runner.os }}-
 
-      # Fails the job on a CVSS 7.0+ finding (see backend/build.gradle.kts).
+      # Fork and Dependabot PRs get no secrets, so NVD_API_KEY is empty there. The scan still runs
+      # without a key, which is slower and rate-limited. The gate is never skipped for that reason.
       - name: OWASP dependency-check
         working-directory: backend
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: ./gradlew dependencyCheckAggregate
+
+      - name: Save NVD data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: backend/build/dependency-check-data
+          key: nvd-${{ runner.os }}-${{ github.run_id }}
 
   npm-audit:
     runs-on: ubuntu-latest

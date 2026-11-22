@@ -10,8 +10,9 @@ dependencyCheck {
     failBuildOnCVSS.set(7.0f)
     nvd {
         // NVD API key, read from the environment so it is never committed. Optional, but without it
-        // the NVD feed download is rate-limited and slow.
-        apiKey.set(providers.environmentVariable("NVD_API_KEY"))
+        // the NVD feed download is rate-limited and slow. A blank value (CI sets an empty string when
+        // a PR has no secrets) counts as no key.
+        apiKey.set(providers.environmentVariable("NVD_API_KEY").filter { it.isNotBlank() })
     }
     data {
         // Under build/ so the CI cache step can restore it between runs.
