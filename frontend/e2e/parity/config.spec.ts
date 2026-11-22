@@ -32,10 +32,17 @@ test('Config: outputs, languages, output dir, npm scope, PyPI name, version stra
   await page.getByLabel('PyPI name', { exact: true }).fill('emitkit-billing');
   await page.getByRole('combobox', { name: 'Version source' }).click();
   await page.getByRole('option', { name: 'Spec version', exact: true }).click();
-  await page.getByLabel('AI key', { exact: true }).fill(AI_KEY);
-
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.getByText('Configuration saved')).toBeVisible();
+  // While the key is in the field, a failure snapshot (error-context.md, under test-results) would record it. So if the
+  // save does not complete, the field is cleared before the failure is rethrown.
+  const aiKey = page.getByLabel('AI key', { exact: true });
+  await aiKey.fill(AI_KEY);
+  try {
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Configuration saved')).toBeVisible();
+  } catch (error) {
+    await aiKey.fill('');
+    throw error;
+  }
 
   // Reloading reads the saved config from the API, so every value shown here came back from the server.
   await page.reload();

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { login } from './support/login';
 import { bodyOf, onlyRequest, requests, resetJournal } from './support/mockJournal';
 import { createExistingProject } from './support/newProject';
-import { addMapping, removeMapping } from './support/mockStubs';
+import { addMapping, removeMapping, sweepTempStubs } from './support/mockStubs';
 import { acmeOrgId, projectIdOf, removeAcmeProject, removeProjectFor } from './support/projects';
 
 const REPO = 'acme/billing-api';
@@ -19,9 +19,23 @@ const EDITED = `${ORIGINAL}${EDIT}`;
 const addedStubs: string[] = [];
 
 test.describe('Spec editor: load, validate, save with conflict detection, save & generate', () => {
-  test.afterEach(async ({ page, request }) => {
-    for (const id of addedStubs.splice(0)) await removeMapping(request, id);
-    await removeAcmeProject(page, REPO);
+  // A stub from an earlier run that was never removed would break this one, so temporary stubs are swept first.
+  test.beforeAll(async () => {
+    await sweepTempStubs();
+  });
+
+  // Every stub this test added is removed, and the project is removed too, even when a removal fails. A failed removal is
+  // rethrown after both have run, so one failure cannot skip the rest.
+  test.afterEach(async ({ page }) => {
+    const failures: unknown[] = [];
+    try {
+      const removed = await Promise.allSettled(addedStubs.splice(0).map((id) => removeMapping(id)));
+      for (const result of removed) if (result.status === 'rejected') failures.push(result.reason);
+      await sweepTempStubs().catch((error: unknown) => failures.push(error));
+    } finally {
+      await removeAcmeProject(page, REPO);
+    }
+    if (failures.length > 0) throw new AggregateError(failures, 'could not restore the mock');
   });
 
   /** Signs in, makes the project from the existing repo, and opens its spec editor. Returns the project id. */
@@ -48,13 +62,18 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
     await page.keyboard.insertText(text);
   }
 
-  // The fixture is valid, but the Problems panel also shows a browser-validator error on it (the worker's ajv compile is
-  // blocked by the page's CSP: 'unsafe-eval' is not allowed). That is a product bug, so "No problems found." is not asserted
-  // here until it is fixed. See the task report.
   test('load', async ({ page }) => {
     await openEditor(page);
     await expect(spec(page)).toContainText('title: Billing API');
     await expect(spec(page)).toContainText('operationId: listInvoices');
+  });
+
+  // Known product bug, tracked here: the fixture is valid, but the Problems panel shows an Error on it, because the
+  // browser validator's ajv compile is blocked by the page's CSP ('unsafe-eval' is not allowed). test.fail keeps the suite
+  // green while the bug stands, and turns red once the panel shows no problems, so this marker is then removed.
+  test.fail('load: a valid spec shows no problems', async ({ page }) => {
+    await openEditor(page);
+    await expect(page.getByRole('region', { name: 'Problems' }).getByText('No problems found.')).toBeVisible({ timeout: 5000 });
   });
 
   test('validate', async ({ page }) => {
@@ -78,7 +97,7 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
     // Someone changes the file on GitHub after the editor loaded: the file now has another sha, and the write that
     // names the old sha is refused, as GitHub refuses it.
     addedStubs.push(
-      await addMapping(request, {
+      await addMapping({
         priority: 1,
         request: { method: 'GET', urlPath: SPEC_URL },
         response: {
@@ -96,9 +115,10 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
       }),
     );
     addedStubs.push(
-      await addMapping(request, {
+      await addMapping({
         priority: 1,
-        request: { method: 'PUT', urlPath: SPEC_URL },
+        // Only the save on the sha the editor loaded is refused, as GitHub refuses a write on a stale sha.
+        request: { method: 'PUT', urlPath: SPEC_URL, bodyPatterns: [{ matchesJsonPath: `$[?(@.sha == '${LOADED_SHA}')]` }] },
         response: {
           status: 409,
           jsonBody: {
@@ -117,6 +137,9 @@ test.describe('Spec editor: load, validate, save with conflict detection, save &
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Reload', exact: true })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Compare', exact: true })).toBeVisible();
+    // Compare shows the server's version, which is the changed upstream file the stub served.
+    await dialog.getByRole('button', { name: 'Compare', exact: true }).click();
+    await expect(dialog.getByRole('textbox', { name: 'Saved version (read-only)' })).toContainText('(changed upstream)');
 
     // The save was sent once, with the sha the editor loaded, and it was refused: nothing was written.
     const write = onlyRequest(await requests({ method: 'PUT', urlPath: SPEC_URL }));
