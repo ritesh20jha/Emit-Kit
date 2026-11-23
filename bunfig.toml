@@ -1,5 +1,0 @@
-[install]
-linker = "isolated"
-
-[test]
-pathIgnorePatterns = ["**/e2e/**"]
