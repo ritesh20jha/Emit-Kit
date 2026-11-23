@@ -138,8 +138,10 @@ test.describe('9 roles (admin/editor/viewer)', () => {
   });
 
   // Known gap, tracked here: the editor offers Save to a viewer, so a viewer clicks it and the API refuses the save (asserted
-  // above). The UI should not offer it (SPEC_EDIT gating). test.fail keeps the suite green while the gap stands, and turns
-  // red once no enabled Save button is shown to a viewer, so this marker is then removed.
+  // above). The UI should not offer it (SPEC_EDIT gating). Save is disabled until the text is dirty, so the viewer types an
+  // edit first. After an edit, Save is enabled for a viewer today: the edit makes the page dirty, two enabled save buttons
+  // show, and the test fails, which test.fail reports as the expected failure. With gating (the buttons hidden or disabled,
+  // or a read-only editor) the count is 0, the test passes, and test.fail goes red: the signal to remove this marker.
   test.fail('9 roles (admin/editor/viewer): the editor offers a viewer no Save (SPEC_EDIT gating)', async ({ page, browser }) => {
     await login(page);
     const orgId = await acmeOrgId(page);
@@ -155,6 +157,9 @@ test.describe('9 roles (admin/editor/viewer)', () => {
       await vpage.goto(`/projects/${projectId}/editor`);
       const specBox = vpage.getByRole('textbox', { name: 'OpenAPI spec' });
       await expect(specBox).toContainText('title: Billing API');
+      await specBox.click();
+      await vpage.keyboard.press('Control+End');
+      await vpage.keyboard.insertText(VIEWER_EDIT);
       await expect(vpage.getByRole('button', { name: /^Save/, disabled: false }), 'no enabled Save is offered to a viewer').toHaveCount(0);
     } finally {
       await viewer.context.close();

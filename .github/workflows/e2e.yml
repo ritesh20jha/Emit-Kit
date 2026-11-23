@@ -27,7 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A literal prefix: under workflow_call, github.workflow is the caller's name, so a caller's group could collide.
+  group: e2e-parity-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
