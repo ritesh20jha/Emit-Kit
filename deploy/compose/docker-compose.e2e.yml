@@ -1,0 +1,63 @@
+# Test overlay for the WEB-15 parity suite only. Never use it in production.
+# Used with docker-compose.prod.yml and docker-compose.smoke.yml by e2e.sh. GitHub is replaced by WireMock, which serves
+# the stateless JSON mappings under e2e/wiremock/mappings.
+# The smoke overlay hardcodes ./smoke-secrets, so the secret files, the vault-init mount and the sandbox socket are
+# repointed to ./e2e-secrets (the scratch dir e2e.sh writes).
+services:
+  github:
+    # Pinned to the stable 3.x line; the 4.x tags are betas.
+    image: wiremock/wiremock:3.13.2
+    command: ["--global-response-templating", "--port", "8089"]
+    ports:
+      - "127.0.0.1:8089:8089"
+    volumes:
+      - ./e2e/wiremock/mappings:/home/wiremock/mappings:ro
+    # The host port needs a non-internal network, so the mock sits on egress. It also joins app, where the worker
+    # reaches it. The worker is taken off egress below, so no AI or other real internet call can leave from it.
+    networks: [egress, app]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/__admin/health || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  vault-init:
+    volumes: !override
+      - ./vault/init.sh:/init.sh:ro
+      - ./vault/policies:/policies:ro
+      - ./e2e-secrets:/secrets
+
+  api:
+    environment:
+      EMITKIT_GITHUB_API_URL: http://github:8089
+      # The browser is sent here to authorize, so this is the host-published port, not the service name.
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_AUTHORIZATION_URI: http://localhost:8089/login/oauth/authorize
+      # The api calls these itself, over the egress network.
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_TOKEN_URI: http://github:8089/login/oauth/access_token
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_USER_INFO_URI: http://github:8089/user
+      # The CORS allowlist (emitkit.cors.allowed-origins). The stack's own address is not listed: behind Caddy the api sees
+      # the request as same-origin, so no CORS header is written for it. security.spec sends this origin to test the allowlist.
+      EMITKIT_CORS_ALLOWEDORIGINS: https://allowed.e2e.test
+
+  worker:
+    # app only: the worker has no route to the internet, so the Gemini call of the docs assistant fails (see the
+    # outputs.spec 'docs with an AI key' test). The GitHub mock is reached on app.
+    networks: !override [app]
+    environment:
+      EMITKIT_GITHUB_API_URL: http://github:8089
+      EMITKIT_WORKER_PIPELINE_ENABLED: "true"
+      # The sandbox runs the toolchain image built for the e2e stack, under the gVisor runtime of the sandbox daemon. The
+      # docker host is the one prod already sets (EMITKIT_SANDBOX_DOCKER_HOST: unix:///run/emitkit-sandbox/docker.sock).
+      EMITKIT_SANDBOX_IMAGE: ${E2E_TOOLCHAIN_IMAGE:-emitkit/toolchain:test}
+      EMITKIT_SANDBOX_RUNTIME: runsc
+    # E2E_SANDBOX_SOCKET picks a real sandbox daemon socket; unset, the placeholder that e2e.sh creates is used.
+    volumes: !override
+      - ${E2E_SANDBOX_SOCKET:-./e2e-secrets/sandbox.sock}:/run/emitkit-sandbox/docker.sock
+
+secrets:
+  api_vault_secret_id:
+    file: ./e2e-secrets/api-secret-id
+  worker_vault_secret_id:
+    file: ./e2e-secrets/worker-secret-id
+  backup_vault_secret_id:
+    file: ./e2e-secrets/backup-secret-id

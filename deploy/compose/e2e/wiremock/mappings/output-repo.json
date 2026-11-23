@@ -1,0 +1,49 @@
+{
+  "mappings": [
+    {
+      "name": "GET /repos/acme/billing-sdk: the separate output repository, default branch main",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-sdk"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"id\":3003,\"name\":\"billing-sdk\",\"full_name\":\"acme/billing-sdk\",\"private\":false,\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/billing-sdk\",\"default_branch\":\"main\",\"pushed_at\":null,\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}"}
+    },
+    {
+      "name": "GET git ref heads/{branch} on the output repository: every branch resolves to the fixture head (stateless)",
+      "request": {"method": "GET", "urlPathPattern": "/repos/acme/billing-sdk/git/refs/heads/.+"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"ref\":\"refs/heads/{{request.pathSegments.[6]}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-sdk/git/refs/heads/{{request.pathSegments.[6]}}\",\"object\":{\"sha\":\"2c3d4e5f60718293a4b5c6d7e8f901234567890a\",\"type\":\"commit\"}}"}
+    },
+    {
+      "name": "POST git/refs on the output repository: create a branch or tag at the sent sha",
+      "request": {"method": "POST", "urlPath": "/repos/acme/billing-sdk/git/refs"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{\"ref\":\"{{jsonPath request.body '$.ref'}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-sdk/git/{{jsonPath request.body '$.ref'}}\",\"object\":{\"sha\":\"{{jsonPath request.body '$.sha'}}\",\"type\":\"commit\"}}"}
+    },
+    {
+      "name": "PATCH git/refs/heads/{branch} on the output repository: move the branch to the sent sha",
+      "request": {"method": "PATCH", "urlPathPattern": "/repos/acme/billing-sdk/git/refs/heads/.+"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"ref\":\"refs/heads/{{request.pathSegments.[6]}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-sdk/git/refs/heads/{{request.pathSegments.[6]}}\",\"object\":{\"sha\":\"{{jsonPath request.body '$.sha'}}\",\"type\":\"commit\"}}"}
+    },
+    {
+      "name": "DELETE git/refs/heads/{branch} on the output repository: 204",
+      "request": {"method": "DELETE", "urlPathPattern": "/repos/acme/billing-sdk/git/refs/heads/.+"},
+      "response": {"status": 204}
+    },
+    {
+      "name": "GET git/trees/{ref} on the output repository: an empty default branch (stateless; a test adds a stub with the custom stub above it)",
+      "request": {"method": "GET", "urlPathPattern": "/repos/acme/billing-sdk/git/trees/.+"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"sha\":\"4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70\",\"truncated\":false,\"tree\":[]}"}
+    },
+    {
+      "name": "POST git/trees on the output repository: a new tree with a fresh sha",
+      "request": {"method": "POST", "urlPath": "/repos/acme/billing-sdk/git/trees"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\",\"truncated\":false,\"tree\":[]}"}
+    },
+    {
+      "name": "POST git/commits on the output repository: a new commit whose html_url names its sha",
+      "request": {"method": "POST", "urlPath": "/repos/acme/billing-sdk/git/commits"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{{#assign 'sha'}}{{randomValue type='HEXADECIMAL' length=40}}{{/assign}}{\"sha\":\"{{sha}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-sdk/git/commits/{{sha}}\",\"html_url\":\"https://github.com/acme/billing-sdk/commit/{{sha}}\",\"tree\":{\"sha\":\"{{jsonPath request.body '$.tree'}}\"}}"}
+    },
+    {
+      "name": "POST pulls on the output repository: open a pull request; stateless, so every PR is number 1",
+      "request": {"method": "POST", "urlPath": "/repos/acme/billing-sdk/pulls"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{\"number\":1,\"state\":\"open\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-sdk/pulls/1\",\"html_url\":\"https://github.com/acme/billing-sdk/pull/1\",\"head\":{\"ref\":\"{{jsonPath request.body '$.head'}}\",\"sha\":\"2c3d4e5f60718293a4b5c6d7e8f901234567890a\"},\"base\":{\"ref\":\"{{jsonPath request.body '$.base'}}\"}}"}
+    }
+  ]
+}

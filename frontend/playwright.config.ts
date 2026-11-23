@@ -12,6 +12,8 @@ const storybookServer = {
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // The parity stack and its WireMock journal are shared, so its specs run one at a time (E2E_PARITY=1).
+  workers: process.env.E2E_PARITY === '1' ? 1 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
@@ -21,7 +23,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: 'visual/**',
+      testIgnore: ['visual/**', 'parity/**'],
       use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
     },
     // Storybook stories: contrast (axe) and screenshots, in light and dark, against a static Storybook build.
@@ -30,8 +32,23 @@ export default defineConfig({
       testMatch: 'visual/**',
       use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:6007' },
     },
+    // Parity suite against the real stack (deploy/compose/e2e.sh up, GitHub replaced by WireMock). The Caddy edge serves
+    // https://localhost with an internal CA, so the certificate is not checked. `pnpm run test:parity` sets E2E_PARITY=1.
+    {
+      name: 'parity',
+      testMatch: 'parity/**/*.spec.ts',
+      fullyParallel: false,
+      // Longer than the sign-in budget in support/login.ts (30 s of retries, then the shell wait), so that budget is reachable.
+      timeout: 60_000,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.E2E_BASE_URL ?? 'https://localhost',
+        ignoreHTTPSErrors: true,
+      },
+    },
   ],
-  webServer: [
+  // The parity stack is already running, so the MSW build and storybook are not started for it.
+  webServer: process.env.E2E_PARITY === '1' ? undefined : [
     {
       // Built with VITE_MSW=1 so the browser worker answers the API from fixtures. The worker file is generated into this
       // output only, so the plain build (check:bundle) and the committed tree never carry it.

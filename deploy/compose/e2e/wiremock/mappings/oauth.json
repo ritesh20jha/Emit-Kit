@@ -1,0 +1,14 @@
+{
+  "mappings": [
+    {
+      "name": "OAuth authorize: 302 back to redirect_uri with code and the incoming state",
+      "request": {"method": "GET", "urlPath": "/login/oauth/authorize"},
+      "response": {"status": 302, "headers": {"Location": "{{request.query.redirect_uri}}?code=mock-code&state={{request.query.state}}"}}
+    },
+    {
+      "name": "OAuth token exchange: any code gets the fixture token",
+      "request": {"method": "POST", "urlPath": "/login/oauth/access_token"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"access_token\":\"gho_mock_token\",\"token_type\":\"bearer\",\"scope\":\"repo,read:org,workflow,user:email,write:repo_hook\"}"}
+    }
+  ]
+}

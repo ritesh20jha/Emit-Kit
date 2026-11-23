@@ -1,0 +1,54 @@
+{
+  "mappings": [
+    {
+      "name": "GET /user/repos: the repositories octocat can push to",
+      "request": {"method": "GET", "urlPath": "/user/repos"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "[{\"id\":3001,\"name\":\"billing-api\",\"full_name\":\"acme/billing-api\",\"private\":false,\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/billing-api\",\"default_branch\":\"main\",\"pushed_at\":\"2026-11-01T09:00:00Z\",\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}]"}
+    },
+    {
+      "name": "GET /repos/acme/billing-api: the fixture repository, default branch main",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-api"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"id\":3001,\"name\":\"billing-api\",\"full_name\":\"acme/billing-api\",\"private\":false,\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/billing-api\",\"default_branch\":\"main\",\"pushed_at\":\"2026-11-01T09:00:00Z\",\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}"}
+    },
+    {
+      "name": "GET contents of openapi.yaml: the fixture repository has no file at the root, so 404 as GitHub answers",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-api/contents/openapi.yaml"},
+      "response": {"status": 404, "headers": {"Content-Type": "application/json"}, "body": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest/repos/contents#get-repository-content\",\"status\":\"404\"}"}
+    },
+    {
+      "name": "GET contents of the spec file (base64, 189 bytes, blob sha 1477316f)",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-api/contents/openapi/billing.yaml"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"type\":\"file\",\"encoding\":\"base64\",\"size\":189,\"name\":\"billing.yaml\",\"path\":\"openapi/billing.yaml\",\"sha\":\"1477316fd2c1468876564127fe9185f0f4a0f68f\",\"content\":\"b3BlbmFwaTogMy4wLjMKaW5mbzoKICB0aXRsZTogQmlsbGluZyBBUEkKICB2ZXJzaW9uOiAxLjAuMApwYXRoczoKICAvaW52b2ljZXM6CiAgICBnZXQ6CiAgICAgIG9wZXJhdGlvbklkOiBsaXN0SW52b2ljZXMKICAgICAgcmVzcG9uc2VzOgogICAgICAgICIyMDAiOgogICAgICAgICAgZGVzY3JpcHRpb246IFRoZSBpbnZvaWNlcy4K\",\"html_url\":\"https://github.com/acme/billing-api/blob/main/openapi/billing.yaml\"}"}
+    },
+    {
+      "name": "GET /orgs/acme: the organization octocat administers, which creates repositories under it",
+      "request": {"method": "GET", "urlPath": "/orgs/acme"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\",\"name\":\"Acme\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/2001?v=4\"}"}
+    },
+    {
+      "name": "POST /user/repos: create a repository under the signed-in user, echoing the sent name",
+      "request": {"method": "POST", "urlPath": "/user/repos"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{\"id\":3002,\"name\":\"{{jsonPath request.body '$.name'}}\",\"full_name\":\"octocat/{{jsonPath request.body '$.name'}}\",\"private\":{{jsonPath request.body '$.private'}},\"owner\":{\"login\":\"octocat\",\"id\":1001,\"type\":\"User\"},\"html_url\":\"https://github.com/octocat/{{jsonPath request.body '$.name'}}\",\"default_branch\":\"main\",\"pushed_at\":null,\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}"}
+    },
+    {
+      "name": "POST /orgs/acme/repos: create a repository under acme, echoing the sent name",
+      "request": {"method": "POST", "urlPath": "/orgs/acme/repos"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{\"id\":3002,\"name\":\"{{jsonPath request.body '$.name'}}\",\"full_name\":\"acme/{{jsonPath request.body '$.name'}}\",\"private\":{{jsonPath request.body '$.private'}},\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/{{jsonPath request.body '$.name'}}\",\"default_branch\":\"main\",\"pushed_at\":null,\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}"}
+    },
+    {
+      "name": "GET /repos/acme/billing-starter: the repository the create calls make in the new-repo test, default branch main",
+      "request": {"method": "GET", "urlPath": "/repos/acme/billing-starter"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"id\":3002,\"name\":\"billing-starter\",\"full_name\":\"acme/billing-starter\",\"private\":true,\"owner\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\"},\"html_url\":\"https://github.com/acme/billing-starter\",\"default_branch\":\"main\",\"pushed_at\":null,\"permissions\":{\"admin\":true,\"push\":true,\"pull\":true}}"}
+    },
+    {
+      "name": "PUT /repos/acme/billing-starter/contents/openapi.yaml: commit the starter spec, answering with the file and a fresh commit sha",
+      "request": {"method": "PUT", "urlPath": "/repos/acme/billing-starter/contents/openapi.yaml"},
+      "response": {"status": 201, "headers": {"Content-Type": "application/json"}, "body": "{{#assign 'sha'}}{{randomValue type='HEXADECIMAL' length=40}}{{/assign}}{\"content\":{\"type\":\"file\",\"name\":\"openapi.yaml\",\"path\":\"openapi.yaml\",\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-starter/contents/openapi.yaml\",\"html_url\":\"https://github.com/acme/billing-starter/blob/main/openapi.yaml\"},\"commit\":{\"sha\":\"{{sha}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-starter/git/commits/{{sha}}\",\"html_url\":\"https://github.com/acme/billing-starter/commit/{{sha}}\",\"tree\":{\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\"}}}"}
+    },
+    {
+      "name": "PUT /repos/acme/billing-api/contents/openapi/billing.yaml: save the spec file on the default branch, answering with the file and a fresh commit sha (the stateless default; a conflict test adds a 409 above it)",
+      "request": {"method": "PUT", "urlPath": "/repos/acme/billing-api/contents/openapi/billing.yaml"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{{#assign 'sha'}}{{randomValue type='HEXADECIMAL' length=40}}{{/assign}}{\"content\":{\"type\":\"file\",\"name\":\"billing.yaml\",\"path\":\"openapi/billing.yaml\",\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-api/contents/openapi/billing.yaml\",\"html_url\":\"https://github.com/acme/billing-api/blob/main/openapi/billing.yaml\"},\"commit\":{\"sha\":\"{{sha}}\",\"url\":\"{{request.baseUrl}}/repos/acme/billing-api/git/commits/{{sha}}\",\"html_url\":\"https://github.com/acme/billing-api/commit/{{sha}}\",\"tree\":{\"sha\":\"{{randomValue type='HEXADECIMAL' length=40}}\"}}}"}
+    }
+  ]
+}
