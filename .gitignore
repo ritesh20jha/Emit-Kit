@@ -8,9 +8,6 @@ dist
 build
 *.tsbuildinfo
 
-# Generated files
-apps/web/src/routeTree.gen.ts
-
 # Environment variables
 .env
 .env*.local
@@ -29,19 +26,14 @@ apps/web/src/routeTree.gen.ts
 
 # Logs
 logs
+# The worker's run-log package is source code, not log output.
+!/backend/worker-app/src/**/dev/emitkit/worker/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
-
-# Turbo
-.turbo
-.nx
-
-# Better-T-Stack
-.alchemy
 
 # Testing
 coverage

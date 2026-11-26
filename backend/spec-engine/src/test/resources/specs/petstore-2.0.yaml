@@ -1,0 +1,8 @@
+swagger: "2.0"
+info: {title: Petstore, version: "1.0.0"}
+paths:
+  /pets:
+    get: {operationId: listPets, responses: {"200": {description: A list of pets}}}
+    post: {operationId: createPet, parameters: [{name: body, in: body, required: true, schema: {type: object}}], responses: {"201": {description: Created}}}
+  /pets/{petId}:
+    get: {operationId: getPet, parameters: [{name: petId, in: path, required: true, type: integer}], responses: {"200": {description: A pet}}}

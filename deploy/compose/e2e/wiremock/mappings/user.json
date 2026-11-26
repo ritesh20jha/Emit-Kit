@@ -1,0 +1,14 @@
+{
+  "mappings": [
+    {
+      "name": "GET /user: the signed-in profile (octocat)",
+      "request": {"method": "GET", "urlPath": "/user"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "{\"login\":\"octocat\",\"id\":1001,\"type\":\"User\",\"name\":\"The Octocat\",\"email\":null,\"avatar_url\":\"https://avatars.githubusercontent.com/u/1001?v=4\"}"}
+    },
+    {
+      "name": "GET /user/memberships/orgs: one active org, acme, where octocat is an admin",
+      "request": {"method": "GET", "urlPath": "/user/memberships/orgs"},
+      "response": {"status": 200, "headers": {"Content-Type": "application/json"}, "body": "[{\"state\":\"active\",\"role\":\"admin\",\"organization\":{\"login\":\"acme\",\"id\":2001,\"type\":\"Organization\",\"name\":\"Acme\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/2001?v=4\"},\"user\":{\"login\":\"octocat\",\"id\":1001,\"type\":\"User\"}}]"}
+    }
+  ]
+}

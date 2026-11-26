@@ -1,0 +1,62 @@
+spring:
+  task:
+    execution:
+      # Keep Boot's applicationTaskExecutor even though OrgSyncConfig declares its own Executor bean.
+      mode: force
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/emitkit}
+    username: ${SPRING_DATASOURCE_USERNAME:emitkit}
+    password: ${SPRING_DATASOURCE_PASSWORD:emitkit}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  rabbitmq:
+    username: ${SPRING_RABBITMQ_USERNAME:emitkit}
+    password: ${SPRING_RABBITMQ_PASSWORD:emitkit}
+    connection-timeout: 5s
+  session:
+    data:
+      redis:
+        namespace: emitkit
+  ai:
+    model:
+      chat: none
+  security:
+    oauth2:
+      client:
+        registration:
+          # The client id and secret come from the environment (SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_
+          # GITHUB_CLIENT_ID and _SECRET); startup fails without them.
+          github:
+            scope: repo,read:org,workflow,user:email,write:repo_hook
+server:
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+emitkit:
+  web:
+    base-url: http://localhost:5173
+  # The address GitHub reaches this API at; webhooks are registered at {public-url}/webhooks/github.
+  public-url: ${EMITKIT_PUBLIC_URL:http://localhost:8080}
+  # Artifact store (RustFS in the local stack); the defaults match deploy/compose.
+  storage:
+    endpoint: ${EMITKIT_STORAGE_ENDPOINT:http://localhost:9000}
+    bucket: ${EMITKIT_STORAGE_BUCKET:emitkit-artifacts}
+    access-key: ${EMITKIT_STORAGE_ACCESS_KEY:emitkit}
+    secret-key: ${EMITKIT_STORAGE_SECRET_KEY:emitkit-secret}
+springdoc:
+  default-produces-media-type: application/json
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health
+logging:
+  pattern:
+    level: "%5p [%X{runId:-},%X{orgId:-}]"

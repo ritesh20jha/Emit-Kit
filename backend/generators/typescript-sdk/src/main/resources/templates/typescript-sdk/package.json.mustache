@@ -1,0 +1,19 @@
+{
+  "name": {{{packageNameLiteral}}},
+  "version": {{{versionLiteral}}},
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

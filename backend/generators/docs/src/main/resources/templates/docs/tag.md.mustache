@@ -1,0 +1,97 @@
+# {{title}}
+{{#hasDescription}}
+
+{{description}}
+{{/hasDescription}}
+
+Part of [{{apiTitle}}](index.md).
+{{#ops}}
+
+## {{operationId}}
+
+{{#deprecated}}**Deprecated.** {{/deprecated}}`{{method}} {{path}}`
+{{#hasProse}}
+
+{{prose}}
+{{/hasProse}}
+{{#hasSecurity}}
+
+Authentication: {{security}}
+{{/hasSecurity}}
+{{#hasParams}}
+
+### Parameters
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+{{#params}}
+| {{name}} | {{in}} | {{type}} | {{required}} | {{description}} |
+{{/params}}
+{{/hasParams}}
+{{#hasBody}}
+
+### Request body
+
+Content type `{{contentType}}`. Required: {{bodyRequired}}. Schema: {{bodyType}}.
+{{#hasBodyFields}}
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+{{#bodyFields}}
+| {{name}} | {{type}} | {{required}} | {{description}} |
+{{/bodyFields}}
+{{/hasBodyFields}}
+{{/hasBody}}
+{{#hasResponses}}
+
+### Responses
+
+| Status | Description | Schema |
+| --- | --- | --- |
+{{#responses}}
+| {{status}} | {{description}} | {{schema}} |
+{{/responses}}
+{{#fieldTables}}
+
+**{{status}} response fields**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+{{#fields}}
+| {{name}} | {{type}} | {{required}} | {{description}} |
+{{/fields}}
+{{/fieldTables}}
+{{/hasResponses}}
+
+### Examples
+
+#### curl
+
+```sh
+{{curl}}
+```
+
+#### TypeScript
+
+```ts
+{{typescript}}
+```
+
+#### Python
+
+```python
+{{python}}
+```
+
+#### Java
+
+```java
+{{java}}
+```
+{{#hasNotes}}
+
+### Notes
+
+{{notes}}
+{{/hasNotes}}
+{{/ops}}

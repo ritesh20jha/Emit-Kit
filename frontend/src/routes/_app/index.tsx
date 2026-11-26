@@ -1,0 +1,15 @@
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { defaultOrgId, lastOrg, NoOrgsYet } from "@/features/shell";
+import { meQuery } from "@/lib/auth/session";
+
+/** `/` opens the last-used org, or the personal org when the remembered one is gone. */
+export const Route = createFileRoute("/_app/")({
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.ensureQueryData(meQuery);
+    const orgId = defaultOrgId(me.orgs, lastOrg.get());
+    // The org page route is added by WEB-04/05, so the target is a plain href.
+    if (orgId !== undefined) throw redirect({ href: `/orgs/${orgId}` });
+  },
+  // No orgs yet is usually the first sign-in racing the login org sync; NoOrgsYet waits it out.
+  component: NoOrgsYet,
+});

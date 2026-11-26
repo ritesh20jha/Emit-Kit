@@ -1,0 +1,28 @@
+openapi: 3.0.3
+info:
+  title: Pagination
+  version: 1.0.0
+paths:
+  /items:
+    get:
+      operationId: listItems
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: ok
+          headers:
+            Link:
+              description: RFC 8288 links to the next and previous pages.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {type: string}
+                  nextCursor: {type: string, nullable: true}

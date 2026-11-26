@@ -1,0 +1,58 @@
+spring:
+  # Migrations belong to the API (the domain's Flyway scripts); the worker only validates the schema.
+  flyway:
+    enabled: false
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/emitkit}
+    username: ${SPRING_DATASOURCE_USERNAME:emitkit}
+    password: ${SPRING_DATASOURCE_PASSWORD:emitkit}
+    hikari:
+      # Four listener threads, each holding a run's advisory-lock connection plus a connection for
+      # its work (4 x 2 = 8), with headroom.
+      maximum-pool-size: 20
+      # RunLock needs auto-commit: its advisory lock is held by the session, outside any transaction.
+      auto-commit: true
+      # Hikari reads this as a plain number of milliseconds (10 s).
+      connection-timeout: 10000
+      # The advisory run lock lives on an idle connection; a server-side idle timeout would silently drop it.
+      connection-init-sql: SET idle_session_timeout = 0
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  rabbitmq:
+    username: ${SPRING_RABBITMQ_USERNAME:emitkit}
+    password: ${SPRING_RABBITMQ_PASSWORD:emitkit}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        concurrency: ${emitkit.worker.concurrency}
+  # Host and port come from the environment (SPRING_DATA_REDIS_HOST/PORT). The timeouts keep a lost
+  # Redis from holding a step or the shared flush thread for Lettuce's 60 s default.
+  data:
+    redis:
+      timeout: 2s
+      connect-timeout: 2s
+  ai:
+    model:
+      chat: none
+emitkit:
+  worker:
+    concurrency: 4
+    retry-ttls: 10s,60s,300s
+    work-dir: ${java.io.tmpdir}/emitkit
+    work-dir-retention: 1h
+    work-dir-sweep-interval: 10m
+  # Run links in pull requests point at the web app. The api-app reads the same key.
+  web:
+    base-url: http://localhost:5173
+  # Artifact store (RustFS in the local stack); the defaults match deploy/compose.
+  storage:
+    endpoint: ${EMITKIT_STORAGE_ENDPOINT:http://localhost:9000}
+    bucket: ${EMITKIT_STORAGE_BUCKET:emitkit-artifacts}
+    access-key: ${EMITKIT_STORAGE_ACCESS_KEY:emitkit}
+    secret-key: ${EMITKIT_STORAGE_SECRET_KEY:emitkit-secret}
+  ai:
+    gemini:
+      default-model: gemini-2.5-flash

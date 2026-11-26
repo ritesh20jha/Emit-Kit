@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stub prettier: --write appends a marker to every .ts file under the cwd, then exits STUB_PRETTIER_EXIT.
+find . -type f -name '*.ts' -exec sh -c 'printf "\n// formatted-by-stub\n" >> "$1"' sh {} \;
+exit "${STUB_PRETTIER_EXIT:-0}"

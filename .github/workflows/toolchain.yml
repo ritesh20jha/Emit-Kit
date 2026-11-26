@@ -1,0 +1,90 @@
+name: Toolchain
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/docker/toolchain/**'
+      - 'backend/generators/**'
+      - 'backend/spec-engine/**'
+      - 'backend/common/**'
+      - 'backend/build.gradle.kts'
+      - 'backend/gradle/wrapper/**'
+      - 'backend/settings.gradle.kts'
+      - 'backend/build-logic/**'
+      - 'backend/gradle/libs.versions.toml'
+      - '.github/workflows/toolchain.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/docker/toolchain/**'
+      - 'backend/generators/**'
+      - 'backend/spec-engine/**'
+      - 'backend/common/**'
+      - 'backend/build.gradle.kts'
+      - 'backend/gradle/wrapper/**'
+      - 'backend/settings.gradle.kts'
+      - 'backend/build-logic/**'
+      - 'backend/gradle/libs.versions.toml'
+      - '.github/workflows/toolchain.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  toolchain:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed only to push the image to GHCR on main (see the last step).
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read toolchain version
+        id: version
+        run: echo "version=$(cat deploy/docker/toolchain/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build toolchain image
+        run: docker build -t emitkit/toolchain:test deploy/docker/toolchain
+
+      - name: Test toolchain image
+        run: bash deploy/docker/toolchain/test.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # required=true: a missing image or runtime fails this job instead of skipping the tests.
+      - name: Compile every fixture in the toolchain image
+        working-directory: backend
+        run: >-
+          ./gradlew :generators:compile-tests:test
+          -Demitkit.sandbox.runtime=runc
+          -Dcompile-tests.required=true
+          -Demitkit.toolchain.image=emitkit/toolchain:test
+
+      # Pushed only after the tests pass, so GHCR never holds an image that failed them.
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push toolchain image to GHCR
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/emitkit-toolchain:${VERSION}"
+          docker tag emitkit/toolchain:test "$image"
+          docker push "$image"

@@ -1,0 +1,95 @@
+package dev.emitkit.gen.javasdk;
+
+import dev.emitkit.gen.core.FileKind;
+import dev.emitkit.gen.core.GeneratedFile;
+import dev.emitkit.gen.core.Generator;
+import dev.emitkit.gen.core.GeneratorContext;
+import dev.emitkit.gen.core.GeneratorId;
+import dev.emitkit.gen.core.Templates;
+import dev.emitkit.spec.model.ApiModel;
+import java.util.ArrayList;
+import java.util.List;
+
+/** Emits a Java SDK under {@code {outputDir}sdk/java/}. Output is byte-stable. */
+public final class JavaSdkGenerator implements Generator {
+
+  private static final Templates TEMPLATES = Templates.forGenerator("java-sdk");
+
+  /** The exception subclasses the client raises, one per status family. */
+  private static final List<ExceptionClass> EXCEPTIONS =
+      List.of(
+          new ExceptionClass("UnauthorizedException", "401 Unauthorized, or 403 Forbidden."),
+          new ExceptionClass("NotFoundException", "404 Not Found."),
+          new ExceptionClass("ConflictException", "409 Conflict."),
+          new ExceptionClass("RateLimitException", "429 Too Many Requests, after retries."),
+          new ExceptionClass("ServerException", "5xx Server Error, after retries."));
+
+  /** Name and javadoc summary of one exception subclass. */
+  record ExceptionClass(String name, String summary) {}
+
+  /** Context for {@code exception-subclass.java}: the subclass plus the package it lives in. */
+  record ExceptionView(String packageName, String name, String summary) {}
+
+  /** Context for the model and resource file skeletons: package, imports and declaration. */
+  record FileView(String packageName, String imports, String body) {}
+
+  @Override
+  public GeneratorId id() {
+    return GeneratorId.JAVA_SDK;
+  }
+
+  @Override
+  public List<GeneratedFile> generate(ApiModel model, GeneratorContext ctx) {
+    JavaClientView view = JavaClientView.of(model, ctx);
+    String root = sdkRoot(ctx.outputDir());
+    String src = root + "src/main/java/" + view.packagePath() + "/";
+    List<GeneratedFile> files = new ArrayList<>();
+    files.add(generated(root + "build.gradle.kts", "build.gradle.kts", view));
+    files.add(generated(root + "settings.gradle.kts", "settings.gradle.kts", view));
+    files.add(generated(root + "README.md", "README.md", view));
+    files.add(generated(src + view.className() + ".java", "Client.java", view));
+    files.add(generated(src + "ClientConfig.java", "ClientConfig.java", view));
+    files.add(generated(src + "ApiException.java", "ApiException.java", view));
+    for (ExceptionClass exception : EXCEPTIONS) {
+      ExceptionView context =
+          new ExceptionView(view.packageName(), exception.name(), exception.summary());
+      files.add(
+          new GeneratedFile(
+              src + exception.name() + ".java",
+              TEMPLATES.render("exception-subclass.java", context),
+              FileKind.GENERATED));
+    }
+    files.add(
+        new GeneratedFile(
+            src + "custom/package-info.java",
+            TEMPLATES.render("custom-package-info.java", view),
+            FileKind.CUSTOM_STUB));
+    JavaTypeRenderer types = new JavaTypeRenderer(model, view.packageName());
+    for (JavaTypeRenderer.TypeFile file : types.files()) {
+      files.add(typeFile(src + "model/" + file.name() + ".java", file, types.modelPackage()));
+    }
+    String resources = view.packageName() + ".resources";
+    for (JavaTypeRenderer.TypeFile file : JavaResourceRenderer.files(model, types, view)) {
+      files.add(typeFile(src + "resources/" + file.name() + ".java", file, resources));
+    }
+    return List.copyOf(files);
+  }
+
+  /** A model or resource file: the shared skeleton around one top-level type. */
+  private static GeneratedFile typeFile(
+      String path, JavaTypeRenderer.TypeFile file, String packageName) {
+    FileView view =
+        new FileView(packageName, JavaTypeRenderer.importBlock(file.imports()), file.body());
+    return new GeneratedFile(path, TEMPLATES.render("Model.java", view), FileKind.GENERATED);
+  }
+
+  private static GeneratedFile generated(String path, String template, JavaClientView view) {
+    return new GeneratedFile(path, TEMPLATES.render(template, view), FileKind.GENERATED);
+  }
+
+  /** {@code outputDir} with trailing slashes normalised to one, then {@code sdk/java/}. */
+  static String sdkRoot(String outputDir) {
+    String base = outputDir.replaceAll("/+$", "");
+    return (base.isEmpty() ? "" : base + "/") + "sdk/java/";
+  }
+}

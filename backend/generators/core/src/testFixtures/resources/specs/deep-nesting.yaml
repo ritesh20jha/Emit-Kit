@@ -1,0 +1,65 @@
+openapi: 3.0.3
+info:
+  title: Deep Nesting
+  version: 1.0.0
+paths:
+  /deep:
+    get:
+      operationId: getDeep
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deep'}
+  /grid:
+    get:
+      operationId: getGrid
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Grid'}
+  /nodes:
+    get:
+      operationId: getNode
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Node'}
+components:
+  schemas:
+    Deep:
+      type: object
+      properties:
+        level1:
+          type: object
+          properties:
+            level2:
+              type: object
+              properties:
+                level3:
+                  type: object
+                  properties:
+                    level4:
+                      type: object
+                      properties:
+                        level5:
+                          type: object
+                          properties:
+                            value: {type: string}
+    Grid:
+      type: array
+      items:
+        type: array
+        items: {type: integer}
+    Node:
+      type: object
+      properties:
+        id: {type: integer}
+        children:
+          type: array
+          items: {$ref: '#/components/schemas/Node'}

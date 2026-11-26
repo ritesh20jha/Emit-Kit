@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
+@import "../ui/tokens.css";
+
+/* `dark:` follows the app's theme (data-theme), not the OS setting. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Drop Tailwind's default scales so feature code can only use design tokens. */
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+}
+
+/* `inline` keeps the utilities pointing at the runtime variables, so the dark theme overrides apply. */
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-bg-subtle: var(--color-bg-subtle);
+  --color-bg-muted: var(--color-bg-muted);
+  --color-fg: var(--color-fg);
+  --color-fg-muted: var(--color-fg-muted);
+  --color-fg-subtle: var(--color-fg-subtle);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-border-control: var(--color-border-control);
+  --color-accent: var(--color-accent);
+  --color-accent-fg: var(--color-accent-fg);
+  --color-focus: var(--color-focus);
+  --color-status-success: var(--color-status-success);
+  --color-status-running: var(--color-status-running);
+  --color-status-failed: var(--color-status-failed);
+  --color-status-awaiting: var(--color-status-awaiting);
+  --color-status-neutral: var(--color-status-neutral);
+  --color-scrim: var(--color-scrim);
+
+  --spacing: var(--space-1);
+
+  /* Plain transition-* utilities follow the motion token, so reduced motion turns them off too. */
+  --default-transition-duration: var(--duration-fast);
+  --default-transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* Overlays only: a subtle lift on top of the 1px border. Dialogs, sheets, menus, tooltips and toasts. */
+  --shadow-overlay: 0 4px 12px rgb(0 0 0 / 0.12);
+  --animate-overlay-fade: overlay-fade var(--duration-fast) ease-out;
+  --animate-dialog-in: dialog-in var(--duration-fast) ease-out;
+
+  --text-xs: var(--text-xs);
+  --text-xs--line-height: var(--text-xs--line-height);
+  --text-sm: var(--text-sm);
+  --text-sm--line-height: var(--text-sm--line-height);
+  --text-base: var(--text-base);
+  --text-base--line-height: var(--text-base--line-height);
+  --text-lg: var(--text-lg);
+  --text-lg--line-height: var(--text-lg--line-height);
+  --text-2xl: var(--text-2xl);
+  --text-2xl--line-height: var(--text-2xl--line-height);
+
+}
+
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+/* Sonner ships 400ms transitions. Hold toasts to the motion token. Under reduced motion the token is 0ms,
+   and sonner's own reduced-motion rule (transition: none !important) applies on top. */
+[data-sonner-toaster] [data-sonner-toast] {
+  transition-duration: var(--duration-fast);
+}
+
+/* Sonner's unlayered `outline: 0` beats the :focus-visible ring in @layer base, so the toast ring is restated here, unlayered. */
+[data-sonner-toaster] [data-sonner-toast]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}

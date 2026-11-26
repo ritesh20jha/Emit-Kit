@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Auth Schemes
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /header-key:
+    get:
+      operationId: getWithHeaderKey
+      security:
+        - headerKey: []
+      responses:
+        '200': {description: ok}
+  /query-key:
+    get:
+      operationId: getWithQueryKey
+      security:
+        - queryKey: []
+      responses:
+        '200': {description: ok}
+  /basic:
+    get:
+      operationId: getWithBasic
+      security:
+        - basicAuth: []
+      responses:
+        '200': {description: ok}
+  /oauth:
+    get:
+      operationId: getWithOAuth
+      security:
+        - oauth: [read:items]
+      responses:
+        '200': {description: ok}
+  /public:
+    get:
+      operationId: getPublic
+      security: []
+      responses:
+        '200': {description: ok}
+  /inherited:
+    get:
+      operationId: getInherited
+      responses:
+        '200': {description: ok}
+components:
+  securitySchemes:
+    headerKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    queryKey:
+      type: apiKey
+      in: query
+      name: api_key
+    bearerAuth:
+      type: http
+      scheme: bearer
+    basicAuth:
+      type: http
+      scheme: basic
+    oauth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://example.com/oauth/authorize
+          tokenUrl: https://example.com/oauth/token
+          scopes:
+            read:items: Read items

@@ -1,0 +1,39 @@
+package dev.emitkit.common.secret;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Objects;
+
+/**
+ * The row and column a secret belongs to. It is sent to Vault as the Transit context, so a
+ * ciphertext cannot be decrypted under a different row or column.
+ *
+ * @param table the table holding the secret; not null or blank
+ * @param column the column holding the secret; not null or blank
+ * @param rowId the identifier of the row; not null or blank
+ */
+public record SecretContext(String table, String column, String rowId) {
+
+  public SecretContext {
+    requireText(table, "table");
+    requireText(column, "column");
+    requireText(rowId, "rowId");
+  }
+
+  /** Base64 of {@code table:column:rowId} in UTF-8. */
+  public String encoded() {
+    return Base64.getEncoder().encodeToString(bytes());
+  }
+
+  /** The raw UTF-8 bytes of {@code table:column:rowId}; the Vault client Base64-encodes them. */
+  byte[] bytes() {
+    return (table + ":" + column + ":" + rowId).getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static void requireText(String value, String component) {
+    Objects.requireNonNull(value, component + " must not be null");
+    if (value.isBlank()) {
+      throw new IllegalArgumentException(component + " must not be blank");
+    }
+  }
+}

@@ -1,0 +1,11 @@
+node_modules
+dist
+playwright-report
+test-results
+storybook-static
+coverage
+*.tsbuildinfo
+.vite
+.tanstack
+dist-e2e
+public/mockServiceWorker.js

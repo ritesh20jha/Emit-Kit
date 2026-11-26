@@ -1,0 +1,63 @@
+import { defineConfig, devices } from '@playwright/test';
+
+// Storybook starts for every run unless E2E_SKIP_STORYBOOK=1. The visual specs read it at collection time, so a bare
+// `playwright test` needs it. The chromium-only script and CI set the variable to skip the build.
+const storybookServer = {
+  command: 'pnpm build-storybook && pnpm exec vite preview --outDir storybook-static --port 6007 --strictPort',
+  url: 'http://localhost:6007/index.json',
+  reuseExistingServer: !process.env.CI,
+  timeout: 180_000,
+};
+
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: true,
+  // The parity stack and its WireMock journal are shared, so its specs run one at a time (E2E_PARITY=1).
+  workers: process.env.E2E_PARITY === '1' ? 1 : undefined,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  reporter: [['list']],
+  use: {
+    trace: 'on-first-retry',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      testIgnore: ['visual/**', 'parity/**'],
+      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
+    },
+    // Storybook stories: contrast (axe) and screenshots, in light and dark, against a static Storybook build.
+    {
+      name: 'visual',
+      testMatch: 'visual/**',
+      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:6007' },
+    },
+    // Parity suite against the real stack (deploy/compose/e2e.sh up, GitHub replaced by WireMock). The Caddy edge serves
+    // https://localhost with an internal CA, so the certificate is not checked. `pnpm run test:parity` sets E2E_PARITY=1.
+    {
+      name: 'parity',
+      testMatch: 'parity/**/*.spec.ts',
+      fullyParallel: false,
+      // Longer than the sign-in budget in support/login.ts (30 s of retries, then the shell wait), so that budget is reachable.
+      timeout: 60_000,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.E2E_BASE_URL ?? 'https://localhost',
+        ignoreHTTPSErrors: true,
+      },
+    },
+  ],
+  // The parity stack is already running, so the MSW build and storybook are not started for it.
+  webServer: process.env.E2E_PARITY === '1' ? undefined : [
+    {
+      // Built with VITE_MSW=1 so the browser worker answers the API from fixtures. The worker file is generated into this
+      // output only, so the plain build (check:bundle) and the committed tree never carry it.
+      command:
+        'VITE_MSW=1 pnpm exec vite build --outDir dist-e2e --emptyOutDir && pnpm exec msw init dist-e2e --save=false && pnpm exec vite preview --outDir dist-e2e --port 4173 --strictPort',
+      url: 'http://localhost:4173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    ...(process.env.E2E_SKIP_STORYBOOK === '1' ? [] : [storybookServer]),
+  ],
+});

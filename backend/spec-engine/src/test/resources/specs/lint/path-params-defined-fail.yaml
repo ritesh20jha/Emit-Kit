@@ -1,0 +1,7 @@
+openapi: 3.0.3
+info: {title: Pets, version: "1", description: Pet API, contact: {email: a@example.com}}
+servers: [{url: "https://api.example.com"}]
+# {id} is in the path template but no id parameter is declared
+paths:
+  /pets/{id}:
+    get: {operationId: getPet, description: Get a pet, tags: [pets], responses: {"200": {description: ok}}}

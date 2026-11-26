@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stub javac: logs argv to $STUB_LOG when set (argv[0] name, one arg per line, then ---), exits STUB_JAVAC_EXIT.
+[ -z "${STUB_LOG:-}" ] || printf '%s\n' "$(basename "$0")" "$@" '---' >> "$STUB_LOG"
+exit "${STUB_JAVAC_EXIT:-0}"

@@ -1,0 +1,6 @@
+const response = await fetch({{urlJs}}, {
+  method: "{{method}}",{{#hasBody}}
+  headers: { "Content-Type": "{{contentType}}" },
+  body: {{bodyJs}},{{/hasBody}}
+});
+console.log(response.status, await response.text());
