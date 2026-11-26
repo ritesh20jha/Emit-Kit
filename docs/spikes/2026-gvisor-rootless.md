@@ -1,5 +1,7 @@
 # SBX-01 spike: gVisor under a dedicated sandbox daemon
 
+> **Update 2026-11-26:** the sandbox now runs under Docker's standard `runc` in every profile (spec 5.6). gVisor (`runsc`) is optional: `deploy/sandbox/setup-rootless-gvisor.sh` registers it only when it is installed, and `self-check.sh` checks it with `SANDBOX_RUNTIME=runsc`. The dedicated rootful daemon (decision B) stays. The findings below are about gVisor and are kept as the record.
+
 **Question:** does gVisor (`runsc`) run under a dedicated Docker daemon with working `--cpus`, `--memory` and `--pids-limit`? (spec 5.6)
 
 **Decision: B, provisional.** Option A (rootless daemon + runsc) is ruled out on this host: kernel 7.0.0-43, runsc release-20261102.0, probed as uid 1000 (`ritesh`), not the dedicated `emitkit-sandbox` user. In every configuration tried it could not run a runsc container with cgroup limits. B (dedicated rootful daemon + runsc) passed every check, but only on the host's **system** daemon, which is a stand-in and not dedicated. The dedicated B setup was not executed (it needs root). B's socket is root-equivalent; see "Security under B".

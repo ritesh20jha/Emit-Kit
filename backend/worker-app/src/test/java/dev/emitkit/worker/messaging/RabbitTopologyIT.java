@@ -22,7 +22,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.rabbitmq.RabbitMQContainer;
 
-// runc under the test profile: the sandbox startup check must not need a sandbox daemon.
+// runc: the sandbox startup check must not need a sandbox daemon.
 @SpringBootTest(
     properties = {
       "emitkit.worker.listener.enabled=false",

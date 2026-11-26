@@ -9,7 +9,7 @@ The backend is a Java 21 / Spring Boot 4 modular monolith (`api-app` and `worker
 1. A user signs in with GitHub and connects a repository that holds an OpenAPI spec.
 2. A push to the default branch, or a manual run, queues a generation job on RabbitMQ.
 3. The worker fetches and parses the spec, lints it, diffs it against the last version, and picks the SemVer bump.
-4. It runs the generators inside a gVisor sandbox, checks that the output compiles, packages it, and commits it to a branch.
+4. It runs the generators inside a locked-down sandbox container, checks that the output compiles, packages it, and commits it to a branch.
 5. It opens a pull request. When that pull request merges, the release is tagged.
 
 Run logs stream to the browser over SSE. Secrets are encrypted through Vault Transit. Artifacts are stored in S3-compatible storage (RustFS).
@@ -20,7 +20,7 @@ Run logs stream to the browser over SSE. Secrets are encrypted through Vault Tra
 |---|---|
 | `backend/` | Gradle multi-module build: `common`, `domain`, `vcs`, `spec-engine`, `generators/*`, `ai`, `api-app`, `worker-app`, `architecture-tests`. See [backend/README.md](backend/README.md). |
 | `frontend/` | React SPA (Vite, pnpm, TanStack Router and Query, Tailwind v4, shadcn/ui, CodeMirror 6), Storybook and the Playwright suites. |
-| `deploy/` | Compose stacks (local, production, smoke, e2e), the Caddyfile, Vault bootstrap, backup scripts, the toolchain image and the gVisor sandbox setup. |
+| `deploy/` | Compose stacks (local, production, smoke, e2e), the Caddyfile, Vault bootstrap, backup scripts, the toolchain image and the sandbox daemon setup. |
 | `perf/` | k6 load tests. |
 | `scripts/` | CI helpers such as `pr-size.sh` and the restore drill. |
 | `docs/` | Runbooks, spikes and the design specs. |

@@ -8,7 +8,6 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /** Wires the sandbox Docker client, the runner, the startup check and the sweeper. */
@@ -28,10 +27,8 @@ class SandboxConfig {
   }
 
   @Bean
-  SandboxStartupCheck sandboxStartupCheck(
-      DockerClient dockerClient, SandboxProperties properties, Environment environment) {
-    return new SandboxStartupCheck(
-        () -> SandboxStartupCheck.runtimesOf(dockerClient), properties, environment);
+  SandboxStartupCheck sandboxStartupCheck(DockerClient dockerClient, SandboxProperties properties) {
+    return new SandboxStartupCheck(() -> SandboxStartupCheck.runtimesOf(dockerClient), properties);
   }
 
   @Bean

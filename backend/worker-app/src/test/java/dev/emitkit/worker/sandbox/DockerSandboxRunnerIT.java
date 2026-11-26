@@ -41,7 +41,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class DockerSandboxRunnerIT {
 
-  private static final String RUNTIME = System.getProperty("sandbox.runtime", "runsc");
+  private static final String RUNTIME = System.getProperty("sandbox.runtime", "runc");
   private static final String DOCKER_HOST =
       System.getProperty("sandbox.docker-host", "unix:///var/run/docker.sock");
   private static final String CHECK = "/usr/local/bin/testcheck.sh";
@@ -109,7 +109,8 @@ class DockerSandboxRunnerIT {
 
   @Test
   void cannotWriteOutsideWork() {
-    // /var/tmp is world-writable on the rootfs, so --read-only is the cause (/tmp is a tmpfs here).
+    // /var/tmp is world-writable on the rootfs, so --read-only is the cause (/tmp is memory-backed
+    // under runsc).
     assertThat(exec("touch /var/tmp/x 2>&1; echo $?"))
         .contains("Read-only file system")
         .endsWith("1");

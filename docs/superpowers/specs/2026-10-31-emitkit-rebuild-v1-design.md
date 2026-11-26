@@ -232,12 +232,10 @@ Implemented with `com.github.zafarkhaja:java-semver`.
 
 - Image `emitkit/toolchain:{ver}`: Node 20 (typescript, prettier), Python 3.12 (ruff), Temurin JDK 21 (javac, google-java-format).
 - The worker runs each check in a new container through `docker-java`, behind a `SandboxRunner` interface (v4 adds a Kubernetes Job implementation).
-- **gVisor runtime:** every sandbox container runs with gVisor (`runsc`) instead of the default `runc` runtime. gVisor puts its own user-space kernel between the container and the host, so generated code never makes system calls to the host kernel directly. In docker-java this is `HostConfig.withRuntime("runsc")`; all other settings below stay the same.
-  - Setting `emitkit.sandbox.runtime`: `runsc` (default) or `runc`. `runc` is allowed only with the `dev` or `test` profiles, for machines without gVisor installed.
-  - At startup the worker checks `docker info` for the `runsc` runtime. With the `prod` or `staging` profile, the worker refuses to start if it's missing.
-  - gVisor's platform is `systrap` (the default; works on VMs without nested virtualization).
-- **Separate Docker daemon:** sandbox containers run on a dedicated **rootless** Docker daemon, not the host's main daemon. The worker gets only that daemon's socket, so even an escape from gVisor lands in an unprivileged user account, not root on the host.
-  - gVisor + rootless Docker is a less common combination. Milestone 6 starts with a short spike to confirm it works with the limits below (cgroup v2 delegation for `--cpus`/`--memory`/`--pids-limit`). If it doesn't, the fallback is gVisor on a dedicated **rootful** sandbox daemon, still separate from the main daemon; gVisor then is the main isolation boundary.
+- **Runtime:** sandbox containers run under Docker's standard `runc` runtime, in every profile (changed 2026-11-26; this was gVisor-only before). Generated code therefore makes system calls to the host kernel directly; the isolation is the container settings below (no network, read-only rootfs, all capabilities dropped, no-new-privileges, Docker's default seccomp profile, non-root user, cgroup limits) and the separate daemon. In docker-java this is `HostConfig.withRuntime(...)`.
+  - Setting `emitkit.sandbox.runtime`: `runc` (default) or `runsc`. `runsc` (gVisor, platform `systrap`) is optional, for hosts that want a user-space kernel between generated code and the host.
+  - At startup the worker refuses an unknown runtime. With `runsc` it also checks `docker info` and refuses to start if the daemon does not list `runsc`. `runc` is built into Docker and is not checked.
+- **Separate Docker daemon:** sandbox containers run on a dedicated Docker daemon, not the host's main daemon, and the worker gets only that daemon's socket. The SBX-01 spike (`docs/spikes/2026-gvisor-rootless.md`) settled on a dedicated **rootful** daemon. Under `runc` a container escape is not stopped by a second kernel, so the container settings below are the main isolation boundary.
 - Container settings:
   - `--network none` (no network at all);
   - `--read-only` root filesystem, plus a `tmpfs` workspace at `/work` (512 MB);
@@ -251,11 +249,11 @@ Implemented with `com.github.zafarkhaja:java-semver`.
   - TS: `tsc --noEmit --strict` and `prettier --write`.
   - Python: `ruff check --fix` and `ruff format`.
   - Java: `javac` (against generated stubs plus vendored jars of declared dependencies) and `google-java-format`.
-- Local dev uses the same `DockerSandboxRunner`. It can point at the normal Docker daemon (`emitkit.sandbox.docker-host`) and use `runc` if gVisor isn't installed, which is fine on a dev machine.
+- Local dev uses the same `DockerSandboxRunner`. It can point at the normal Docker daemon (`emitkit.sandbox.docker-host`).
 - Tests:
-  - An integration test (runs in CI with gVisor installed) confirms the container really runs under gVisor: `dmesg` inside the container shows gVisor's boot messages.
+  - With `-Dsandbox.runtime=runsc`, an integration test confirms the container really runs under gVisor: `dmesg` inside the container shows gVisor's boot messages. CI runs the sandbox tests under `runc`.
   - Escape-attempt tests: no network (`curl` fails), can't write outside `/work`, runs as uid 10001, gets killed at the timeout, can't fork past the pids limit.
-  - The toolchain image gets a CI job that runs the full check suite under `runsc`, since a few tools behave differently there (file watching, some `/proc` files). `check.sh` turns off file watchers and runs tools in single-run mode.
+  - The toolchain image gets a CI job that runs the full check suite in the image under `runc`. `check.sh` turns off file watchers and runs tools in single-run mode, which also keeps it working under `runsc`, where a few tools behave differently (file watching, some `/proc` files).
 
 ---
 

@@ -31,7 +31,7 @@ import org.testcontainers.utility.DockerImageName;
       "emitkit.worker.pipeline.enabled=true",
       "emitkit.vault.cipher=local",
       "spring.flyway.enabled=true",
-      // runc is allowed only under dev/test, and the startup check then never reads the daemon.
+      // With runc the startup check never reads the daemon, so no sandbox daemon is needed.
       "emitkit.sandbox.runtime=runc"
     })
 @ActiveProfiles("test")

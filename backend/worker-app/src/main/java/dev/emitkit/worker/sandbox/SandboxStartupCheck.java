@@ -8,26 +8,22 @@ import java.util.Set;
 import java.util.function.Supplier;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 
 /**
  * Stops the worker from starting with a sandbox runtime that is not allowed or not installed (spec
- * 5.6). A failure is an {@link IllegalStateException}, not a {@link SandboxInfraException}: at boot
- * it is fatal, not a transient per-job error.
+ * 5.6). runc is the default and is accepted under every profile; runsc (gVisor) is optional and
+ * must be registered on the sandbox daemon. A failure is an {@link IllegalStateException}, not a
+ * {@link SandboxInfraException}: at boot it is fatal, not a transient per-job error.
  */
 class SandboxStartupCheck implements ApplicationRunner {
 
   private final Supplier<Set<String>> daemonRuntimes;
   private final SandboxProperties properties;
-  private final Environment environment;
 
   /** {@code daemonRuntimes} returns the runtime names the sandbox daemon reports. */
-  SandboxStartupCheck(
-      Supplier<Set<String>> daemonRuntimes, SandboxProperties properties, Environment environment) {
+  SandboxStartupCheck(Supplier<Set<String>> daemonRuntimes, SandboxProperties properties) {
     this.daemonRuntimes = Objects.requireNonNull(daemonRuntimes, "daemonRuntimes");
     this.properties = Objects.requireNonNull(properties, "properties");
-    this.environment = Objects.requireNonNull(environment, "environment");
   }
 
   @Override
@@ -36,9 +32,10 @@ class SandboxStartupCheck implements ApplicationRunner {
   }
 
   /**
-   * Throws {@link IllegalStateException} unless the configured runtime is runsc, or runc under the
-   * dev or test profile (spec 5.6). An unknown or blank value fails too: an empty runtime would
-   * silently run under the daemon default.
+   * Throws {@link IllegalStateException} unless the configured runtime is runc, or runsc that the
+   * sandbox daemon lists (spec 5.6). runc is built into Docker, so the daemon is not read for it.
+   * An unknown or blank value fails too: an empty runtime would silently run under the daemon
+   * default.
    */
   void check() {
     String runtime = properties.runtime();
@@ -52,13 +49,6 @@ class SandboxStartupCheck implements ApplicationRunner {
               + SandboxSweeper.MAX_RUN
               + " so the sweeper cannot remove a live run, got "
               + properties.timeout());
-    }
-    // prod and staging win over any dev or test entry, so "dev,prod" still rejects runc.
-    if ("runc".equals(runtime)
-        && (environment.acceptsProfiles(Profiles.of("prod", "staging"))
-            || !environment.acceptsProfiles(Profiles.of("dev", "test")))) {
-      throw new IllegalStateException(
-          "emitkit.sandbox.runtime=runc: runc is only allowed in dev/test");
     }
     if ("runsc".equals(runtime) && !daemonRuntimes().contains("runsc")) {
       throw new IllegalStateException(

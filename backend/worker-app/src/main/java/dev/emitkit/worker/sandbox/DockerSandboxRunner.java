@@ -36,9 +36,10 @@ import org.slf4j.LoggerFactory;
  * <p><b>Known risk:</b> {@code /io/out} is a writable anonymous volume on the daemon's disk, not a
  * tmpfs, so the {@code /work} limits do not bound it. Untrusted output is streamed past the caps
  * too, so copy-out bytes are bounded only by that disk. The run timeout limits the exposure, and
- * deployment (OPS-01) puts the daemon's data-root on a size-bounded filesystem. {@code /dev/shm}
- * and runsc's {@code /tmp} are memory-backed and die with the container, so "cannot write outside
- * /work" means no persistent writes.
+ * deployment (OPS-01) puts the daemon's data-root on a size-bounded filesystem. {@code /dev/shm} is
+ * memory-backed and dies with the container. {@code /tmp} is read-only under runc (the read-only
+ * rootfs) and memory-backed under runsc. So "cannot write outside /work" means no persistent
+ * writes.
  */
 public class DockerSandboxRunner implements SandboxRunner {
 

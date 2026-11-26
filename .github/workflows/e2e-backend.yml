@@ -33,21 +33,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Same pinned, sha256-checked runsc install as backend.yml. The sandbox runs under gVisor (spec 5.6).
-      - name: Install gVisor runsc
-        # Keep RUNSC_VERSION and RUNSC_SHA256 in sync with .github/workflows/backend.yml.
-        env:
-          RUNSC_VERSION: '20261102.0'
-          RUNSC_SHA256: 81e3ecc4bb0d3eb321f5cf357e97a26daea91c6dc70ec30c9240cd481e6cf2da
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/runsc.deb" "https://storage.googleapis.com/gvisor/releases/pool/${RUNSC_VERSION}/binary-amd64/runsc.deb"
-          echo "${RUNSC_SHA256}  $RUNNER_TEMP/runsc.deb" | sha256sum -c -
-          sudo dpkg -i "$RUNNER_TEMP/runsc.deb"
-          sudo runsc install
-          sudo systemctl restart docker
-          timeout 60 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
-          docker info --format '{{json .Runtimes}}'
-
       - name: Build toolchain image
         run: docker build -t emitkit/toolchain:test deploy/docker/toolchain
 
@@ -57,7 +42,7 @@ jobs:
         run: >-
           ./gradlew :worker-app:test --tests '*WRK12PipelineE2EIT*'
           -De2e.required=true
-          -Dsandbox.runtime=runsc
+          -Dsandbox.runtime=runc
 
       - name: Upload Gradle test reports
         if: failure()

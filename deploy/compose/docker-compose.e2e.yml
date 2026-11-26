@@ -46,10 +46,10 @@ services:
     environment:
       EMITKIT_GITHUB_API_URL: http://github:8089
       EMITKIT_WORKER_PIPELINE_ENABLED: "true"
-      # The sandbox runs the toolchain image built for the e2e stack, under the gVisor runtime of the sandbox daemon. The
+      # The sandbox runs the toolchain image built for the e2e stack, under runc on the sandbox daemon. The
       # docker host is the one prod already sets (EMITKIT_SANDBOX_DOCKER_HOST: unix:///run/emitkit-sandbox/docker.sock).
       EMITKIT_SANDBOX_IMAGE: ${E2E_TOOLCHAIN_IMAGE:-emitkit/toolchain:test}
-      EMITKIT_SANDBOX_RUNTIME: runsc
+      EMITKIT_SANDBOX_RUNTIME: runc
     # E2E_SANDBOX_SOCKET picks a real sandbox daemon socket; unset, the placeholder that e2e.sh creates is used.
     volumes: !override
       - ${E2E_SANDBOX_SOCKET:-./e2e-secrets/sandbox.sock}:/run/emitkit-sandbox/docker.sock

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Sets up a dedicated sandbox Docker daemon with gVisor (runsc), separate from the host daemon (spec 5.6).
+# Sets up a dedicated sandbox Docker daemon, separate from the host daemon (spec 5.6). Containers run under runc;
+# gVisor (runsc) is registered as an optional runtime when it is installed.
 #   sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootful
 #   sudo bash deploy/sandbox/setup-rootless-gvisor.sh --mode rootless --i-know-runsc-fails-rootless
 #   rootful  (option B, the spike decision): systemd-managed dockerd; socket unix:///run/emitkit-sandbox/docker.sock.
@@ -33,23 +34,23 @@ case "$MODE" in
 esac
 [ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
 
+# The sandbox runs under Docker's built-in runc (spec 5.6), so gVisor is not required.
+# When gVisor is installed it is registered as the optional runsc runtime (emitkit.sandbox.runtime=runsc).
 # runsc is used in place, not copied: current gVisor releases load sidecar binaries (gvisor_sentry and others)
 # from a gvisor-bin/ directory next to runsc, so a lone copy fails with 'sidecar "gvisor_sentry" not usable'.
-# Using the package path also means apt upgrades reach the sandbox daemon.
 RUNSC=${RUNSC:-/usr/bin/runsc}
-[ -x "$RUNSC" ] || { echo "runsc not found at $RUNSC; install gVisor or set RUNSC" >&2; exit 1; }
-[ -x "$(dirname "$RUNSC")/gvisor-bin/gvisor_sentry" ] || {
-  echo "missing $(dirname "$RUNSC")/gvisor-bin/gvisor_sentry; runsc needs its gvisor-bin/ sidecars beside it" >&2
-  exit 1
-}
 # SECURITY: under --mode rootful, whoever can use the socket (group emitkit-sandbox) has root on the host.
-# default-runtime runsc is defence in depth only: a client can still ask for --runtime=runc.
 # See "Security under B" in docs/spikes/2026-gvisor-rootless.md. Who joins the group is an OPS-01 decision.
-DAEMON_JSON='{"default-runtime":"runsc","runtimes":{"runsc":{"path":"'"$RUNSC"'","runtimeArgs":["--platform=systrap"]}}}'
+if [ -x "$RUNSC" ] && [ -x "$(dirname "$RUNSC")/gvisor-bin/gvisor_sentry" ]; then
+  DAEMON_JSON='{"runtimes":{"runsc":{"path":"'"$RUNSC"'","runtimeArgs":["--platform=systrap"]}}}'
+  "$RUNSC" --version
+else
+  echo "gVisor not found at $RUNSC (with gvisor-bin/ sidecars); registering runc only" >&2
+  DAEMON_JSON='{}'
+fi
 UID_SANDBOX=10010
 
 id -u emitkit-sandbox >/dev/null 2>&1 || useradd --uid "$UID_SANDBOX" --create-home --shell /usr/sbin/nologin emitkit-sandbox
-"$RUNSC" --version
 
 if [ "$MODE" = rootless ]; then
   grep -q '^emitkit-sandbox:' /etc/subuid || usermod --add-subuids 100000-165535 --add-subgids 100000-165535 emitkit-sandbox
@@ -68,7 +69,7 @@ else
   printf '%s\n' "$DAEMON_JSON" > /etc/emitkit-sandbox/daemon.json
   cat > /etc/systemd/system/emitkit-sandbox-docker.service <<'UNIT'
 [Unit]
-Description=EmitKit sandbox Docker daemon (gVisor, dedicated)
+Description=EmitKit sandbox Docker daemon (dedicated)
 
 [Service]
 RuntimeDirectory=emitkit-sandbox
@@ -81,8 +82,10 @@ Restart=on-failure
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
-  systemctl enable --now emitkit-sandbox-docker.service
-  # The unit is Type=simple, so "enable --now" returns before dockerd listens. Wait for it.
+  systemctl enable emitkit-sandbox-docker.service
+  # restart, not "start": a re-run must apply the new daemon.json to a daemon that is already running.
+  systemctl restart emitkit-sandbox-docker.service
+  # The unit is Type=simple, so "restart" returns before dockerd listens. Wait for it.
   SOCK=unix:///run/emitkit-sandbox/docker.sock
   for _ in $(seq 30); do docker -H "$SOCK" info >/dev/null 2>&1 && break; sleep 1; done
   docker -H "$SOCK" info >/dev/null || { echo "dedicated daemon not ready at $SOCK" >&2; exit 1; }

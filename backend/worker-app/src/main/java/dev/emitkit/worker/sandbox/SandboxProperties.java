@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("emitkit.sandbox")
 public record SandboxProperties(
     @DefaultValue("unix:///run/emitkit-sandbox/docker.sock") String dockerHost,
-    @DefaultValue("runsc") String runtime,
+    @DefaultValue("runc") String runtime,
     @DefaultValue("4") int maxConcurrent,
     @DefaultValue("180s") Duration timeout,
     @DefaultValue("emitkit/toolchain:1") String image,

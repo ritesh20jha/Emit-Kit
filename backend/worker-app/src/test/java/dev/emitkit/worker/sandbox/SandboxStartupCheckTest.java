@@ -8,68 +8,29 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.mock.env.MockEnvironment;
 
 class SandboxStartupCheckTest {
 
+  /**
+   * runc is the default runtime (spec 5.6) and is built into every Docker daemon, so the check
+   * accepts it without reading the daemon. The supplier would throw if it were called.
+   */
   @Test
-  void prodWithRuncRuntime_failsStartup() {
-    var check = check("runc", Set.of("runc"), "prod");
+  void runc_startsWithoutReadingTheDaemon() {
+    var check =
+        new SandboxStartupCheck(
+            () -> {
+              throw new AssertionError("daemon must not be read for runc");
+            },
+            properties("runc"));
 
-    assertThatThrownBy(check::check)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("runc is only allowed in dev/test");
-  }
-
-  @Test
-  void stagingWithRuncRuntime_failsStartup() {
-    var check = check("runc", Set.of("runc"), "staging");
-
-    assertThatThrownBy(check::check)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("runc is only allowed in dev/test");
-  }
-
-  @Test
-  void runc_noProfile_failsStartup() {
-    var check = check("runc", Set.of("runc"));
-
-    assertThatThrownBy(check::check)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("runc is only allowed in dev/test");
-  }
-
-  @Test
-  void runc_withProdAndOtherProfile_failsStartup() {
-    var check = check("runc", Set.of("runc"), "prod", "foo");
-
-    assertThatThrownBy(check::check)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("runc is only allowed in dev/test");
-  }
-
-  @Test
-  void runc_devAndProd_failsStartup() {
-    var check = check("runc", Set.of("runc"), "dev", "prod");
-
-    assertThatThrownBy(check::check)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("runc is only allowed in dev/test");
-  }
-
-  @Test
-  void runc_devAndStaging_failsStartup() {
-    var check = check("runc", Set.of("runc"), "dev", "staging");
-
-    assertThatThrownBy(check::check)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("runc is only allowed in dev/test");
+    assertThatCode(check::check).doesNotThrowAnyException();
   }
 
   @ParameterizedTest
   @ValueSource(strings = {"kata", "RUNSC", "runsc "})
   void unknownRuntime_failsStartup(String runtime) {
-    var check = check(runtime, Set.of("runc", "runsc"), "dev");
+    var check = check(runtime, Set.of("runc", "runsc"));
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
@@ -80,7 +41,7 @@ class SandboxStartupCheckTest {
   @ParameterizedTest
   @ValueSource(strings = {"", " "})
   void blankRuntime_failsStartup(String runtime) {
-    var check = check(runtime, Set.of("runc", "runsc"), "dev");
+    var check = check(runtime, Set.of("runc", "runsc"));
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
@@ -89,7 +50,7 @@ class SandboxStartupCheckTest {
 
   @Test
   void runscMissingFromDocker_failsStartup() {
-    var check = check("runsc", Set.of("runc"), "prod");
+    var check = check("runsc", Set.of("runc"));
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
@@ -103,8 +64,7 @@ class SandboxStartupCheckTest {
             () -> {
               throw new IllegalArgumentException("connection refused");
             },
-            properties("runsc"),
-            environment("prod"));
+            properties("runsc"));
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
@@ -112,22 +72,8 @@ class SandboxStartupCheckTest {
   }
 
   @Test
-  void devWithRunc_starts() {
-    var check = check("runc", Set.of(), "dev");
-
-    assertThatCode(check::check).doesNotThrowAnyException();
-  }
-
-  @Test
-  void testWithRunc_starts() {
-    var check = check("runc", Set.of(), "test");
-
-    assertThatCode(check::check).doesNotThrowAnyException();
-  }
-
-  @Test
   void runscPresentInDocker_starts() {
-    var check = check("runsc", Set.of("runc", "runsc"), "prod");
+    var check = check("runsc", Set.of("runc", "runsc"));
 
     assertThatCode(check::check).doesNotThrowAnyException();
   }
@@ -135,7 +81,7 @@ class SandboxStartupCheckTest {
   @Test
   void runscMatchIsExact_notPrefix() {
     // A daemon listing "runsc-shim" does not provide the runsc runtime.
-    var check = check("runsc", Set.of("runc", "runsc-shim"), "prod");
+    var check = check("runsc", Set.of("runc", "runsc-shim"));
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
@@ -145,8 +91,7 @@ class SandboxStartupCheckTest {
   @Test
   void timeoutAtSweeperBound_failsStartup() {
     var check =
-        new SandboxStartupCheck(
-            () -> Set.of("runsc"), properties("runsc", Duration.ofMinutes(9)), environment("prod"));
+        new SandboxStartupCheck(() -> Set.of("runsc"), properties("runsc", Duration.ofMinutes(9)));
 
     assertThatThrownBy(check::check)
         .isInstanceOf(IllegalStateException.class)
@@ -157,17 +102,13 @@ class SandboxStartupCheckTest {
   void timeoutJustBelowSweeperBound_starts() {
     var check =
         new SandboxStartupCheck(
-            () -> Set.of("runsc"),
-            properties("runsc", Duration.ofMinutes(9).minusSeconds(1)),
-            environment("prod"));
+            () -> Set.of("runsc"), properties("runsc", Duration.ofMinutes(9).minusSeconds(1)));
 
     assertThatCode(check::check).doesNotThrowAnyException();
   }
 
-  private static SandboxStartupCheck check(
-      String runtime, Set<String> daemonRuntimes, String... profiles) {
-    return new SandboxStartupCheck(
-        () -> daemonRuntimes, properties(runtime), environment(profiles));
+  private static SandboxStartupCheck check(String runtime, Set<String> daemonRuntimes) {
+    return new SandboxStartupCheck(() -> daemonRuntimes, properties(runtime));
   }
 
   private static SandboxProperties properties(String runtime) {
@@ -182,11 +123,5 @@ class SandboxStartupCheckTest {
         timeout,
         "emitkit/toolchain:1",
         "/usr/local/bin/check.sh");
-  }
-
-  private static MockEnvironment environment(String... profiles) {
-    var env = new MockEnvironment();
-    env.setActiveProfiles(profiles);
-    return env;
   }
 }

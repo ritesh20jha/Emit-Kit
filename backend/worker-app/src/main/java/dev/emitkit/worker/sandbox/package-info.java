@@ -1,2 +1,5 @@
-/** Runs generated code in gVisor sandbox containers on the dedicated sandbox Docker daemon. */
+/**
+ * Runs generated code in locked-down sandbox containers (runc, or optional gVisor runsc) on the
+ * dedicated sandbox Docker daemon.
+ */
 package dev.emitkit.worker.sandbox;
