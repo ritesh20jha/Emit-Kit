@@ -104,6 +104,66 @@ test("root redirects to last used org, falls back to personal", async () => {
   await waitFor(() => expect(fallback.state.location.pathname).toBe("/orgs/org2"));
 });
 
+describe("first sign-in, before the login org sync has landed", () => {
+  const noOrgs: Me = { ...defaultMe, orgs: [] };
+
+  test("/ syncs orgs itself and opens the personal org without a reload", async () => {
+    let synced = false;
+    let syncCalls = 0;
+    server.use(
+      http.get("/api/v1/me", () => HttpResponse.json(synced ? personalMe : noOrgs)),
+      http.post("/api/v1/me/sync-orgs", () => {
+        syncCalls += 1;
+        synced = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: ["/"] }));
+    render(<QueryClientProvider client={queryClient}><ThemeProvider><RouterProvider router={router} /></ThemeProvider></QueryClientProvider>);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/org2"));
+    expect(syncCalls).toBe(1);
+  });
+
+  test("a sync that ran moments ago (429) still re-reads the session", async () => {
+    let reads = 0;
+    server.use(
+      // The login sync lands between the first read and the re-read.
+      http.get("/api/v1/me", () => HttpResponse.json(++reads === 1 ? noOrgs : personalMe)),
+      http.post("/api/v1/me/sync-orgs", () =>
+        HttpResponse.json({ status: 429, code: "RATE_LIMITED", detail: "Sync ran less than a minute ago" }, { status: 429 })),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: ["/"] }));
+    render(<QueryClientProvider client={queryClient}><ThemeProvider><RouterProvider router={router} /></ThemeProvider></QueryClientProvider>);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/org2"));
+  });
+
+  test("a failed sync leaves the empty state with a retry that syncs again", async () => {
+    const user = userEvent.setup();
+    let fail = true;
+    server.use(
+      http.get("/api/v1/me", () => HttpResponse.json(fail ? noOrgs : personalMe)),
+      http.post("/api/v1/me/sync-orgs", () => {
+        if (fail) return HttpResponse.json({ status: 502, code: "VCS_AUTH" }, { status: 502 });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: ["/"] }));
+    render(<QueryClientProvider client={queryClient}><ThemeProvider><RouterProvider router={router} /></ThemeProvider></QueryClientProvider>);
+
+    expect(await screen.findByRole("heading", { name: "No organizations yet" })).toBeInTheDocument();
+    expect(screen.getByText("GitHub access was revoked or expired. Reconnect GitHub and try again.")).toBeInTheDocument();
+
+    fail = false;
+    await user.click(screen.getByRole("button", { name: "Sync from GitHub" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/org2"));
+  });
+});
+
 test("switching org updates the URL and remembers it", async () => {
   const user = userEvent.setup();
   renderWithProviders(<><OrgSwitcher orgs={personalMe.orgs} currentOrgId="org1" /><Where /></>, { route: "/orgs/org1", me: personalMe });
