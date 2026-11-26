@@ -33,20 +33,23 @@ case "$MODE" in
 esac
 [ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
 
-RUNSC_SRC=${RUNSC_SRC:-/usr/bin/runsc}
+# runsc is used in place, not copied: current gVisor releases load sidecar binaries (gvisor_sentry and others)
+# from a gvisor-bin/ directory next to runsc, so a lone copy fails with 'sidecar "gvisor_sentry" not usable'.
+# Using the package path also means apt upgrades reach the sandbox daemon.
+RUNSC=${RUNSC:-/usr/bin/runsc}
+[ -x "$RUNSC" ] || { echo "runsc not found at $RUNSC; install gVisor or set RUNSC" >&2; exit 1; }
+[ -x "$(dirname "$RUNSC")/gvisor-bin/gvisor_sentry" ] || {
+  echo "missing $(dirname "$RUNSC")/gvisor-bin/gvisor_sentry; runsc needs its gvisor-bin/ sidecars beside it" >&2
+  exit 1
+}
 # SECURITY: under --mode rootful, whoever can use the socket (group emitkit-sandbox) has root on the host.
 # default-runtime runsc is defence in depth only: a client can still ask for --runtime=runc.
 # See "Security under B" in docs/spikes/2026-gvisor-rootless.md. Who joins the group is an OPS-01 decision.
-DAEMON_JSON='{"default-runtime":"runsc","runtimes":{"runsc":{"path":"/usr/local/bin/runsc","runtimeArgs":["--platform=systrap"]}}}'
+DAEMON_JSON='{"default-runtime":"runsc","runtimes":{"runsc":{"path":"'"$RUNSC"'","runtimeArgs":["--platform=systrap"]}}}'
 UID_SANDBOX=10010
 
 id -u emitkit-sandbox >/dev/null 2>&1 || useradd --uid "$UID_SANDBOX" --create-home --shell /usr/sbin/nologin emitkit-sandbox
-if [ "$(readlink -f "$RUNSC_SRC")" = /usr/local/bin/runsc ]; then
-  echo "RUNSC_SRC is already /usr/local/bin/runsc; skipping copy" >&2
-else
-  install -m 0755 "$RUNSC_SRC" /usr/local/bin/runsc
-fi
-/usr/local/bin/runsc --version
+"$RUNSC" --version
 
 if [ "$MODE" = rootless ]; then
   grep -q '^emitkit-sandbox:' /etc/subuid || usermod --add-subuids 100000-165535 --add-subgids 100000-165535 emitkit-sandbox
