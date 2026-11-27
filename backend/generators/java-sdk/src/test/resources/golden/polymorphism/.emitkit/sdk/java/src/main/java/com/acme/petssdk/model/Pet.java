@@ -10,7 +10,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     property = "petType",
     visible = true)
 @JsonSubTypes({
-  @JsonSubTypes.Type(value = Cat.class, name = "Cat"),
-  @JsonSubTypes.Type(value = Dog.class, name = "Dog")
+  @JsonSubTypes.Type(value = Cat.class, name = "cat"),
+  @JsonSubTypes.Type(value = Dog.class, name = "dog")
 })
 public sealed interface Pet permits Cat, Dog {}

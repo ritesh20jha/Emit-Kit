@@ -1,5 +1,7 @@
 package dev.emitkit.spec.model;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -21,7 +23,9 @@ public record OneOfSchema(
   public OneOfSchema {
     options = List.copyOf(Objects.requireNonNull(options, "options"));
     // Null when a snapshot written before the mapping existed is read back.
-    mapping = mapping == null ? Map.of() : Map.copyOf(mapping);
+    // A LinkedHashMap keeps the document order, which generators rely on for stable output.
+    mapping =
+        mapping == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(mapping));
   }
 
   /** A oneOf with no discriminator mapping. */

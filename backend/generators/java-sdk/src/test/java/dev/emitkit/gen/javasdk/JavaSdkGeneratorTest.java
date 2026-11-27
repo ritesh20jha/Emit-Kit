@@ -42,7 +42,8 @@ class JavaSdkGeneratorTest {
         "no-operation-ids",
         "reserved-words",
         "deep-nesting",
-        "multi-tag"
+        "multi-tag",
+        "bookshelf"
       })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
@@ -80,6 +81,46 @@ class JavaSdkGeneratorTest {
         .contains("public record Cat(", "implements Pet");
     assertThat(content(files, SRC + "resources/DefaultApi.java"))
         .contains("public JsonNode listShapes()");
+  }
+
+  @Test
+  void discriminatorSubtypesAreNamedByTheMappingValue() {
+    assertThat(content("bookshelf", SRC + "model/BookFormat.java"))
+        .contains(
+            "@JsonSubTypes.Type(value = PrintFormat.class, name = \"print\")",
+            "@JsonSubTypes.Type(value = EbookFormat.class, name = \"ebook\")",
+            "@JsonSubTypes.Type(value = AudioFormat.class, name = \"audio\")");
+  }
+
+  @Test
+  void discriminatorSubtypeNameFallsBackToTheSingleEnumValueThenTheSchemaName() {
+    // Circle is named by the mapping, which beats its enum; Square has no mapping, so its
+    // single enum value names it; Triangle has neither, so the schema name does.
+    var shapes =
+        """
+        openapi: 3.0.3
+        info: {title: Shapes, version: 1.0.0}
+        paths: {}
+        components:
+          schemas:
+            Shape:
+              oneOf:
+                - $ref: '#/components/schemas/Circle'
+                - $ref: '#/components/schemas/Square'
+                - $ref: '#/components/schemas/Triangle'
+              discriminator:
+                propertyName: kind
+                mapping:
+                  round: '#/components/schemas/Circle'
+            Circle: {type: object, required: [kind], properties: {kind: {type: string, enum: [circle]}}}
+            Square: {type: object, required: [kind], properties: {kind: {type: string, enum: [square]}}}
+            Triangle: {type: object, properties: {kind: {type: string}}}
+        """;
+    assertThat(content(generateFrom(shapes), SRC + "model/Shape.java"))
+        .contains(
+            "@JsonSubTypes.Type(value = Circle.class, name = \"round\")",
+            "@JsonSubTypes.Type(value = Square.class, name = \"square\")",
+            "@JsonSubTypes.Type(value = Triangle.class, name = \"Triangle\")");
   }
 
   @Test

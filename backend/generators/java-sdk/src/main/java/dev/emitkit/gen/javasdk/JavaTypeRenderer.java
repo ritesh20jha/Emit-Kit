@@ -336,13 +336,11 @@ final class JavaTypeRenderer {
       String raw = ((RefSchema) option).name();
       String type = java.type(raw);
       permits.add(type);
-      // TODO(spec-engine): OneOfSchema drops discriminator mapping; subtype names fall back to
-      // schema names.
       subtypes.add(
           "@JsonSubTypes.Type(value = "
               + type
               + ".class, name = "
-              + JavaClientView.quote(raw)
+              + JavaClientView.quote(subtypeName(union, raw))
               + ")");
     }
     String body =
@@ -363,6 +361,23 @@ final class JavaTypeRenderer {
                 name,
                 String.join(", ", permits));
     return indented(doc(union.description()) + body, scope.indent);
+  }
+
+  /**
+   * The discriminator value that names one option of a sealed oneOf: the value the document maps to
+   * it, else the single value its discriminator property allows, else its schema name.
+   */
+  private String subtypeName(OneOfSchema union, String raw) {
+    for (var entry : union.mapping().entrySet()) {
+      if (entry.getValue().equals(raw)) {
+        return entry.getKey();
+      }
+    }
+    Schema property = propsOf(target(raw)).properties().get(union.discriminator());
+    if (property instanceof EnumSchema e && e.values().size() == 1) {
+      return e.values().get(0);
+    }
+    return raw;
   }
 
   /** Claims {@code name} for {@code raw}. Fails when another original name already has it. */
