@@ -277,7 +277,7 @@ def _retry_delay(response: httpx.Response, attempt: int) -> float:
     MAX_RETRY_AFTER_SECONDS, or the exponential backoff when the response has none."""
     retry_after = _parse_retry_after(response.headers.get("Retry-After"))
     if retry_after is None:
-        return RETRY_BASE_DELAY_SECONDS * 2**attempt
+        return RETRY_BASE_DELAY_SECONDS * float(2**attempt)
     return min(retry_after, MAX_RETRY_AFTER_SECONDS)
 
 

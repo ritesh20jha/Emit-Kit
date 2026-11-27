@@ -449,6 +449,7 @@ class PythonSdkGeneratorTest {
         .contains("def _may_retry(")
         .contains("def _retry_delay(")
         .contains("def _parse_retry_after(")
+        .contains("return RETRY_BASE_DELAY_SECONDS * float(2**attempt)")
         .contains("if not _may_retry(method, request_headers, response.status_code)")
         .contains("await asyncio.sleep(delay)");
   }
