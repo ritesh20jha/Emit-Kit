@@ -15,17 +15,26 @@ import { DefaultResource } from "./resources/default.js";
 const DEFAULT_BASE_URL = "";
 const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 500;
+const MAX_RETRY_AFTER_MS = 30_000;
+/** Methods that may be repeated without an Idempotency-Key, so they are retried on 429 and 5xx. */
+const REPLAY_SAFE_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE", "OPTIONS"]);
 
 /** Credentials for the security schemes the API declares. Each field exists only for a declared scheme. */
 export interface AuthOptions {
 }
 
 /**
- * Options for one request. Resource methods pass these to `request`. In `query`, undefined and null
- * values are skipped and arrays are comma-joined.
+ * Options for one request. Resource methods pass these to `request`. In `query`, `headers` and
+ * `cookies`, undefined and null values are skipped and arrays are comma-joined.
  */
 export interface RequestOptions {
   query?: Record<string, unknown>;
+  /** Header parameters, keyed by header name. */
+  headers?: Record<string, unknown>;
+  /** Cookie parameters, keyed by cookie name. Values are URL-encoded and sent in one Cookie header. */
+  cookies?: Record<string, unknown>;
+  /** Names of the security schemes in the operation's effective security requirement. Empty sends no credentials. */
+  security?: readonly string[];
   body?: unknown;
 }
 
@@ -34,13 +43,29 @@ export interface Requester {
   request(method: string, path: string, options?: RequestOptions): Promise<Response>;
 }
 
+/** How one security scheme sends its credential. */
+type AuthScheme =
+  | { kind: "apiKey"; location: "header" | "query"; name: string }
+  | { kind: "bearer" }
+  | { kind: "basic" };
+
+/** The API's security schemes, keyed by the names that operations use in their security requirements. */
+const SECURITY_SCHEMES: Record<string, AuthScheme> = {
+};
+
+/** The credential values the client holds, each already in the form its scheme sends. */
+interface Credentials {
+  apiKey?: string;
+  bearer?: string;
+  basic?: string;
+}
+
 /** Client for the Enums API. */
 export class EnumsClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly maxRetries: number;
-  private readonly authHeaders: Record<string, string> = {};
-  private readonly authQuery: Record<string, string> = {};
+  private readonly credentials: Credentials = {};
   readonly default_: DefaultResource;
 
   constructor(opts: { baseUrl?: string; fetch?: typeof fetch; maxRetries?: number } & AuthOptions) {
@@ -59,9 +84,11 @@ export class EnumsClient {
   }
 
   /**
-   * Sends a request with the configured credentials. 429 and 5xx responses are retried with
-   * exponential backoff, up to maxRetries times. Any other non-2xx status throws an ApiError
-   * subclass. Resolves with the successful response for the caller to parse.
+   * Sends a request. Only the credentials of the schemes named in `options.security` are sent.
+   * 429 and 5xx responses are retried, up to maxRetries times, when the method is replay-safe or
+   * the request has an Idempotency-Key. The wait is the Retry-After header when present (capped at
+   * 30 seconds), else exponential backoff. Any other non-2xx status throws an ApiError subclass.
+   * Resolves with the successful response for the caller to parse.
    *
    * @internal Used by the resource classes. Call the resource methods instead.
    */
@@ -71,20 +98,34 @@ export class EnumsClient {
     options: RequestOptions = {},
   ): Promise<Response> {
     const url = new URL(this.baseUrl + path);
-    for (const [name, value] of Object.entries(this.authQuery)) {
+    const auth = this.authFor(options.security ?? []);
+    for (const [name, value] of Object.entries(auth.query)) {
       url.searchParams.set(name, value);
     }
     for (const [name, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined && value !== null) {
-        url.searchParams.set(name, queryValue(value));
+        url.searchParams.set(name, paramValue(value));
       }
     }
-    const headers = new Headers(this.authHeaders);
+    const headers = new Headers(auth.headers);
+    for (const [name, value] of Object.entries(options.headers ?? {})) {
+      if (value !== undefined && value !== null) {
+        headers.set(name, paramValue(value));
+      }
+    }
+    const cookies = Object.entries(options.cookies ?? {})
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([name, value]) => `${name}=${encodeURIComponent(paramValue(value))}`);
+    if (cookies.length > 0) {
+      headers.set("Cookie", cookies.join("; "));
+    }
     const init: RequestInit = { method, headers };
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
       init.body = JSON.stringify(options.body);
     }
+    const replaySafe =
+      REPLAY_SAFE_METHODS.has(method.toUpperCase()) || headers.has("Idempotency-Key");
     // Called unbound: native fetch throws "Illegal invocation" when its receiver is not the global.
     const fetchImpl = this.fetchImpl;
     for (let attempt = 0; ; attempt++) {
@@ -92,17 +133,77 @@ export class EnumsClient {
       if (response.ok) {
         return response;
       }
-      if (!isRetryable(response.status) || attempt >= this.maxRetries) {
+      if (!replaySafe || !isRetryable(response.status) || attempt >= this.maxRetries) {
         throw await toApiError(response);
       }
+      const delayMs = retryDelayMs(response, attempt);
       await response.body?.cancel().catch(() => {});
-      await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+      await sleep(delayMs);
     }
+  }
+
+  /** The headers and query parameters that the named security schemes call for. */
+  private authFor(schemes: readonly string[]): {
+    headers: Record<string, string>;
+    query: Record<string, string>;
+  } {
+    const headers: Record<string, string> = {};
+    const query: Record<string, string> = {};
+    for (const name of schemes) {
+      const scheme = SECURITY_SCHEMES[name];
+      if (scheme === undefined) {
+        continue;
+      }
+      switch (scheme.kind) {
+        case "apiKey": {
+          const apiKey = this.credentials.apiKey;
+          if (apiKey !== undefined) {
+            const target = scheme.location === "header" ? headers : query;
+            target[scheme.name] = apiKey;
+          }
+          break;
+        }
+        case "bearer":
+          if (this.credentials.bearer !== undefined) {
+            headers["Authorization"] = this.credentials.bearer;
+          }
+          break;
+        case "basic":
+          // A bearer token takes precedence over basic credentials.
+          if (this.credentials.basic !== undefined && headers["Authorization"] === undefined) {
+            headers["Authorization"] = this.credentials.basic;
+          }
+          break;
+      }
+    }
+    return { headers, query };
   }
 }
 
 function isRetryable(status: number): boolean {
   return status === 429 || status >= 500;
+}
+
+/** The wait before a retry: Retry-After when the response has it (capped), else exponential backoff. */
+function retryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
+  if (retryAfter !== undefined) {
+    return Math.min(retryAfter, MAX_RETRY_AFTER_MS);
+  }
+  return RETRY_BASE_DELAY_MS * 2 ** attempt;
+}
+
+/** Parses Retry-After, as delay seconds or an HTTP-date, into milliseconds. Undefined when unusable. */
+function parseRetryAfter(value: string | null): number | undefined {
+  if (value === null) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return Number(trimmed) * 1000;
+  }
+  const date = Date.parse(trimmed);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
@@ -141,8 +242,8 @@ async function readBody(response: Response): Promise<unknown> {
   }
 }
 
-/** Serialises one query value: arrays are comma-joined and objects are sent as JSON. */
-function queryValue(value: unknown): string {
+/** Serialises one parameter value: arrays are comma-joined and objects are sent as JSON. */
+function paramValue(value: unknown): string {
   if (Array.isArray(value)) {
     return value.join(",");
   }

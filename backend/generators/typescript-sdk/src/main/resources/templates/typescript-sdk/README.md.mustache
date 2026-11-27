@@ -30,8 +30,9 @@ Requests go to `{{defaultBaseUrl}}` unless `baseUrl` is passed.
 
 Credentials are set through the `AuthOptions` fields in `src/client.ts`. Each field exists only when
 the API declares a matching scheme: `apiKey` for API key schemes, `bearerToken` for HTTP bearer,
-OAuth2 and OpenID Connect schemes, and `basic` for HTTP basic. Other schemes, such as cookie API
-keys, are not mapped. Set them with a custom `fetch`.
+OAuth2 and OpenID Connect schemes, and `basic` for HTTP basic. Each operation sends only the
+credentials of the schemes in its own security requirement, so an operation with no requirement
+sends none. Other schemes, such as cookie API keys, are not mapped. Set them with a custom `fetch`.
 
 ## Errors
 
@@ -40,8 +41,10 @@ Non-2xx responses throw an `ApiError` subclass: `BadRequestError` (400), `Unauth
 `ServerError` (5xx). Other statuses throw a plain `ApiError`. Each error carries `status`, `body`
 and `headers`.
 
-429 and 5xx responses are retried with exponential backoff, twice by default. Set `maxRetries` to
-change that.
+429 and 5xx responses are retried twice by default. Set `maxRetries` to change that. Only requests
+that are safe to repeat (GET, HEAD, PUT, DELETE and OPTIONS) or that send an `Idempotency-Key` header
+are retried. A `Retry-After` header sets the wait, up to 30 seconds. Otherwise the wait grows
+exponentially.
 
 ## Build
 

@@ -10,19 +10,27 @@ export class DefaultResource {
   }
 
   async getWithHeaderKey(): Promise<void> {
-    await this.client.request("GET", "/header-key");
+    await this.client.request("GET", "/header-key", {
+      security: ["headerKey"],
+    });
   }
 
   async getWithQueryKey(): Promise<void> {
-    await this.client.request("GET", "/query-key");
+    await this.client.request("GET", "/query-key", {
+      security: ["queryKey"],
+    });
   }
 
   async getWithBasic(): Promise<void> {
-    await this.client.request("GET", "/basic");
+    await this.client.request("GET", "/basic", {
+      security: ["basicAuth"],
+    });
   }
 
   async getWithOAuth(): Promise<void> {
-    await this.client.request("GET", "/oauth");
+    await this.client.request("GET", "/oauth", {
+      security: ["oauth"],
+    });
   }
 
   async getPublic(): Promise<void> {
@@ -30,6 +38,8 @@ export class DefaultResource {
   }
 
   async getInherited(): Promise<void> {
-    await this.client.request("GET", "/inherited");
+    await this.client.request("GET", "/inherited", {
+      security: ["bearerAuth"],
+    });
   }
 }

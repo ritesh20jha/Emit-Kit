@@ -120,21 +120,24 @@ final class TsResources {
   private static String method(Operation op, String name, TsTypeRenderer types) {
     List<Parameter> params = inputs(op);
     RequestBody body = op.requestBody();
+    boolean bodyRequired = body != null && body.required();
     List<String> signature = new ArrayList<>();
     if (!params.isEmpty()) {
       boolean anyRequired = params.stream().anyMatch(TsResources::required);
       String fields =
           params.stream()
               .map(p ->
-                  TsTypeRenderer.propertyKey(p.name())
+                  TsTypeRenderer.propertyKey(key(p))
                       + (required(p) ? "" : "?")
                       + ": "
                       + types.type(p.schema()))
               .collect(joining("; ", "{ ", " }"));
-      signature.add("params: " + fields + (anyRequired ? "" : " = {}"));
+      // A required body follows the params, so the params have no default to hide behind.
+      boolean defaults = !anyRequired && !bodyRequired;
+      signature.add("params: " + fields + (defaults ? " = {}" : ""));
     }
     if (body != null) {
-      signature.add("body?: " + types.type(body.schema()));
+      signature.add((bodyRequired ? "body: " : "body?: ") + types.type(body.schema()));
     }
     Response success = success(op);
     boolean returnsBody =
@@ -143,13 +146,21 @@ final class TsResources {
         returnsBody ? "Promise<" + types.type(success.schema()) + ">" : "Promise<void>";
 
     List<String> options = new ArrayList<>();
-    List<String> query =
-        params.stream()
-            .filter(p -> p.in() == ParamLocation.QUERY)
-            .map(p -> TsTypeRenderer.propertyKey(p.name()) + ": " + access(p.name()))
-            .toList();
+    List<String> query = entries(params, ParamLocation.QUERY);
     if (!query.isEmpty()) {
       options.add("      query: { " + String.join(", ", query) + " },");
+    }
+    List<String> headers = entries(params, ParamLocation.HEADER);
+    if (!headers.isEmpty()) {
+      options.add("      headers: { " + String.join(", ", headers) + " },");
+    }
+    List<String> cookies = entries(params, ParamLocation.COOKIE);
+    if (!cookies.isEmpty()) {
+      options.add("      cookies: { " + String.join(", ", cookies) + " },");
+    }
+    if (!op.security().isEmpty()) {
+      List<String> schemes = op.security().stream().map(TsClientView::quote).toList();
+      options.add("      security: [" + String.join(", ", schemes) + "],");
     }
     if (body != null) {
       options.add("      body,");
@@ -178,15 +189,34 @@ final class TsResources {
     return out.append("  }").toString();
   }
 
-  /** Path and query parameters, one per name: the first declaration of a name wins. */
+  /**
+   * Path, query, header and cookie parameters, one per params key: the first declaration of a key
+   * wins.
+   */
   private static List<Parameter> inputs(Operation op) {
-    Map<String, Parameter> byName = new LinkedHashMap<>();
+    Map<String, Parameter> byKey = new LinkedHashMap<>();
     for (Parameter p : op.parameters()) {
-      if (p.in() == ParamLocation.PATH || p.in() == ParamLocation.QUERY) {
-        byName.putIfAbsent(p.name(), p);
-      }
+      byKey.putIfAbsent(key(p), p);
     }
-    return List.copyOf(byName.values());
+    return List.copyOf(byKey.values());
+  }
+
+  /**
+   * The key of a parameter on {@code params}. Path and query parameters keep their spec name, and
+   * header and cookie parameters use the camel-case member name, such as {@code idempotencyKey}.
+   */
+  private static String key(Parameter p) {
+    return p.in() == ParamLocation.HEADER || p.in() == ParamLocation.COOKIE
+        ? TsNames.headerOrCookieKey(p.name())
+        : p.name();
+  }
+
+  /** Object entries {@code "name": params.key} for the parameters in {@code location}. */
+  private static List<String> entries(List<Parameter> params, ParamLocation location) {
+    return params.stream()
+        .filter(p -> p.in() == location)
+        .map(p -> TsTypeRenderer.propertyKey(p.name()) + ": " + access(key(p)))
+        .toList();
   }
 
   private static boolean required(Parameter p) {
@@ -237,22 +267,35 @@ final class TsResources {
     return String.join(" + ", parts);
   }
 
-  /** A JSDoc block for the operation, or empty when it has no text and is not deprecated. */
+  /**
+   * A JSDoc block for the operation, or empty when it has no text and is not deprecated. The
+   * summary comes first, then a blank line and the description, unless the description is missing
+   * or the same as the summary.
+   */
   private static String doc(Operation op) {
-    List<String> parts = new ArrayList<>();
-    for (String text : new String[] {op.summary(), op.description()}) {
-      if (text != null && !TsClientView.docText(text).isEmpty()) {
-        parts.add(TsClientView.docText(text));
+    String summary = op.summary() == null ? "" : TsClientView.docText(op.summary());
+    String description = op.description() == null ? "" : TsClientView.docText(op.description());
+    List<String> lines = new ArrayList<>();
+    if (!summary.isEmpty()) {
+      lines.add(summary);
+    }
+    if (!description.isEmpty() && !description.equals(summary)) {
+      if (!summary.isEmpty()) {
+        lines.add("");
       }
+      lines.add(description);
     }
-    String text = String.join(" ", parts);
-    if (!op.deprecated()) {
-      return text.isEmpty() ? "" : "  /** " + text + " */\n";
+    if (!op.deprecated() && lines.size() <= 1) {
+      return lines.isEmpty() ? "" : "  /** " + lines.get(0) + " */\n";
     }
-    return "  /**\n"
-        + (text.isEmpty() ? "" : "   * " + text + "\n")
-        + "   * @deprecated\n"
-        + "   */\n";
+    StringBuilder out = new StringBuilder("  /**\n");
+    for (String line : lines) {
+      out.append(line.isEmpty() ? "   *" : "   * " + line).append('\n');
+    }
+    if (op.deprecated()) {
+      out.append("   * @deprecated\n");
+    }
+    return out.append("   */\n").toString();
   }
 
   /** {@code name}, or the first of {@code name2}, {@code name3}, ... not yet in {@code used}. */

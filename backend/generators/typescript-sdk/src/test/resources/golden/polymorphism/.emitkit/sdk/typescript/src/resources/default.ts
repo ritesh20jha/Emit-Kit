@@ -10,7 +10,7 @@ export class DefaultResource {
     this.client = client;
   }
 
-  async createPet(body?: Pet): Promise<void> {
+  async createPet(body: Pet): Promise<void> {
     await this.client.request("POST", "/pets", {
       body,
     });
