@@ -192,9 +192,37 @@ final class PyResources {
             ? "None"
             : types.typeOf(response, PyTypeRenderer.hint(op, "response"), scope);
     String adapter = response == null ? null : scope.use("TypeAdapter") + "(" + returnType + ")";
-    String doc = op.summary() == null ? "" : PyClientView.docText(op.summary());
+    String doc = doc(op.summary(), op.description());
     String name = PyTypeRenderer.unique(names.member(op.operationId()), methodNames);
     return new Plan(name, args, returnType, adapter, doc, request);
+  }
+
+  /**
+   * The docstring text of an operation: its summary, then its description after a blank line when
+   * both exist and differ. A description that repeats the summary adds nothing. The text is not
+   * wrapped in quotes; lines after the first are indented to the method body.
+   */
+  static String doc(String summary, String description) {
+    String title = summary == null ? "" : PyClientView.plainText(summary);
+    String body = description == null ? "" : PyClientView.plainText(description);
+    if (body.isEmpty() || body.equals(title)) {
+      return PyClientView.docText(title);
+    }
+    String text = docLines(description);
+    return title.isEmpty() ? text : PyClientView.docText(title) + "\n\n        " + text;
+  }
+
+  /** The lines of a description, escaped and indented to the method body, without blank edges. */
+  private static String docLines(String description) {
+    StringBuilder out = new StringBuilder();
+    for (String line : description.strip().split("\\R", -1)) {
+      String text = PyClientView.docText(line);
+      if (out.length() > 0) {
+        out.append(text.isEmpty() ? "\n" : "\n        ");
+      }
+      out.append(text);
+    }
+    return out.toString();
   }
 
   /** A keyword-only argument: required, or defaulting to None with an Optional type. */

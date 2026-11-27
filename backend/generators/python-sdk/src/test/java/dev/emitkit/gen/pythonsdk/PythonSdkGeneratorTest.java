@@ -385,6 +385,24 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
+  void docstringKeepsTheDescriptionAfterTheSummaryWhenTheyDiffer() {
+    assertThat(PyResources.doc("List books", "Returns a page of books.\nOf many."))
+        .isEqualTo("List books\n\n        Returns a page of books.\n        Of many.");
+    assertThat(PyResources.doc("List books", "List  books ")).isEqualTo("List books");
+    assertThat(PyResources.doc("List books", null)).isEqualTo("List books");
+    assertThat(PyResources.doc(null, "Only a description.")).isEqualTo("Only a description.");
+    assertThat(PyResources.doc(null, null)).isEmpty();
+  }
+
+  @Test
+  void bookshelfMethodDocumentsSummaryAndDescription() {
+    assertThat(content("bookshelf", "resources/books.py"))
+        .contains(
+            "\"\"\"List books\n\n        Returns a page of books, optionally filtered by genre and "
+                + "availability.\"\"\"");
+  }
+
+  @Test
   void retriesAreLimitedToRepeatableRequestsAndHonourRetryAfter() {
     assertThat(clientSource("Petstore", List.of()))
         .contains(
