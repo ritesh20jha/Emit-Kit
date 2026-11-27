@@ -19,6 +19,9 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.authors import AsyncAuthorsResource, AuthorsResource
+from .resources.books import AsyncBooksResource, BooksResource
+from .resources.loans import AsyncLoansResource, LoansResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = "https://api.bookshelf.example.com/v1"
@@ -54,6 +57,9 @@ class BookshelfApiClient:
             self._headers["X-Api-Key"] = api_key
         if bearer_token is not None:
             self._headers["Authorization"] = f"Bearer {bearer_token}"
+        self.authors = AuthorsResource(self)
+        self.books = BooksResource(self)
+        self.loans = LoansResource(self)
 
     def __enter__(self) -> BookshelfApiClient:
         return self
@@ -129,6 +135,9 @@ class AsyncBookshelfApiClient:
             self._headers["X-Api-Key"] = api_key
         if bearer_token is not None:
             self._headers["Authorization"] = f"Bearer {bearer_token}"
+        self.authors = AsyncAuthorsResource(self)
+        self.books = AsyncBooksResource(self)
+        self.loans = AsyncLoansResource(self)
 
     async def __aenter__(self) -> AsyncBookshelfApiClient:
         return self

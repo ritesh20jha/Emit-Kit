@@ -19,6 +19,8 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.default import AsyncDefaultResource, DefaultResource
+from .resources.user import AsyncUserResource, UserResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = ""
@@ -48,6 +50,8 @@ class ReservedWordsClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.default = DefaultResource(self)
+        self.user = UserResource(self)
 
     def __enter__(self) -> ReservedWordsClient:
         return self
@@ -117,6 +121,8 @@ class AsyncReservedWordsClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.default = AsyncDefaultResource(self)
+        self.user = AsyncUserResource(self)
 
     async def __aenter__(self) -> AsyncReservedWordsClient:
         return self

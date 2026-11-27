@@ -29,10 +29,10 @@ public final class PythonSdkGenerator implements Generator {
 
   @Override
   public List<GeneratedFile> generate(ApiModel model, GeneratorContext ctx) {
-    PyClientView view = PyClientView.of(model, ctx);
+    PyTypeRenderer types = new PyTypeRenderer(model);
+    PyClientView view = PyClientView.of(model, ctx, types.exportedNames());
     String root = sdkRoot(ctx.outputDir());
     String pkg = root + view.packageDir() + "/";
-    PyTypeRenderer types = new PyTypeRenderer(model);
     List<GeneratedFile> files = new ArrayList<>();
     files.add(generated(root + "pyproject.toml", "pyproject.toml", view));
     files.add(generated(root + "README.md", "README.md", view));

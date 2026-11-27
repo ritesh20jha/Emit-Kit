@@ -11,6 +11,18 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .models import (
+    Animal,
+    Cat,
+    Circle,
+    Dog,
+    Kitten,
+    OptionalOwner,
+    Owner,
+    Pet,
+    Shape,
+    Square,
+)
 
 __all__ = [
     "PolymorphismClient",
@@ -23,4 +35,14 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "UnauthorizedError",
+    "Animal",
+    "Cat",
+    "Circle",
+    "Dog",
+    "Kitten",
+    "OptionalOwner",
+    "Owner",
+    "Pet",
+    "Shape",
+    "Square",
 ]

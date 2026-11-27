@@ -321,6 +321,37 @@ class PythonSdkGeneratorTest {
         .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u0001\\u007F\\u2028\"");
   }
 
+  @Test
+  void clientAttachesOneResourcePerTag() {
+    assertThat(content("bookshelf", "client.py"))
+        .contains("from .resources.authors import AsyncAuthorsResource, AuthorsResource")
+        .contains("from .resources.books import AsyncBooksResource, BooksResource")
+        .contains("from .resources.loans import AsyncLoansResource, LoansResource")
+        .contains("        self.books = BooksResource(self)")
+        .contains("        self.authors = AuthorsResource(self)")
+        .contains("        self.loans = LoansResource(self)")
+        .contains("        self.books = AsyncBooksResource(self)")
+        .contains("        self.authors = AsyncAuthorsResource(self)")
+        .contains("        self.loans = AsyncLoansResource(self)");
+  }
+
+  @Test
+  void readmeShowsACallThroughAResource() {
+    assertThat(sdkFile(FixtureSpecs.load("bookshelf"), "README.md"))
+        .contains("client.books.list_books()");
+  }
+
+  @Test
+  void modelsAndEnumsAreReExportedFromThePackage() {
+    assertThat(content("bookshelf", "__init__.py"))
+        .contains("from .models import (")
+        .contains("\n    Book,\n")
+        .contains("\n    BookFormat,\n")
+        .contains("\n    Genre,\n")
+        .contains("\n    \"Book\",\n")
+        .contains("\n    \"Genre\",\n");
+  }
+
   /** A file of the {@code acme_pets} package generated from the named fixture. */
   private String content(String fixture, String relative) {
     return content(generate(fixture, ".emitkit/", names("acme-pets")), "acme_pets/" + relative);

@@ -20,6 +20,7 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.default import AsyncDefaultResource, DefaultResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = ""
@@ -59,6 +60,7 @@ class AuthSchemesClient:
         # A bearer token, when given, takes precedence over basic credentials.
         if basic is not None and "Authorization" not in self._headers:
             self._headers["Authorization"] = _basic_credentials(*basic)
+        self.default = DefaultResource(self)
 
     def __enter__(self) -> AuthSchemesClient:
         return self
@@ -138,6 +140,7 @@ class AsyncAuthSchemesClient:
         # A bearer token, when given, takes precedence over basic credentials.
         if basic is not None and "Authorization" not in self._headers:
             self._headers["Authorization"] = _basic_credentials(*basic)
+        self.default = AsyncDefaultResource(self)
 
     async def __aenter__(self) -> AsyncAuthSchemesClient:
         return self

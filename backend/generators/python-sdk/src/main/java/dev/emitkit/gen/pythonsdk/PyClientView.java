@@ -2,12 +2,20 @@ package dev.emitkit.gen.pythonsdk;
 
 import dev.emitkit.gen.core.GeneratorContext;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.Operation;
+import dev.emitkit.spec.model.ParamLocation;
+import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.SecurityScheme.Kind;
 import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.naming.Language;
 import dev.emitkit.spec.naming.NameStrategy;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 /**
@@ -37,6 +45,12 @@ import java.util.regex.Pattern;
  * @param apiKeyHeaders header names that receive the API key
  * @param apiKeyQueries query parameter names that receive the API key, empty when a header apiKey
  *     scheme exists so the key never appears in a URL
+ * @param resources one resource per module, attached to each client under its attribute
+ * @param modelNames model, enum and alias names re-exported from the package
+ * @param hasExample whether there is an operation for the README example to call
+ * @param exampleAttribute the client attribute of the example's resource, or {@code ""}
+ * @param exampleMethod the example's method name, or {@code ""}
+ * @param exampleArgs the example's required arguments as placeholders, or {@code ""}
  */
 record PyClientView(
     String className,
@@ -60,14 +74,40 @@ record PyClientView(
     boolean hasBearer,
     boolean hasBasic,
     List<Literal> apiKeyHeaders,
-    List<Literal> apiKeyQueries) {
+    List<Literal> apiKeyQueries,
+    List<Resource> resources,
+    List<Literal> modelNames,
+    boolean hasModelNames,
+    boolean hasExample,
+    String exampleAttribute,
+    String exampleMethod,
+    String exampleArgs) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
+
+  /** Client attributes a resource must not take: they are the client's own methods. */
+  private static final Set<String> RESERVED_ATTRIBUTES = Set.of("close", "aclose");
 
   /** A quoted name rendered verbatim into the template. */
   record Literal(String text) {}
 
-  static PyClientView of(ApiModel model, GeneratorContext ctx) {
+  /**
+   * One resource module: {@code attribute} holds it on each client, and {@code module} is the
+   * module file name under {@code resources/}.
+   */
+  record Resource(String attribute, String module, String className, String asyncClassName) {}
+
+  /**
+   * The operation shown in the README: {@code attribute.method(args)} on a resource, with
+   * placeholder values for its required arguments.
+   */
+  record Example(String attribute, String method, String args) {}
+
+  /**
+   * @param modelNames the names of the models module that the package re-exports; names that would
+   *     collide with the package's own exports are left out
+   */
+  static PyClientView of(ApiModel model, GeneratorContext ctx, List<String> modelNames) {
     String pypiName = ctx.names().pypiName();
     if (pypiName == null || pypiName.isBlank()) {
       throw new IllegalArgumentException(
@@ -82,6 +122,13 @@ record PyClientView(
     String advice = baseUrlAdvice(model.servers());
     List<Literal> headers = apiKeyNames(schemes, "header");
     List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
+    String asyncName = "Async" + className;
+    Set<String> ownNames = new HashSet<>(List.of(className, asyncName));
+    ownNames.addAll(ERROR_EXPORTS);
+    List<Literal> exports =
+        modelNames.stream().filter(n -> !ownNames.contains(n)).map(n -> new Literal(n)).toList();
+    List<Resource> resources = resources(model);
+    Example example = example(model, names, resources);
     return new PyClientView(
         className,
         "Async" + className,
@@ -105,7 +152,92 @@ record PyClientView(
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
         headers,
-        queries);
+        queries,
+        resources,
+        exports,
+        !exports.isEmpty(),
+        example != null,
+        example == null ? "" : example.attribute(),
+        example == null ? "" : example.method(),
+        example == null ? "" : example.args());
+  }
+
+  /** The error classes the package re-exports from {@code errors.py}. */
+  private static final List<String> ERROR_EXPORTS =
+      List.of(
+          "ApiError",
+          "BadRequestError",
+          "ConflictError",
+          "ForbiddenError",
+          "NotFoundError",
+          "RateLimitError",
+          "ServerError",
+          "UnauthorizedError");
+
+  /**
+   * One resource per operation module, in model order. The attribute is the tag's member name, made
+   * unique among the names the client already uses. Tags that share a module name share one
+   * resource, named by the first of them.
+   */
+  static List<Resource> resources(ApiModel model) {
+    NameStrategy names = NameStrategy.forLanguage(Language.PYTHON);
+    Map<String, String> firstTagOfModule = new TreeMap<>();
+    for (Operation op : model.operations()) {
+      firstTagOfModule.putIfAbsent(names.file(op.tag()), op.tag());
+    }
+    Set<String> taken = new HashSet<>(RESERVED_ATTRIBUTES);
+    List<Resource> resources = new ArrayList<>();
+    for (var entry : firstTagOfModule.entrySet()) {
+      String tag = entry.getValue();
+      String className = names.type(tag) + "Resource";
+      String attribute = PyTypeRenderer.unique(names.member(tag), taken);
+      resources.add(new Resource(attribute, entry.getKey(), className, "Async" + className));
+    }
+    return List.copyOf(resources);
+  }
+
+  /**
+   * The README example: the first operation with no required argument, else the first operation.
+   * Null when the API has no operations.
+   */
+  static Example example(ApiModel model, NameStrategy names, List<Resource> resources) {
+    Operation chosen = null;
+    for (Operation op : model.operations()) {
+      if (requiredArgs(op, names).isEmpty()) {
+        chosen = op;
+        break;
+      }
+    }
+    if (chosen == null) {
+      if (model.operations().isEmpty()) {
+        return null;
+      }
+      chosen = model.operations().get(0);
+    }
+    String module = names.file(chosen.tag());
+    String attribute =
+        resources.stream()
+            .filter(r -> r.module().equals(module))
+            .findFirst()
+            .orElseThrow()
+            .attribute();
+    String args =
+        String.join(", ", requiredArgs(chosen, names).stream().map(a -> a + "=...").toList());
+    return new Example(attribute, names.member(chosen.operationId()), args);
+  }
+
+  /** The names of an operation's required arguments, in the order the method takes them. */
+  private static List<String> requiredArgs(Operation op, NameStrategy names) {
+    List<String> args = new ArrayList<>();
+    for (Parameter p : op.parameters()) {
+      if (p.in() == ParamLocation.PATH || p.required()) {
+        args.add(names.member(p.name()));
+      }
+    }
+    if (op.requestBody() != null && op.requestBody().required()) {
+      args.add("body");
+    }
+    return args;
   }
 
   /** HTTP bearer, OAuth2 and OpenID Connect schemes all carry an access token as a bearer. */

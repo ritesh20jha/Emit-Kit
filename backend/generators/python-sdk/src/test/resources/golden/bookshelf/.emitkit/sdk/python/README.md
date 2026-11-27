@@ -31,6 +31,16 @@ async with AsyncBookshelfApiClient(base_url="https://api.example.com") as client
     ...
 ```
 
+## Calling an operation
+
+Each tag is a resource on the client, and each operation is a method of its resource. Required
+arguments are keyword arguments:
+
+```python
+with BookshelfApiClient(base_url="https://api.example.com") as client:
+    client.books.list_books()
+```
+
 ## Base URL
 
 Requests go to `https://api.bookshelf.example.com/v1` unless `base_url` is passed.

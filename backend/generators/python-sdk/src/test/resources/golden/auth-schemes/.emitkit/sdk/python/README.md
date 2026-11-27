@@ -31,6 +31,16 @@ async with AsyncAuthSchemesClient(base_url="https://api.example.com") as client:
     ...
 ```
 
+## Calling an operation
+
+Each tag is a resource on the client, and each operation is a method of its resource. Required
+arguments are keyword arguments:
+
+```python
+with AuthSchemesClient(base_url="https://api.example.com") as client:
+    client.default.get_with_header_key()
+```
+
 ## Base URL
 
 The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.

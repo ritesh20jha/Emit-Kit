@@ -19,6 +19,9 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.admin import AsyncAdminResource, AdminResource
+from .resources.pets import AsyncPetsResource, PetsResource
+from .resources.store import AsyncStoreResource, StoreResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = ""
@@ -48,6 +51,9 @@ class MultiTagClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.admin = AdminResource(self)
+        self.pets = PetsResource(self)
+        self.store = StoreResource(self)
 
     def __enter__(self) -> MultiTagClient:
         return self
@@ -117,6 +123,9 @@ class AsyncMultiTagClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.admin = AsyncAdminResource(self)
+        self.pets = AsyncPetsResource(self)
+        self.store = AsyncStoreResource(self)
 
     async def __aenter__(self) -> AsyncMultiTagClient:
         return self

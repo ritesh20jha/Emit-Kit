@@ -11,6 +11,12 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .models import (
+    Error,
+    None_,
+    Object,
+    String,
+)
 
 __all__ = [
     "ReservedWordsClient",
@@ -23,4 +29,8 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "UnauthorizedError",
+    "Error",
+    "None_",
+    "Object",
+    "String",
 ]

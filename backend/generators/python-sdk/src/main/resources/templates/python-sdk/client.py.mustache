@@ -22,6 +22,9 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+{{#resources}}
+from .resources.{{module}} import {{asyncClassName}}, {{className}}
+{{/resources}}
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = {{{defaultBaseUrlLiteral}}}
@@ -78,6 +81,9 @@ class {{className}}:
         if basic is not None and "Authorization" not in self._headers:
             self._headers["Authorization"] = _basic_credentials(*basic)
 {{/hasBasic}}
+{{#resources}}
+        self.{{attribute}} = {{className}}(self)
+{{/resources}}
 
     def __enter__(self) -> {{className}}:
         return self
@@ -174,6 +180,9 @@ class {{asyncClassName}}:
         if basic is not None and "Authorization" not in self._headers:
             self._headers["Authorization"] = _basic_credentials(*basic)
 {{/hasBasic}}
+{{#resources}}
+        self.{{attribute}} = {{asyncClassName}}(self)
+{{/resources}}
 
     async def __aenter__(self) -> {{asyncClassName}}:
         return self

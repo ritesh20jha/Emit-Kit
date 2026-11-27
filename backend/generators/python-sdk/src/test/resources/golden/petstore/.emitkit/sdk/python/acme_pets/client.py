@@ -19,6 +19,7 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.pets import AsyncPetsResource, PetsResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = ""
@@ -48,6 +49,7 @@ class PetstoreClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.pets = PetsResource(self)
 
     def __enter__(self) -> PetstoreClient:
         return self
@@ -117,6 +119,7 @@ class AsyncPetstoreClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.pets = AsyncPetsResource(self)
 
     async def __aenter__(self) -> AsyncPetstoreClient:
         return self

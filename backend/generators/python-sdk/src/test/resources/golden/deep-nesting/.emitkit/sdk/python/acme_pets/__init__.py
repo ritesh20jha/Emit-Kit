@@ -11,6 +11,16 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .models import (
+    Deep,
+    DeepLevel1,
+    DeepLevel1Level2,
+    DeepLevel1Level2Level3,
+    DeepLevel1Level2Level3Level4,
+    DeepLevel1Level2Level3Level4Level5,
+    Grid,
+    Node,
+)
 
 __all__ = [
     "DeepNestingClient",
@@ -23,4 +33,12 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "UnauthorizedError",
+    "Deep",
+    "DeepLevel1",
+    "DeepLevel1Level2",
+    "DeepLevel1Level2Level3",
+    "DeepLevel1Level2Level3Level4",
+    "DeepLevel1Level2Level3Level4Level5",
+    "Grid",
+    "Node",
 ]

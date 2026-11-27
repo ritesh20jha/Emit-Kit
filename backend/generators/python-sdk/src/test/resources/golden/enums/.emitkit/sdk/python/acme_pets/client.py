@@ -19,6 +19,7 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.default import AsyncDefaultResource, DefaultResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = ""
@@ -48,6 +49,7 @@ class EnumsClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.default = DefaultResource(self)
 
     def __enter__(self) -> EnumsClient:
         return self
@@ -117,6 +119,7 @@ class AsyncEnumsClient:
         self._owns_http = http_client is None
         self._headers: Dict[str, str] = {}
         self._params: Dict[str, str] = {}
+        self.default = AsyncDefaultResource(self)
 
     async def __aenter__(self) -> AsyncEnumsClient:
         return self

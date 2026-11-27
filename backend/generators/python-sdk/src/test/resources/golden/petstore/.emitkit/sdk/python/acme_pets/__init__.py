@@ -11,6 +11,9 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .models import (
+    Pet,
+)
 
 __all__ = [
     "PetstoreClient",
@@ -23,4 +26,5 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "UnauthorizedError",
+    "Pet",
 ]

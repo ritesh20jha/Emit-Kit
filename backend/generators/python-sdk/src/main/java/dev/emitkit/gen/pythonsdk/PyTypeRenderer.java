@@ -196,6 +196,11 @@ final class PyTypeRenderer {
     };
   }
 
+  /** The name of every definition in the models module, sorted. */
+  List<String> exportedNames() {
+    return defs.stream().map(d -> d.name).distinct().sorted().toList();
+  }
+
   /** The models module, with definitions in dependency order. */
   Module modelsModule() {
     Set<String> imports = new TreeSet<>();

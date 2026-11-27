@@ -31,6 +31,16 @@ async with AsyncPetstoreClient(base_url="https://api.example.com") as client:
     ...
 ```
 
+## Calling an operation
+
+Each tag is a resource on the client, and each operation is a method of its resource. Required
+arguments are keyword arguments:
+
+```python
+with PetstoreClient(base_url="https://api.example.com") as client:
+    client.pets.list_pets()
+```
+
 ## Base URL
 
 The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.
