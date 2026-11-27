@@ -178,9 +178,20 @@ record JavaClientView(
     return typeName.endsWith("Client") ? typeName : typeName + "Client";
   }
 
-  /** Collapses whitespace and neutralises comment closers and unicode escapes. */
+  /**
+   * Text for a javadoc comment, on one line: whitespace collapsed, HTML markup escaped, comment
+   * closers and unicode escapes neutralised, and a leading {@code @} kept from starting a tag.
+   */
   static String docText(String text) {
-    return text.replaceAll("\\s+", " ").replace("\\", "&#92;").replace("*/", "*&#47;").strip();
+    String escaped =
+        text.replaceAll("\\s+", " ")
+            .strip()
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\\", "&#92;")
+            .replace("*/", "*&#47;");
+    return escaped.startsWith("@") ? "&#64;" + escaped.substring(1) : escaped;
   }
 
   /** Renders {@code value} as a Java string literal, escaping for javac's unicode translation. */

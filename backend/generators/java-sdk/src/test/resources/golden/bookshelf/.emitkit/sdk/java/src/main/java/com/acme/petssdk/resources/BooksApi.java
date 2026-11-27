@@ -25,7 +25,11 @@ public final class BooksApi {
     this.client = client;
   }
 
-  /** List books */
+  /**
+   * List books
+   *
+   * <p>Returns a page of books, optionally filtered by genre and availability.
+   */
   public BookPage listBooks(ListBooksOptions options) {
     Map<String, String> query = new LinkedHashMap<>();
     if (options != null && options.cursor() != null) {
@@ -45,7 +49,11 @@ public final class BooksApi {
     return read(response, new TypeReference<BookPage>() {});
   }
 
-  /** Add a book */
+  /**
+   * Add a book
+   *
+   * <p>Adds a new book to the catalogue.
+   */
   public Book createBook(String idempotencyKey, BookInput body) {
     Map<String, String> headers = new LinkedHashMap<>();
     headers.put("Idempotency-Key", idempotencyKey);
@@ -54,19 +62,31 @@ public final class BooksApi {
     return read(response, new TypeReference<Book>() {});
   }
 
-  /** Get a book */
+  /**
+   * Get a book
+   *
+   * <p>Returns one book by its id.
+   */
   public Book getBook(String bookId) {
     HttpResponse<String> response =
         client.request("GET", "/books/" + segment(bookId), null, null, null, List.of("bearerAuth"));
     return read(response, new TypeReference<Book>() {});
   }
 
-  /** Remove a book */
+  /**
+   * Remove a book
+   *
+   * <p>Removes a book from the catalogue.
+   */
   public void deleteBook(String bookId) {
     client.request("DELETE", "/books/" + segment(bookId), null, null, null, List.of("bearerAuth"));
   }
 
-  /** Update a book */
+  /**
+   * Update a book
+   *
+   * <p>Changes some fields of a book. Fields left out are kept.
+   */
   public Book updateBook(String bookId, BookPatch body) {
     HttpResponse<String> response =
         client.request(

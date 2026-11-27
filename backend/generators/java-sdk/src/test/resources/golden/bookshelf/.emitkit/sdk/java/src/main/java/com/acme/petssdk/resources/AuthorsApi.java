@@ -22,7 +22,11 @@ public final class AuthorsApi {
     this.client = client;
   }
 
-  /** List authors */
+  /**
+   * List authors
+   *
+   * <p>Returns every author, sorted by name.
+   */
   public List<Author> listAuthors(ListAuthorsOptions options) {
     Map<String, String> query = new LinkedHashMap<>();
     if (options != null && options.sort() != null) {
@@ -32,7 +36,11 @@ public final class AuthorsApi {
     return read(response, new TypeReference<List<Author>>() {});
   }
 
-  /** List an author's books */
+  /**
+   * List an author's books
+   *
+   * <p>Returns the books written by one author.
+   */
   public List<Book> listAuthorBooks(long authorId) {
     HttpResponse<String> response =
         client.request(

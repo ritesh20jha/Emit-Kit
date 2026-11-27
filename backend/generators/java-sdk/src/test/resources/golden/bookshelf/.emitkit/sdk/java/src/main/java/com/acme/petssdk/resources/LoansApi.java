@@ -23,7 +23,11 @@ public final class LoansApi {
     this.client = client;
   }
 
-  /** Borrow a book */
+  /**
+   * Borrow a book
+   *
+   * <p>Lends a free copy of a book to a member.
+   */
   public Loan createLoan(LoanRequest body, CreateLoanOptions options) {
     Map<String, String> headers = new LinkedHashMap<>();
     List<String> cookies = new ArrayList<>();
@@ -38,7 +42,11 @@ public final class LoansApi {
     return read(response, new TypeReference<Loan>() {});
   }
 
-  /** Return a book */
+  /**
+   * Return a book
+   *
+   * <p>Ends a loan and frees the copy.
+   */
   public Loan returnLoan(String loanId) {
     HttpResponse<String> response =
         client.request(

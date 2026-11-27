@@ -236,20 +236,14 @@ final class JavaResourceRenderer {
     callArgs.add(anyHeaders ? "headers" : "null");
     callArgs.add(body == null ? "null" : "body");
     callArgs.add(securityList(op));
-    String summary = op.summary() != null ? op.summary() : method + " " + op.path();
-    String doc = JavaClientView.docText(summary);
+    List<String> paragraphs = docParagraphs(op, method);
+    if (arrayQuery) {
+      paragraphs.add("<p>Array query parameters are sent comma-separated.");
+    }
 
     StringBuilder out = new StringBuilder();
     out.append('\n');
-    if (arrayQuery) {
-      out.append(INDENT).append("/**\n");
-      out.append(INDENT).append(" * ").append(doc).append("\n");
-      out.append(INDENT).append(" *\n");
-      out.append(INDENT).append(" * <p>Array query parameters are sent comma-separated.\n");
-      out.append(INDENT).append(" */\n");
-    } else {
-      out.append(INDENT).append("/** ").append(doc).append(" */\n");
-    }
+    out.append(javadoc(paragraphs));
     out.append(INDENT).append("public ").append(ret).append(' ').append(methodName);
     out.append('(').append(String.join(", ", args)).append(") {\n");
     if (anyQuery) {
@@ -312,6 +306,37 @@ final class JavaResourceRenderer {
     String argIndent = indent + "    ";
     String argLines = args.stream().map(a -> argIndent + a).collect(Collectors.joining(",\n"));
     return start + indent + "client.request(\n" + argLines + ");\n";
+  }
+
+  /**
+   * The paragraphs of an operation's javadoc: its summary, then its description when there is one
+   * and it differs from the summary. The summary falls back to the method and path.
+   */
+  private static List<String> docParagraphs(Operation op, String method) {
+    String summary =
+        JavaClientView.docText(op.summary() != null ? op.summary() : method + " " + op.path());
+    List<String> paragraphs = new ArrayList<>();
+    paragraphs.add(summary);
+    String description = op.description() == null ? "" : JavaClientView.docText(op.description());
+    if (!description.isEmpty() && !description.equals(summary)) {
+      paragraphs.add("<p>" + description);
+    }
+    return paragraphs;
+  }
+
+  /** A javadoc comment at the class's member indentation, one line when there is one paragraph. */
+  private static String javadoc(List<String> paragraphs) {
+    if (paragraphs.size() == 1) {
+      return INDENT + "/** " + paragraphs.get(0) + " */\n";
+    }
+    StringBuilder out = new StringBuilder(INDENT).append("/**\n");
+    for (int i = 0; i < paragraphs.size(); i++) {
+      if (i > 0) {
+        out.append(INDENT).append(" *\n");
+      }
+      out.append(INDENT).append(" * ").append(paragraphs.get(i)).append('\n');
+    }
+    return out.append(INDENT).append(" */\n").toString();
   }
 
   /** The security scheme names an operation's effective requirement lists, as a List literal. */

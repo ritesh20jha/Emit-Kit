@@ -141,6 +141,45 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
+  void operationJavadocKeepsTheDescriptionAfterTheSummary() {
+    assertThat(content("bookshelf", SRC + "resources/BooksApi.java"))
+        .contains(
+            "   * List books\n"
+                + "   *\n"
+                + "   * <p>Returns a page of books, optionally filtered by genre and availability.\n"
+                + "   */");
+  }
+
+  @Test
+  void operationJavadocEscapesMarkupCommentClosersAndLeadingAt() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Docs, version: 1.0.0}
+        paths:
+          /items:
+            get:
+              operationId: listItems
+              summary: 'Find <b>items</b> & more */'
+              description: 'Rows > 5 and @deprecated text'
+              responses: {'200': {description: ok}}
+          /admin:
+            get:
+              operationId: getAdmin
+              summary: '@Admin only'
+              responses: {'200': {description: ok}}
+        """;
+    var files = generateFrom(spec);
+    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+        .contains(
+            "   * Find &lt;b&gt;items&lt;/b&gt; &amp; more *&#47;\n"
+                + "   *\n"
+                + "   * <p>Rows &gt; 5 and @deprecated text\n"
+                + "   */",
+            "  /** &#64;Admin only */");
+  }
+
+  @Test
   void integerEnumConstantsAreLegalIdentifiers() {
     assertThat(content("enums", SRC + "model/Priority.java")).contains("_1(1),", "@JsonValue");
   }
