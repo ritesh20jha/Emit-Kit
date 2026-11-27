@@ -15,7 +15,7 @@ class PetsResource:
         self._client = client
 
     def get_pet_inventory(self, *, id: int) -> None:
-        self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory")
+        self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory", security=[])
 
 
 class AsyncPetsResource:
@@ -25,4 +25,4 @@ class AsyncPetsResource:
         self._client = client
 
     async def get_pet_inventory(self, *, id: int) -> None:
-        await self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory")
+        await self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory", security=[])

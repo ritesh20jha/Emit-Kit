@@ -19,13 +19,13 @@ class UserResource:
         self._client = client
 
     def class_(self) -> None:
-        self._client._request("GET", "/class")
+        self._client._request("GET", "/class", security=[])
 
     def import_(self) -> None:
-        self._client._request("GET", "/import")
+        self._client._request("GET", "/import", security=[])
 
     def get_item_in(self, *, in_: str) -> Object:
-        response = self._client._request("GET", f"/items/{_quote(str(in_), safe='')}")
+        response = self._client._request("GET", f"/items/{_quote(str(in_), safe='')}", security=[])
         return TypeAdapter(Object).validate_python(response.json())
 
 
@@ -36,11 +36,11 @@ class AsyncUserResource:
         self._client = client
 
     async def class_(self) -> None:
-        await self._client._request("GET", "/class")
+        await self._client._request("GET", "/class", security=[])
 
     async def import_(self) -> None:
-        await self._client._request("GET", "/import")
+        await self._client._request("GET", "/import", security=[])
 
     async def get_item_in(self, *, in_: str) -> Object:
-        response = await self._client._request("GET", f"/items/{_quote(str(in_), safe='')}")
+        response = await self._client._request("GET", f"/items/{_quote(str(in_), safe='')}", security=[])
         return TypeAdapter(Object).validate_python(response.json())

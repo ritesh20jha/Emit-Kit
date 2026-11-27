@@ -24,12 +24,12 @@ class AuthorsResource:
 
     def list_authors(self, *, sort: Optional[ListAuthorsSort] = None) -> list[Author]:
         """List authors"""
-        response = self._client._request("GET", "/authors", query=_drop_none({"sort": TypeAdapter(Optional[ListAuthorsSort]).dump_python(sort, mode='json')}))
+        response = self._client._request("GET", "/authors", query=_drop_none({"sort": TypeAdapter(Optional[ListAuthorsSort]).dump_python(sort, mode='json')}), security=[])
         return TypeAdapter(list[Author]).validate_python(response.json())
 
     def list_author_books(self, *, author_id: int) -> list[Book]:
         """List an author's books"""
-        response = self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books")
+        response = self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books", security=["bearerAuth"])
         return TypeAdapter(list[Book]).validate_python(response.json())
 
 
@@ -41,10 +41,10 @@ class AsyncAuthorsResource:
 
     async def list_authors(self, *, sort: Optional[ListAuthorsSort] = None) -> list[Author]:
         """List authors"""
-        response = await self._client._request("GET", "/authors", query=_drop_none({"sort": TypeAdapter(Optional[ListAuthorsSort]).dump_python(sort, mode='json')}))
+        response = await self._client._request("GET", "/authors", query=_drop_none({"sort": TypeAdapter(Optional[ListAuthorsSort]).dump_python(sort, mode='json')}), security=[])
         return TypeAdapter(list[Author]).validate_python(response.json())
 
     async def list_author_books(self, *, author_id: int) -> list[Book]:
         """List an author's books"""
-        response = await self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books")
+        response = await self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books", security=["bearerAuth"])
         return TypeAdapter(list[Book]).validate_python(response.json())

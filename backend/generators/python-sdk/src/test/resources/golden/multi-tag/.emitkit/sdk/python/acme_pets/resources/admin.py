@@ -14,7 +14,7 @@ class AdminResource:
         self._client = client
 
     def reset_pets(self) -> None:
-        self._client._request("POST", "/admin/reset")
+        self._client._request("POST", "/admin/reset", security=[])
 
 
 class AsyncAdminResource:
@@ -24,4 +24,4 @@ class AsyncAdminResource:
         self._client = client
 
     async def reset_pets(self) -> None:
-        await self._client._request("POST", "/admin/reset")
+        await self._client._request("POST", "/admin/reset", security=[])

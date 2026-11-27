@@ -5,7 +5,7 @@ import asyncio
 import json
 import time
 from types import TracebackType
-from typing import Any, Dict, Mapping, Optional, Type
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Type
 from urllib.parse import quote
 
 import httpx
@@ -28,6 +28,13 @@ from .resources.loans import AsyncLoansResource, LoansResource
 DEFAULT_BASE_URL = "https://api.bookshelf.example.com/v1"
 DEFAULT_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SECONDS = 0.5
+# Where each security scheme's credential is sent, as (location, name). An apiKey goes in the header
+# or query parameter it names; bearer and basic credentials go in the Authorization header.
+_SCHEME_LOCATIONS: Dict[str, Tuple[str, str]] = {
+    "bearerAuth": ("bearer", ""),
+    "apiKeyAuth": ("header", "X-Api-Key"),
+    "oauth2": ("bearer", ""),
+}
 
 
 class BookshelfApiClient:
@@ -52,12 +59,8 @@ class BookshelfApiClient:
         )
         self._http = http_client if http_client is not None else httpx.Client(follow_redirects=True)
         self._owns_http = http_client is None
-        self._headers: Dict[str, str] = {}
-        self._params: Dict[str, str] = {}
-        if api_key is not None:
-            self._headers["X-Api-Key"] = api_key
-        if bearer_token is not None:
-            self._headers["Authorization"] = f"Bearer {bearer_token}"
+        self._api_key = api_key
+        self._bearer_token = bearer_token
         self.authors = AuthorsResource(self)
         self.books = BooksResource(self)
         self.loans = LoansResource(self)
@@ -78,6 +81,24 @@ class BookshelfApiClient:
         if self._owns_http:
             self._http.close()
 
+    def _auth(self, security: Sequence[str]) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """The headers and query parameters that carry the credentials of the named security
+        schemes. A scheme without a configured credential contributes nothing."""
+        headers: Dict[str, str] = {}
+        params: Dict[str, str] = {}
+        for scheme in security:
+            location = _SCHEME_LOCATIONS.get(scheme)
+            if location is None:
+                continue
+            kind, name = location
+            if kind == "header" and self._api_key is not None:
+                headers[name] = self._api_key
+            if kind == "query" and self._api_key is not None:
+                params[name] = self._api_key
+            if kind == "bearer" and self._bearer_token is not None:
+                headers["Authorization"] = f"Bearer {self._bearer_token}"
+        return headers, params
+
     def _request(
         self,
         method: str,
@@ -87,12 +108,15 @@ class BookshelfApiClient:
         headers: Optional[Mapping[str, Any]] = None,
         cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
+        security: Sequence[str] = (),
     ) -> httpx.Response:
-        """Sends a request with the configured credentials. 429 and 5xx responses are retried with
-        exponential backoff, up to max_retries times. Any other non-2xx status raises an ApiError
-        subclass. Returns the successful response for the caller to parse."""
-        params: Dict[str, Any] = {**self._params, **(query or {})}
-        request_headers = {**_request_headers(headers, cookies), **self._headers}
+        """Sends a request with the credentials of the named security schemes. 429 and 5xx
+        responses are retried with exponential backoff, up to max_retries times. Any other non-2xx
+        status raises an ApiError subclass. Returns the successful response for the caller to
+        parse."""
+        auth_headers, auth_params = self._auth(security)
+        params: Dict[str, Any] = {**auth_params, **(query or {})}
+        request_headers = {**_request_headers(headers, cookies), **auth_headers}
         attempt = 0
         while True:
             response = self._http.request(
@@ -133,12 +157,8 @@ class AsyncBookshelfApiClient:
         )
         self._http = http_client if http_client is not None else httpx.AsyncClient(follow_redirects=True)
         self._owns_http = http_client is None
-        self._headers: Dict[str, str] = {}
-        self._params: Dict[str, str] = {}
-        if api_key is not None:
-            self._headers["X-Api-Key"] = api_key
-        if bearer_token is not None:
-            self._headers["Authorization"] = f"Bearer {bearer_token}"
+        self._api_key = api_key
+        self._bearer_token = bearer_token
         self.authors = AsyncAuthorsResource(self)
         self.books = AsyncBooksResource(self)
         self.loans = AsyncLoansResource(self)
@@ -159,6 +179,24 @@ class AsyncBookshelfApiClient:
         if self._owns_http:
             await self._http.aclose()
 
+    def _auth(self, security: Sequence[str]) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """The headers and query parameters that carry the credentials of the named security
+        schemes. A scheme without a configured credential contributes nothing."""
+        headers: Dict[str, str] = {}
+        params: Dict[str, str] = {}
+        for scheme in security:
+            location = _SCHEME_LOCATIONS.get(scheme)
+            if location is None:
+                continue
+            kind, name = location
+            if kind == "header" and self._api_key is not None:
+                headers[name] = self._api_key
+            if kind == "query" and self._api_key is not None:
+                params[name] = self._api_key
+            if kind == "bearer" and self._bearer_token is not None:
+                headers["Authorization"] = f"Bearer {self._bearer_token}"
+        return headers, params
+
     async def _request(
         self,
         method: str,
@@ -168,12 +206,15 @@ class AsyncBookshelfApiClient:
         headers: Optional[Mapping[str, Any]] = None,
         cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
+        security: Sequence[str] = (),
     ) -> httpx.Response:
-        """Sends a request with the configured credentials. 429 and 5xx responses are retried with
-        exponential backoff, up to max_retries times. Any other non-2xx status raises an ApiError
-        subclass. Returns the successful response for the caller to parse."""
-        params: Dict[str, Any] = {**self._params, **(query or {})}
-        request_headers = {**_request_headers(headers, cookies), **self._headers}
+        """Sends a request with the credentials of the named security schemes. 429 and 5xx
+        responses are retried with exponential backoff, up to max_retries times. Any other non-2xx
+        status raises an ApiError subclass. Returns the successful response for the caller to
+        parse."""
+        auth_headers, auth_params = self._auth(security)
+        params: Dict[str, Any] = {**auth_params, **(query or {})}
+        request_headers = {**_request_headers(headers, cookies), **auth_headers}
         attempt = 0
         while True:
             response = await self._http.request(
@@ -217,7 +258,11 @@ def _request_headers(
 ) -> Dict[str, str]:
     """The header parameters, plus one Cookie header for the cookie parameters with their values
     URL-encoded. Parameters left unset (None) are not sent."""
-    values = {name: _header_text(value) for name, value in (headers or {}).items() if value is not None}
+    values = {
+        name: _header_text(value)
+        for name, value in (headers or {}).items()
+        if value is not None
+    }
     pairs = [
         f"{name}={quote(_header_text(value), safe='')}"
         for name, value in (cookies or {}).items()

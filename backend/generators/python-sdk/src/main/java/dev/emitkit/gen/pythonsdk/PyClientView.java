@@ -42,9 +42,8 @@ import java.util.regex.Pattern;
  * @param hasApiKey whether the API declares a header or query apiKey scheme
  * @param hasBearer whether the API declares an HTTP bearer, OAuth2 or OpenID Connect scheme
  * @param hasBasic whether the API declares an HTTP basic scheme
- * @param apiKeyHeaders header names that receive the API key
- * @param apiKeyQueries query parameter names that receive the API key, empty when a header apiKey
- *     scheme exists so the key never appears in a URL
+ * @param schemeLocations one entry of the client's table per scheme whose credential the client
+ *     sends: the scheme name, then where the credential goes
  * @param resources one resource per module, attached to each client under its attribute
  * @param modelNames model, enum and alias names re-exported from the package
  * @param hasExample whether there is an operation for the README example to call
@@ -73,8 +72,7 @@ record PyClientView(
     boolean hasApiKey,
     boolean hasBearer,
     boolean hasBasic,
-    List<Literal> apiKeyHeaders,
-    List<Literal> apiKeyQueries,
+    List<Literal> schemeLocations,
     List<Resource> resources,
     List<Literal> modelNames,
     boolean hasModelNames,
@@ -120,8 +118,8 @@ record PyClientView(
     List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
     String defaultUrl = defaultBaseUrl(model.servers());
     String advice = baseUrlAdvice(model.servers());
-    List<Literal> headers = apiKeyNames(schemes, "header");
-    List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
+    boolean hasApiKey = schemes.stream().anyMatch(s -> apiKeyLocation(s) != null);
+    List<Literal> locations = schemeLocations(model.securitySchemes());
     String asyncName = "Async" + className;
     Set<String> ownNames = new HashSet<>(List.of(className, asyncName));
     ownNames.addAll(ERROR_EXPORTS);
@@ -147,12 +145,11 @@ record PyClientView(
         quote(className + ": max_retries must be a non-negative integer"),
         quote("Async" + className + ": base_url is required. " + advice),
         quote("Async" + className + ": max_retries must be a non-negative integer"),
-        !headers.isEmpty() || !queries.isEmpty(),
+        hasApiKey,
         schemes.stream().anyMatch(PyClientView::isBearerScheme),
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
-        headers,
-        queries,
+        locations,
         resources,
         exports,
         !exports.isEmpty(),
@@ -330,10 +327,41 @@ record PyClientView(
     return out.append('"').toString();
   }
 
-  private static List<Literal> apiKeyNames(List<SecurityScheme> schemes, String location) {
-    return schemes.stream()
-        .filter(s -> s.kind() == Kind.API_KEY && location.equals(s.in()) && s.paramName() != null)
-        .map(s -> new Literal(quote(s.paramName())))
-        .toList();
+  /**
+   * The table entry, as Python text, for an apiKey scheme that is sent in a header or a query
+   * parameter; null for any other scheme.
+   */
+  private static String apiKeyLocation(SecurityScheme scheme) {
+    if (scheme.kind() != Kind.API_KEY || scheme.paramName() == null) {
+      return null;
+    }
+    if ("header".equals(scheme.in()) || "query".equals(scheme.in())) {
+      return "(" + quote(scheme.in()) + ", " + quote(scheme.paramName()) + ")";
+    }
+    return null;
+  }
+
+  /**
+   * The client's credential table: every scheme whose credential the client can send, with where
+   * the credential goes. An apiKey names its header or query parameter; bearer and basic
+   * credentials are Authorization headers, so their name is empty.
+   */
+  static List<Literal> schemeLocations(Map<String, SecurityScheme> schemes) {
+    List<Literal> out = new ArrayList<>();
+    for (var entry : schemes.entrySet()) {
+      SecurityScheme scheme = entry.getValue();
+      String location = apiKeyLocation(scheme);
+      if (location == null && isBearerScheme(scheme)) {
+        location = "(\"bearer\", \"\")";
+      } else if (location == null
+          && scheme.kind() == Kind.HTTP
+          && "basic".equalsIgnoreCase(scheme.scheme())) {
+        location = "(\"basic\", \"\")";
+      }
+      if (location != null) {
+        out.add(new Literal(quote(entry.getKey()) + ": " + location));
+      }
+    }
+    return List.copyOf(out);
   }
 }

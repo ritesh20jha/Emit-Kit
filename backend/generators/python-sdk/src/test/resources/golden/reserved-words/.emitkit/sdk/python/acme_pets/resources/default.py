@@ -18,10 +18,10 @@ class DefaultResource:
         self._client = client
 
     def delete(self) -> None:
-        self._client._request("POST", "/delete")
+        self._client._request("POST", "/delete", security=[])
 
     def default(self, *, default: Optional[str] = None) -> None:
-        self._client._request("GET", "/default", query=_drop_none({"default": default}))
+        self._client._request("GET", "/default", query=_drop_none({"default": default}), security=[])
 
 
 class AsyncDefaultResource:
@@ -31,7 +31,7 @@ class AsyncDefaultResource:
         self._client = client
 
     async def delete(self) -> None:
-        await self._client._request("POST", "/delete")
+        await self._client._request("POST", "/delete", security=[])
 
     async def default(self, *, default: Optional[str] = None) -> None:
-        await self._client._request("GET", "/default", query=_drop_none({"default": default}))
+        await self._client._request("GET", "/default", query=_drop_none({"default": default}), security=[])

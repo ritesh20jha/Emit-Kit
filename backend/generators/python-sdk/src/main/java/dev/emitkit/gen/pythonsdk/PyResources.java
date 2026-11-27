@@ -183,6 +183,9 @@ final class PyResources {
               + ", mode=\"json\", by_alias=True, exclude_unset=True)";
       request.add("json_body=" + (required ? dump : "None if " + py + " is None else " + dump));
     }
+    // The effective requirement: the operation's own, or the document's when it has none.
+    List<String> security = op.security().stream().map(PyClientView::quote).toList();
+    request.add("security=[" + String.join(", ", security) + "]");
     Schema response = PyTypeRenderer.successSchema(op);
     String returnType =
         response == null

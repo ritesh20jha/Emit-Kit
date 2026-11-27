@@ -18,18 +18,18 @@ class DefaultResource:
         self._client = client
 
     def create_pet(self, *, body: Pet) -> None:
-        self._client._request("POST", "/pets", json_body=TypeAdapter(Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
+        self._client._request("POST", "/pets", json_body=TypeAdapter(Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[])
 
     def list_shapes(self) -> Shape:
-        response = self._client._request("GET", "/shapes")
+        response = self._client._request("GET", "/shapes", security=[])
         return TypeAdapter(Shape).validate_python(response.json())
 
     def get_kitten(self) -> Kitten:
-        response = self._client._request("GET", "/kittens")
+        response = self._client._request("GET", "/kittens", security=[])
         return TypeAdapter(Kitten).validate_python(response.json())
 
     def get_owner(self) -> OptionalOwner:
-        response = self._client._request("GET", "/owners")
+        response = self._client._request("GET", "/owners", security=[])
         return TypeAdapter(OptionalOwner).validate_python(response.json())
 
 
@@ -40,16 +40,16 @@ class AsyncDefaultResource:
         self._client = client
 
     async def create_pet(self, *, body: Pet) -> None:
-        await self._client._request("POST", "/pets", json_body=TypeAdapter(Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
+        await self._client._request("POST", "/pets", json_body=TypeAdapter(Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[])
 
     async def list_shapes(self) -> Shape:
-        response = await self._client._request("GET", "/shapes")
+        response = await self._client._request("GET", "/shapes", security=[])
         return TypeAdapter(Shape).validate_python(response.json())
 
     async def get_kitten(self) -> Kitten:
-        response = await self._client._request("GET", "/kittens")
+        response = await self._client._request("GET", "/kittens", security=[])
         return TypeAdapter(Kitten).validate_python(response.json())
 
     async def get_owner(self) -> OptionalOwner:
-        response = await self._client._request("GET", "/owners")
+        response = await self._client._request("GET", "/owners", security=[])
         return TypeAdapter(OptionalOwner).validate_python(response.json())

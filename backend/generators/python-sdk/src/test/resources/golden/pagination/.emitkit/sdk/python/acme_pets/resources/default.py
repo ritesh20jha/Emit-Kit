@@ -22,7 +22,7 @@ class DefaultResource:
         self._client = client
 
     def list_items(self, *, cursor: Optional[str] = None, limit: Optional[int] = None) -> ListItemsResponse:
-        response = self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}))
+        response = self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}), security=[])
         return TypeAdapter(ListItemsResponse).validate_python(response.json())
 
 
@@ -33,5 +33,5 @@ class AsyncDefaultResource:
         self._client = client
 
     async def list_items(self, *, cursor: Optional[str] = None, limit: Optional[int] = None) -> ListItemsResponse:
-        response = await self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}))
+        response = await self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}), security=[])
         return TypeAdapter(ListItemsResponse).validate_python(response.json())

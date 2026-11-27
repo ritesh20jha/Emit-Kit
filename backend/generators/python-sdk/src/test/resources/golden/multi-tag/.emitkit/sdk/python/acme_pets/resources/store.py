@@ -14,7 +14,7 @@ class StoreResource:
         self._client = client
 
     def list_store_orders(self) -> None:
-        self._client._request("GET", "/store/orders")
+        self._client._request("GET", "/store/orders", security=[])
 
 
 class AsyncStoreResource:
@@ -24,4 +24,4 @@ class AsyncStoreResource:
         self._client = client
 
     async def list_store_orders(self) -> None:
-        await self._client._request("GET", "/store/orders")
+        await self._client._request("GET", "/store/orders", security=[])

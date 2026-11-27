@@ -190,13 +190,11 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
-  void apiKeyIsSentInHeaderOnlyWhenAHeaderSchemeExists() {
+  void apiKeyIsSentAtItsDeclaredLocationForEachScheme() {
     // auth-schemes declares both a header and a query apiKey scheme.
-    String client =
-        content(generate("auth-schemes", ".emitkit/", names("acme-pets")), "acme_pets/client.py");
-    assertThat(client)
-        .contains("self._headers[\"X-API-Key\"] = api_key")
-        .doesNotContain("self._params[\"api_key\"] = api_key");
+    assertThat(content("auth-schemes", "client.py"))
+        .contains("\"headerKey\": (\"header\", \"X-API-Key\"),")
+        .contains("\"queryKey\": (\"query\", \"api_key\"),");
   }
 
   @Test
@@ -204,15 +202,40 @@ class PythonSdkGeneratorTest {
     var queryKey =
         new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
     assertThat(clientSource(Map.of("queryKey", queryKey)))
-        .contains("self._params[\"api_key\"] = api_key")
-        .doesNotContain("self._headers[\"");
+        .contains("\"queryKey\": (\"query\", \"api_key\"),")
+        .doesNotContain("(\"header\"");
   }
 
   @Test
   void basicOptionIsAPlainTupleAndBearerWins() {
     assertThat(clientSource("auth-schemes"))
         .contains("basic: Optional[Tuple[str, str]] = None,")
-        .contains("if basic is not None and \"Authorization\" not in self._headers:");
+        .contains("headers.setdefault(\"Authorization\", _basic_credentials(*self._basic))")
+        .contains("\"basicAuth\": (\"basic\", \"\"),");
+  }
+
+  @Test
+  void operationSecurityDecidesWhichCredentialsAreSent() {
+    // auth-schemes: a global bearer scheme and operations that override or drop it.
+    assertThat(content("auth-schemes", "resources/default.py"))
+        .contains("security=[\"headerKey\"]")
+        .contains("security=[\"queryKey\"]")
+        .contains("security=[\"basicAuth\"]")
+        .contains("security=[\"oauth\"]")
+        .contains("security=[]")
+        .contains("security=[\"bearerAuth\"]");
+  }
+
+  @Test
+  void bookshelfOperationsSendTheSchemesOfTheirRequirement() {
+    assertThat(content("bookshelf", "resources/authors.py")).contains("security=[]");
+    assertThat(content("bookshelf", "resources/books.py")).contains("security=[\"bearerAuth\"]");
+    assertThat(content("bookshelf", "resources/loans.py"))
+        .contains("security=[\"apiKeyAuth\", \"oauth2\"]");
+    assertThat(content("bookshelf", "client.py"))
+        .contains("\"apiKeyAuth\": (\"header\", \"X-Api-Key\"),")
+        .contains("\"bearerAuth\": (\"bearer\", \"\"),")
+        .contains("\"oauth2\": (\"bearer\", \"\"),");
   }
 
   @Test
@@ -288,14 +311,15 @@ class PythonSdkGeneratorTest {
     var scheme = new SecurityScheme("bearer", kind, null, null, null);
     assertThat(clientSource(Map.of("bearer", scheme)))
         .contains("bearer_token: Optional[str] = None,")
-        .contains("self._headers[\"Authorization\"] = f\"Bearer {bearer_token}\"");
+        .contains("\"bearer\": (\"bearer\", \"\"),")
+        .contains("headers[\"Authorization\"] = f\"Bearer {self._bearer_token}\"");
   }
 
   @Test
   void basicOnlyImportsAreOmittedWithoutABasicScheme() {
     assertThat(clientSource("Petstore", List.of()))
         .doesNotContain("import base64")
-        .doesNotContain("Tuple");
+        .doesNotContain("basic: Optional");
   }
 
   @Test
