@@ -89,13 +89,15 @@ record TsClientView(
   }
 
   /**
-   * An apiKey scheme the SDK can send: its key goes in a header or a query parameter, under the
-   * name the scheme declares. Cookie apiKeys are not mapped.
+   * An apiKey scheme the SDK can send: its key goes in a header, a cookie or a query parameter,
+   * under the name the scheme declares.
    */
   private static boolean isApiKeyScheme(SecurityScheme scheme) {
     return scheme.kind() == Kind.API_KEY
         && scheme.paramName() != null
-        && ("header".equals(scheme.in()) || "query".equals(scheme.in()));
+        && ("header".equals(scheme.in())
+            || "cookie".equals(scheme.in())
+            || "query".equals(scheme.in()));
   }
 
   /**

@@ -45,9 +45,16 @@ export interface Requester {
 
 /** How one security scheme sends its credential. */
 type AuthScheme =
-  | { kind: "apiKey"; location: "header" | "query"; name: string }
+  | { kind: "apiKey"; location: "header" | "query" | "cookie"; name: string }
   | { kind: "bearer" }
   | { kind: "basic" };
+
+/** Headers, query parameters and cookies that the credentials of one request add. */
+interface AuthParts {
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  cookies: Record<string, string>;
+}
 
 /** The API's security schemes, keyed by the names that operations use in their security requirements. */
 const SECURITY_SCHEMES: Record<string, AuthScheme> = {
@@ -113,9 +120,14 @@ export class PaginationClient {
         headers.set(name, paramValue(value));
       }
     }
-    const cookies = Object.entries(options.cookies ?? {})
-      .filter(([, value]) => value !== undefined && value !== null)
-      .map(([name, value]) => `${name}=${encodeURIComponent(paramValue(value))}`);
+    const cookies = Object.entries(auth.cookies).map(
+      ([name, value]) => `${name}=${encodeURIComponent(value)}`,
+    );
+    for (const [name, value] of Object.entries(options.cookies ?? {})) {
+      if (value !== undefined && value !== null) {
+        cookies.push(`${name}=${encodeURIComponent(paramValue(value))}`);
+      }
+    }
     if (cookies.length > 0) {
       headers.set("Cookie", cookies.join("; "));
     }
@@ -142,41 +154,38 @@ export class PaginationClient {
     }
   }
 
-  /** The headers and query parameters that the named security schemes call for. */
-  private authFor(schemes: readonly string[]): {
-    headers: Record<string, string>;
-    query: Record<string, string>;
-  } {
-    const headers: Record<string, string> = {};
-    const query: Record<string, string> = {};
-    for (const name of schemes) {
-      const scheme = SECURITY_SCHEMES[name];
-      if (scheme === undefined) {
-        continue;
-      }
-      switch (scheme.kind) {
-        case "apiKey": {
-          const apiKey = this.credentials.apiKey;
-          if (apiKey !== undefined) {
-            const target = scheme.location === "header" ? headers : query;
-            target[scheme.name] = apiKey;
-          }
-          break;
-        }
-        case "bearer":
-          if (this.credentials.bearer !== undefined) {
-            headers["Authorization"] = this.credentials.bearer;
-          }
-          break;
-        case "basic":
-          // A bearer token takes precedence over basic credentials.
-          if (this.credentials.basic !== undefined && headers["Authorization"] === undefined) {
-            headers["Authorization"] = this.credentials.basic;
-          }
-          break;
+  /** The headers, query parameters and cookies that the named security schemes call for. */
+  private authFor(schemes: readonly string[]): AuthParts {
+    const parts: AuthParts = { headers: {}, query: {}, cookies: {} };
+    const named = schemes
+      .map((name) => SECURITY_SCHEMES[name])
+      .filter((scheme): scheme is AuthScheme => scheme !== undefined);
+    // One API key per request: the first header or cookie scheme named, else the first query scheme.
+    // A key is never sent in the URL while a header or cookie scheme is also named.
+    const apiKeys = named.filter((scheme) => scheme.kind === "apiKey");
+    const apiKey =
+      apiKeys.find((scheme) => scheme.kind === "apiKey" && scheme.location !== "query") ??
+      apiKeys.find((scheme) => scheme.kind === "apiKey");
+    if (apiKey?.kind === "apiKey" && this.credentials.apiKey !== undefined) {
+      const value = this.credentials.apiKey;
+      if (apiKey.location === "header") {
+        parts.headers[apiKey.name] = value;
+      } else if (apiKey.location === "cookie") {
+        parts.cookies[apiKey.name] = value;
+      } else {
+        parts.query[apiKey.name] = value;
       }
     }
-    return { headers, query };
+    if (named.some((scheme) => scheme.kind === "bearer") && this.credentials.bearer !== undefined) {
+      parts.headers["Authorization"] = this.credentials.bearer;
+    } else if (
+      named.some((scheme) => scheme.kind === "basic") &&
+      this.credentials.basic !== undefined
+    ) {
+      // A bearer token takes precedence over basic credentials.
+      parts.headers["Authorization"] = this.credentials.basic;
+    }
+    return parts;
   }
 }
 
@@ -201,6 +210,10 @@ function parseRetryAfter(value: string | null): number | undefined {
   const trimmed = value.trim();
   if (/^\d+$/.test(trimmed)) {
     return Number(trimmed) * 1000;
+  }
+  // Only an HTTP-date has letters (a day and month name). Anything else, such as "-3" or "1.5", is ignored.
+  if (!/[A-Za-z]/.test(trimmed)) {
+    return undefined;
   }
   const date = Date.parse(trimmed);
   return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());

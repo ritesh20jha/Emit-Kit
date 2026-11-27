@@ -24,12 +24,16 @@ import java.util.regex.Pattern;
 /**
  * Resource classes. Operations are grouped by the file name of their tag, so colliding tags such as
  * {@code user} and {@code User} share one class. Each operation becomes one method: {@code params}
- * holds the path and query parameters keyed by their spec names, and {@code body} is optional.
+ * holds the path, query, header and cookie parameters by key, and {@code body} is optional.
  */
 final class TsResources {
 
   private static final Pattern PATH_TOKEN = Pattern.compile("\\{([^}]*)}");
   private static final Pattern SUCCESS = Pattern.compile("2(\\d\\d|XX)", Pattern.CASE_INSENSITIVE);
+
+  /** Header names, lower-cased, that a parameter must not set: OpenAPI says clients ignore them. */
+  private static final Set<String> RESERVED_HEADERS =
+      Set.of("authorization", "accept", "content-type");
 
   /** Client members a resource property must not shadow. */
   private static final Set<String> CLIENT_MEMBERS =
@@ -84,6 +88,12 @@ final class TsResources {
     return groups;
   }
 
+  /**
+   * A parameter as it appears on {@code params}: its key, which differs from the spec name when
+   * renamed.
+   */
+  private record Input(Parameter param, String key) {}
+
   /** The full source of one resource file. */
   static String render(Templates templates, Group group, TsNames names) {
     TsTypeRenderer types = new TsTypeRenderer(names);
@@ -118,19 +128,19 @@ final class TsResources {
   }
 
   private static String method(Operation op, String name, TsTypeRenderer types) {
-    List<Parameter> params = inputs(op);
+    List<Input> params = inputs(op);
     RequestBody body = op.requestBody();
     boolean bodyRequired = body != null && body.required();
     List<String> signature = new ArrayList<>();
     if (!params.isEmpty()) {
-      boolean anyRequired = params.stream().anyMatch(TsResources::required);
+      boolean anyRequired = params.stream().anyMatch(i -> required(i.param()));
       String fields =
           params.stream()
-              .map(p ->
-                  TsTypeRenderer.propertyKey(key(p))
-                      + (required(p) ? "" : "?")
+              .map(i ->
+                  TsTypeRenderer.propertyKey(i.key())
+                      + (required(i.param()) ? "" : "?")
                       + ": "
-                      + types.type(p.schema()))
+                      + types.type(i.param().schema()))
               .collect(joining("; ", "{ ", " }"));
       // A required body follows the params, so the params have no default to hide behind.
       boolean defaults = !anyRequired && !bodyRequired;
@@ -190,32 +200,52 @@ final class TsResources {
   }
 
   /**
-   * Path, query, header and cookie parameters, one per params key: the first declaration of a key
-   * wins.
+   * The path, query, header and cookie parameters of {@code op}, each with its params key. One
+   * parameter per location and name: the first declaration wins. Reserved headers are skipped. A
+   * key already taken by a parameter in another location is renamed with that location as a prefix,
+   * such as {@code headerLimit}; the wire name is unchanged.
    */
-  private static List<Parameter> inputs(Operation op) {
-    Map<String, Parameter> byKey = new LinkedHashMap<>();
+  private static List<Input> inputs(Operation op) {
+    Set<String> seen = new HashSet<>();
+    Set<String> keys = new HashSet<>();
+    List<Input> inputs = new ArrayList<>();
     for (Parameter p : op.parameters()) {
-      byKey.putIfAbsent(key(p), p);
+      if (p.in() == ParamLocation.HEADER
+          && RESERVED_HEADERS.contains(p.name().toLowerCase(Locale.ROOT))) {
+        continue;
+      }
+      if (!seen.add(p.in() + " " + p.name())) {
+        continue;
+      }
+      String base = baseKey(p);
+      String key =
+          keys.add(base)
+              ? base
+              : unique(p.in().name().toLowerCase(Locale.ROOT) + capitalise(base), keys);
+      inputs.add(new Input(p, key));
     }
-    return List.copyOf(byKey.values());
+    return List.copyOf(inputs);
   }
 
   /**
-   * The key of a parameter on {@code params}. Path and query parameters keep their spec name, and
+   * The natural params key of a parameter. Path and query parameters keep their spec name, and
    * header and cookie parameters use the camel-case member name, such as {@code idempotencyKey}.
    */
-  private static String key(Parameter p) {
+  private static String baseKey(Parameter p) {
     return p.in() == ParamLocation.HEADER || p.in() == ParamLocation.COOKIE
         ? TsNames.headerOrCookieKey(p.name())
         : p.name();
   }
 
+  private static String capitalise(String word) {
+    return word.isEmpty() ? word : Character.toUpperCase(word.charAt(0)) + word.substring(1);
+  }
+
   /** Object entries {@code "name": params.key} for the parameters in {@code location}. */
-  private static List<String> entries(List<Parameter> params, ParamLocation location) {
+  private static List<String> entries(List<Input> params, ParamLocation location) {
     return params.stream()
-        .filter(p -> p.in() == location)
-        .map(p -> TsTypeRenderer.propertyKey(p.name()) + ": " + access(key(p)))
+        .filter(i -> i.param().in() == location)
+        .map(i -> TsTypeRenderer.propertyKey(i.param().name()) + ": " + access(i.key()))
         .toList();
   }
 
@@ -244,21 +274,24 @@ final class TsResources {
    * The request path as a concatenation: literal text is quoted and each path parameter is {@code
    * encodeURIComponent}-ed. A {@code {token}} with no matching path parameter stays literal.
    */
-  private static String path(String template, List<Parameter> params) {
+  private static String path(String template, List<Input> params) {
     List<String> parts = new ArrayList<>();
     Matcher m = PATH_TOKEN.matcher(template);
     int last = 0;
     while (m.find()) {
       String name = m.group(1);
-      boolean isParam =
-          params.stream().anyMatch(p -> p.in() == ParamLocation.PATH && p.name().equals(name));
-      if (!isParam) {
+      Input param =
+          params.stream()
+              .filter(i -> i.param().in() == ParamLocation.PATH && i.param().name().equals(name))
+              .findFirst()
+              .orElse(null);
+      if (param == null) {
         continue;
       }
       if (m.start() > last) {
         parts.add(TsClientView.quote(template.substring(last, m.start())));
       }
-      parts.add("encodeURIComponent(String(" + access(name) + "))");
+      parts.add("encodeURIComponent(String(" + access(param.key()) + "))");
       last = m.end();
     }
     if (last < template.length() || parts.isEmpty()) {

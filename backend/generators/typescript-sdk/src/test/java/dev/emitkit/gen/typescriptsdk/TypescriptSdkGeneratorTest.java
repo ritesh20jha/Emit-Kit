@@ -22,6 +22,10 @@ import dev.emitkit.spec.model.Response;
 import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +55,12 @@ class TypescriptSdkGeneratorTest {
       })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
+  }
+
+  @Test
+  void securityAlternativesMatchGolden() {
+    GoldenFiles.assertMatches(
+        "security-alternatives", generator.generate(localSpec("security-alternatives"), ctx()));
   }
 
   @Test
@@ -185,6 +195,49 @@ class TypescriptSdkGeneratorTest {
         .contains("\"name\": \"@bookshelf/emitkit-playground\",");
     assertThat(packageJson(names(null, "emitkit-playground")))
         .contains("\"name\": \"emitkit-playground\",");
+  }
+
+  @Test
+  void oneApiKeyIsSentPerRequestPreferringAHeaderOrCookieScheme() {
+    // listItems lists headerKey then queryKey: only the header key is sent, never the query.
+    assertThat(content("security-alternatives", "src/resources/items.ts"))
+        .contains("security: [\"headerKey\", \"queryKey\"],");
+    assertThat(content("security-alternatives", "src/client.ts"))
+        .contains("\"headerKey\": { kind: \"apiKey\", location: \"header\", name: \"X-Api-Key\" },")
+        .contains("\"queryKey\": { kind: \"apiKey\", location: \"query\", name: \"api_key\" },")
+        .contains("\"cookieKey\": { kind: \"apiKey\", location: \"cookie\", name: \"sid\" },");
+  }
+
+  @Test
+  void sameNamedParametersInDifferentLocationsGetDistinctKeys() {
+    // The query limit keeps its key; the later header limit is renamed, and both wire names stay.
+    assertThat(method("security-alternatives", "src/resources/items.ts", "listItems"))
+        .contains("params: { limit?: number; headerLimit?: number } = {}")
+        .contains("query: { limit: params.limit },")
+        .contains("headers: { limit: params.headerLimit },");
+    // The path xId is declared first, so the header X-Id is the one renamed.
+    assertThat(method("security-alternatives", "src/resources/items.ts", "getThing"))
+        .contains("params: { xId: string; headerXId?: string; session?: string }")
+        .contains("encodeURIComponent(String(params.xId))")
+        .contains("headers: { \"X-Id\": params.headerXId },")
+        .contains("cookies: { session: params.session },");
+  }
+
+  @Test
+  void reservedHeadersAreIgnored() {
+    assertThat(method("security-alternatives", "src/resources/items.ts", "listItems"))
+        .doesNotContain("Authorization")
+        .doesNotContain("authorization")
+        .doesNotContain("Accept")
+        .doesNotContain("content-type")
+        .doesNotContain("Content-Type");
+  }
+
+  @Test
+  void retryAfterAcceptsOnlyDelaySecondsOrADate() {
+    assertThat(content("petstore", "src/client.ts"))
+        .contains("if (/^\\d+$/.test(trimmed)) {")
+        .contains("if (!/[A-Za-z]/.test(trimmed)) {");
   }
 
   @Test
@@ -595,6 +648,29 @@ class TypescriptSdkGeneratorTest {
         base.schemas());
   }
 
+  /** A fixture kept in this module, or else a shared one. */
+  private static ApiModel load(String fixture) {
+    return fixture.equals("security-alternatives")
+        ? localSpec(fixture)
+        : FixtureSpecs.load(fixture);
+  }
+
+  /** A spec under this module's {@code specs/} resources, parsed as the shared fixtures are. */
+  private static ApiModel localSpec(String name) {
+    String raw;
+    try (var in =
+        TypescriptSdkGeneratorTest.class.getResourceAsStream("/specs/" + name + ".yaml")) {
+      raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    ApiModel model = new SpecParser().parse(raw).model();
+    if (model == null) {
+      throw new IllegalStateException(name + " did not parse");
+    }
+    return model;
+  }
+
   private static ApiModel model(
       String title, List<Server> servers, Map<String, SecurityScheme> schemes) {
     ApiModel base = FixtureSpecs.load("petstore");
@@ -630,7 +706,7 @@ class TypescriptSdkGeneratorTest {
   }
 
   private List<GeneratedFile> generate(String fixture, String outputDir, PackageNames names) {
-    return generate(FixtureSpecs.load(fixture), outputDir, names);
+    return generate(load(fixture), outputDir, names);
   }
 
   private List<GeneratedFile> generate(ApiModel model, String outputDir, PackageNames names) {
