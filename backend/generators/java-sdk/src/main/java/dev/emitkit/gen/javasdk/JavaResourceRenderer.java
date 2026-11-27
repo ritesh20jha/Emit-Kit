@@ -31,8 +31,8 @@ import java.util.stream.Stream;
 
 /**
  * One {@code {Tag}Api} class per resolved tag. Methods take the required parameters, then the body,
- * then an {@code {Op}Options} record for optional query parameters. Header and cookie parameters
- * are not sent.
+ * then an {@code {Op}Options} record for optional parameters. Query, header and cookie parameters
+ * are sent with the request.
  */
 final class JavaResourceRenderer {
 
@@ -44,6 +44,14 @@ final class JavaResourceRenderer {
         /** Percent-encodes one path segment. URLEncoder writes spaces as '+', so use %20. */
         private static String segment(String value) {
           return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+        }
+      """;
+
+  private static final String COOKIE_HELPER =
+      """
+        /** Builds one cookie pair. The value is percent-encoded, with spaces as %20. */
+        private static String cookie(String name, String value) {
+          return name + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
         }
       """;
 
@@ -90,11 +98,17 @@ final class JavaResourceRenderer {
     List<Operation> ops = group.operations();
     boolean usesPath = ops.stream().anyMatch(op -> hasParam(op, ParamLocation.PATH));
     boolean usesQuery = ops.stream().anyMatch(op -> hasParam(op, ParamLocation.QUERY));
+    boolean usesHeaders =
+        ops.stream()
+            .anyMatch(
+                op -> hasParam(op, ParamLocation.HEADER) || hasParam(op, ParamLocation.COOKIE));
+    boolean usesCookies = ops.stream().anyMatch(op -> hasParam(op, ParamLocation.COOKIE));
     boolean usesResponse = ops.stream().anyMatch(op -> successResponse(op) != null);
     String client = view.className();
 
     Set<String> imports = new TreeSet<>();
     imports.add(view.packageName() + "." + client);
+    imports.add("java.util.List");
     if (usesResponse) {
       imports.add("com.fasterxml.jackson.core.JsonProcessingException");
       imports.add("com.fasterxml.jackson.core.type.TypeReference");
@@ -104,13 +118,16 @@ final class JavaResourceRenderer {
         .anyMatch(op -> op.parameters().stream().anyMatch(p -> isArray(types, p.schema())))) {
       imports.add("java.util.stream.Collectors");
     }
-    if (usesPath) {
+    if (usesPath || usesCookies) {
       imports.add("java.net.URLEncoder");
       imports.add("java.nio.charset.StandardCharsets");
     }
-    if (usesQuery) {
+    if (usesQuery || usesHeaders) {
       imports.add("java.util.LinkedHashMap");
       imports.add("java.util.Map");
+    }
+    if (usesCookies) {
+      imports.add("java.util.ArrayList");
     }
 
     Scope api = new Scope("", true, imports);
@@ -135,6 +152,9 @@ final class JavaResourceRenderer {
     if (usesPath) {
       out.append('\n').append(SEGMENT_HELPER);
     }
+    if (usesCookies) {
+      out.append('\n').append(COOKIE_HELPER);
+    }
     if (usesResponse) {
       out.append('\n').append(READ_HELPER);
     }
@@ -146,11 +166,12 @@ final class JavaResourceRenderer {
 
   /** Locals the generated method bodies use. A parameter with one of these names gets a _. */
   private static final Set<String> RESERVED_LOCALS =
-      Set.of("query", "options", "body", "response", "client", "item");
+      Set.of("query", "headers", "cookies", "options", "body", "response", "client", "item");
 
   /** Helper methods the resource classes declare. An operation with one of these gets a _. */
   private static final Set<String> RESERVED_METHODS =
-      Stream.concat(Stream.of("segment", "read"), JavaTypeRenderer.OBJECT_METHODS.stream())
+      Stream.concat(
+              Stream.of("segment", "cookie", "read"), JavaTypeRenderer.OBJECT_METHODS.stream())
           .collect(Collectors.toUnmodifiableSet());
 
   /** One operation: its method, and the options record it takes, if any, added to {@code api}. */
@@ -161,14 +182,11 @@ final class JavaResourceRenderer {
     List<String> args = new ArrayList<>();
     Map<String, String> pathValues = new LinkedHashMap<>();
     Map<String, String> javaNames = new HashMap<>();
-    StringBuilder queryLines = new StringBuilder();
+    StringBuilder sendLines = new StringBuilder();
     List<String> optionComps = new ArrayList<>();
     Scope options = api.nestedScope();
     boolean arrayQuery = false;
     for (Parameter p : op.parameters()) {
-      if (p.in() != ParamLocation.PATH && p.in() != ParamLocation.QUERY) {
-        continue;
-      }
       String name = java.member(p.name());
       if (RESERVED_LOCALS.contains(name) || JavaTypeRenderer.OBJECT_METHODS.contains(name)) {
         name = name + "_";
@@ -178,20 +196,21 @@ final class JavaResourceRenderer {
       if (required) {
         args.add(types.type(p.schema(), true, null, api) + " " + name);
       }
-      arrayQuery |= p.in() == ParamLocation.QUERY && isArray(types, p.schema());
       if (p.in() == ParamLocation.PATH) {
         pathValues.put(p.name(), wire(types, p.schema(), name));
-      } else if (required) {
-        queryLines.append("    query.put(").append(JavaClientView.quote(p.name()));
-        queryLines.append(", ").append(wire(types, p.schema(), name)).append(");\n");
+        continue;
+      }
+      arrayQuery |= p.in() == ParamLocation.QUERY && isArray(types, p.schema());
+      if (required) {
+        String send = send(p.in(), p.name(), wire(types, p.schema(), name));
+        sendLines.append("    ").append(send).append('\n');
       } else {
         optionComps.add(types.type(p.schema(), false, null, options) + " " + name);
-        queryLines.append("    if (options != null && options.").append(name);
-        queryLines.append("() != null) {\n");
-        String value = wire(types, p.schema(), "options." + name + "()");
-        queryLines.append("      query.put(").append(JavaClientView.quote(p.name()));
-        queryLines.append(", ").append(value).append(");\n");
-        queryLines.append("    }\n");
+        String send = send(p.in(), p.name(), wire(types, p.schema(), "options." + name + "()"));
+        sendLines.append("    if (options != null && options.").append(name);
+        sendLines.append("() != null) {\n");
+        sendLines.append("      ").append(send).append('\n');
+        sendLines.append("    }\n");
       }
     }
     RequestBody body = op.requestBody();
@@ -207,11 +226,14 @@ final class JavaResourceRenderer {
         response == null ? "void" : types.type(response.schema(), false, base + "Response", api);
 
     boolean anyQuery = hasParam(op, ParamLocation.QUERY);
+    boolean anyHeaders = hasParam(op, ParamLocation.HEADER) || hasParam(op, ParamLocation.COOKIE);
+    boolean anyCookies = hasParam(op, ParamLocation.COOKIE);
     String method = op.method().toUpperCase(Locale.ROOT);
     List<String> callArgs = new ArrayList<>();
     callArgs.add(JavaClientView.quote(method));
     callArgs.add(pathExpression(op.path(), pathValues));
     callArgs.add(anyQuery ? "query" : "null");
+    callArgs.add(anyHeaders ? "headers" : "null");
     callArgs.add(body == null ? "null" : "body");
     String summary = op.summary() != null ? op.summary() : method + " " + op.path();
     String doc = JavaClientView.docText(summary);
@@ -231,7 +253,18 @@ final class JavaResourceRenderer {
     out.append('(').append(String.join(", ", args)).append(") {\n");
     if (anyQuery) {
       out.append("    Map<String, String> query = new LinkedHashMap<>();\n");
-      out.append(queryLines);
+    }
+    if (anyHeaders) {
+      out.append("    Map<String, String> headers = new LinkedHashMap<>();\n");
+    }
+    if (anyCookies) {
+      out.append("    List<String> cookies = new ArrayList<>();\n");
+    }
+    out.append(sendLines);
+    if (anyCookies) {
+      out.append("    if (!cookies.isEmpty()) {\n");
+      out.append("      headers.put(\"Cookie\", String.join(\"; \", cookies));\n");
+      out.append("    }\n");
     }
     if (response == null) {
       out.append(statement("", callArgs));
@@ -240,6 +273,17 @@ final class JavaResourceRenderer {
       out.append("    return read(response, new TypeReference<").append(ret).append(">() {});\n");
     }
     return out.append(INDENT).append("}\n").toString();
+  }
+
+  /** The statement that sends one parameter, given its value as a string. */
+  private static String send(ParamLocation in, String name, String value) {
+    String key = JavaClientView.quote(name);
+    return switch (in) {
+      case QUERY -> "query.put(" + key + ", " + value + ");";
+      case HEADER -> "headers.put(" + key + ", " + value + ");";
+      case COOKIE -> "cookies.add(cookie(" + key + ", " + value + "));";
+      case PATH -> throw new IllegalArgumentException("path parameters are not sent separately");
+    };
   }
 
   private static boolean isArray(JavaTypeRenderer types, Schema schema) {

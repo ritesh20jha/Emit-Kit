@@ -124,6 +124,23 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
+  void headerAndCookieParametersAreSentAndRequiredOnesAreArguments() {
+    var files = generate("bookshelf", ".emitkit/", names("com.acme", "pets-sdk"));
+    assertThat(content(files, SRC + "resources/BooksApi.java"))
+        .contains(
+            "public Book createBook(String idempotencyKey, BookInput body) {",
+            "headers.put(\"Idempotency-Key\", idempotencyKey);");
+    assertThat(content(files, SRC + "resources/LoansApi.java"))
+        .contains(
+            "public Loan createLoan(LoanRequest body, CreateLoanOptions options) {",
+            "if (options != null && options.session() != null) {",
+            "cookies.add(cookie(\"session\", options.session()));",
+            "headers.put(\"Cookie\", String.join(\"; \", cookies));",
+            "private static String cookie(String name, String value) {",
+            "URLEncoder.encode(value, StandardCharsets.UTF_8)");
+  }
+
+  @Test
   void integerEnumConstantsAreLegalIdentifiers() {
     assertThat(content("enums", SRC + "model/Priority.java")).contains("_1(1),", "@JsonValue");
   }

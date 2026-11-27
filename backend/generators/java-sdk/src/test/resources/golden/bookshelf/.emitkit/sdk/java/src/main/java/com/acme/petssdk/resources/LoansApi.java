@@ -9,6 +9,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /** Operations tagged loans. */
 public final class LoansApi {
@@ -20,21 +24,34 @@ public final class LoansApi {
   }
 
   /** Borrow a book */
-  public Loan createLoan(LoanRequest body) {
-    HttpResponse<String> response = client.request("POST", "/loans", null, body);
+  public Loan createLoan(LoanRequest body, CreateLoanOptions options) {
+    Map<String, String> headers = new LinkedHashMap<>();
+    List<String> cookies = new ArrayList<>();
+    if (options != null && options.session() != null) {
+      cookies.add(cookie("session", options.session()));
+    }
+    if (!cookies.isEmpty()) {
+      headers.put("Cookie", String.join("; ", cookies));
+    }
+    HttpResponse<String> response = client.request("POST", "/loans", null, headers, body);
     return read(response, new TypeReference<Loan>() {});
   }
 
   /** Return a book */
   public Loan returnLoan(String loanId) {
     HttpResponse<String> response =
-        client.request("POST", "/loans/" + segment(loanId) + "/return", null, null);
+        client.request("POST", "/loans/" + segment(loanId) + "/return", null, null, null);
     return read(response, new TypeReference<Loan>() {});
   }
 
   /** Percent-encodes one path segment. URLEncoder writes spaces as '+', so use %20. */
   private static String segment(String value) {
     return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+  }
+
+  /** Builds one cookie pair. The value is percent-encoded, with spaces as %20. */
+  private static String cookie(String name, String value) {
+    return name + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
   }
 
   private <T> T read(HttpResponse<String> response, TypeReference<T> type) {
@@ -44,4 +61,8 @@ public final class LoansApi {
       throw new IllegalStateException("The response body is not the expected JSON", e);
     }
   }
+
+  public record CreateLoanOptions(
+      String session
+  ) {}
 }

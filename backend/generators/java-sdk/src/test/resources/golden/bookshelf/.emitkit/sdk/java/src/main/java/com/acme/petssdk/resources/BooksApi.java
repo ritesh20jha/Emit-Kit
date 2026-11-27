@@ -13,6 +13,7 @@ import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Operations tagged books. */
@@ -39,31 +40,34 @@ public final class BooksApi {
     if (options != null && options.available() != null) {
       query.put("available", String.valueOf(options.available()));
     }
-    HttpResponse<String> response = client.request("GET", "/books", query, null);
+    HttpResponse<String> response = client.request("GET", "/books", query, null, null);
     return read(response, new TypeReference<BookPage>() {});
   }
 
   /** Add a book */
-  public Book createBook(BookInput body) {
-    HttpResponse<String> response = client.request("POST", "/books", null, body);
+  public Book createBook(String idempotencyKey, BookInput body) {
+    Map<String, String> headers = new LinkedHashMap<>();
+    headers.put("Idempotency-Key", idempotencyKey);
+    HttpResponse<String> response = client.request("POST", "/books", null, headers, body);
     return read(response, new TypeReference<Book>() {});
   }
 
   /** Get a book */
   public Book getBook(String bookId) {
-    HttpResponse<String> response = client.request("GET", "/books/" + segment(bookId), null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/books/" + segment(bookId), null, null, null);
     return read(response, new TypeReference<Book>() {});
   }
 
   /** Remove a book */
   public void deleteBook(String bookId) {
-    client.request("DELETE", "/books/" + segment(bookId), null, null);
+    client.request("DELETE", "/books/" + segment(bookId), null, null, null);
   }
 
   /** Update a book */
   public Book updateBook(String bookId, BookPatch body) {
     HttpResponse<String> response =
-        client.request("PATCH", "/books/" + segment(bookId), null, body);
+        client.request("PATCH", "/books/" + segment(bookId), null, null, body);
     return read(response, new TypeReference<Book>() {});
   }
 

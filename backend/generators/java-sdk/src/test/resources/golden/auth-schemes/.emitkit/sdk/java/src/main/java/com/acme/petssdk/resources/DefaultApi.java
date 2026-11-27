@@ -2,6 +2,7 @@
 package com.acme.petssdk.resources;
 
 import com.acme.petssdk.AuthSchemesClient;
+import java.util.List;
 
 /** Operations tagged default. */
 public final class DefaultApi {
@@ -14,31 +15,31 @@ public final class DefaultApi {
 
   /** GET /header-key */
   public void getWithHeaderKey() {
-    client.request("GET", "/header-key", null, null);
+    client.request("GET", "/header-key", null, null, null);
   }
 
   /** GET /query-key */
   public void getWithQueryKey() {
-    client.request("GET", "/query-key", null, null);
+    client.request("GET", "/query-key", null, null, null);
   }
 
   /** GET /basic */
   public void getWithBasic() {
-    client.request("GET", "/basic", null, null);
+    client.request("GET", "/basic", null, null, null);
   }
 
   /** GET /oauth */
   public void getWithOAuth() {
-    client.request("GET", "/oauth", null, null);
+    client.request("GET", "/oauth", null, null, null);
   }
 
   /** GET /public */
   public void getPublic() {
-    client.request("GET", "/public", null, null);
+    client.request("GET", "/public", null, null, null);
   }
 
   /** GET /inherited */
   public void getInherited() {
-    client.request("GET", "/inherited", null, null);
+    client.request("GET", "/inherited", null, null, null);
   }
 }

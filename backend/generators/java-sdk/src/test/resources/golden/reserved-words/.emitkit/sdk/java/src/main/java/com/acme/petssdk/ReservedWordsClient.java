@@ -66,12 +66,16 @@ public final class ReservedWordsClient {
    * Other non-2xx statuses throw an {@link ApiException}.
    *
    * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
-   * encoded here, and entries with a null name or value are skipped. A null query is empty, and a
-   * null body sends none.
+   * encoded here, and entries with a null name or value are skipped. A null query or header map is
+   * empty, and a null body sends none.
    */
   public HttpResponse<String> request(
-      String method, String path, Map<String, String> query, Object body) {
-    HttpRequest request = buildRequest(method, path, query, body);
+      String method,
+      String path,
+      Map<String, String> query,
+      Map<String, String> headers,
+      Object body) {
+    HttpRequest request = buildRequest(method, path, query, headers, body);
     for (int attempt = 0; ; attempt++) {
       HttpResponse<String> response = send(request);
       int status = response.statusCode();
@@ -87,7 +91,11 @@ public final class ReservedWordsClient {
   }
 
   private HttpRequest buildRequest(
-      String method, String path, Map<String, String> query, Object body) {
+      String method,
+      String path,
+      Map<String, String> query,
+      Map<String, String> headers,
+      Object body) {
     Map<String, String> allQuery = new LinkedHashMap<>(config.authQuery());
     if (query != null) {
       query.forEach(
@@ -100,6 +108,14 @@ public final class ReservedWordsClient {
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
     config.authHeaders().forEach(builder::header);
+    if (headers != null) {
+      headers.forEach(
+          (name, value) -> {
+            if (name != null && value != null) {
+              builder.header(name, value);
+            }
+          });
+    }
     builder.timeout(config.timeout());
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());

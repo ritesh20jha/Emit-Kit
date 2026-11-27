@@ -4,6 +4,7 @@ package com.acme.petssdk.resources;
 import com.acme.petssdk.NoOperationIdsClient;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /** Operations tagged default. */
 public final class DefaultApi {
@@ -16,22 +17,22 @@ public final class DefaultApi {
 
   /** GET /users */
   public void getUsers() {
-    client.request("GET", "/users", null, null);
+    client.request("GET", "/users", null, null, null);
   }
 
   /** POST /users */
   public void postUsers() {
-    client.request("POST", "/users", null, null);
+    client.request("POST", "/users", null, null, null);
   }
 
   /** GET /users/{id} */
   public void getUsersById(int id) {
-    client.request("GET", "/users/" + segment(String.valueOf(id)), null, null);
+    client.request("GET", "/users/" + segment(String.valueOf(id)), null, null, null);
   }
 
   /** DELETE /users/{id} */
   public void deleteUsersById(int id) {
-    client.request("DELETE", "/users/" + segment(String.valueOf(id)), null, null);
+    client.request("DELETE", "/users/" + segment(String.valueOf(id)), null, null, null);
   }
 
   /** GET /users/{id}/posts/{postId} */
@@ -40,17 +41,18 @@ public final class DefaultApi {
         "GET",
         "/users/" + segment(String.valueOf(id)) + "/posts/" + segment(postId),
         null,
+        null,
         null);
   }
 
   /** GET /a-b */
   public void getAb() {
-    client.request("GET", "/a-b", null, null);
+    client.request("GET", "/a-b", null, null, null);
   }
 
   /** GET /a/b */
   public void getAb2() {
-    client.request("GET", "/a/b", null, null);
+    client.request("GET", "/a/b", null, null, null);
   }
 
   /** Percent-encodes one path segment. URLEncoder writes spaces as '+', so use %20. */

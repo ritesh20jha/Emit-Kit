@@ -31,8 +31,9 @@ schemes, and `basic` for HTTP basic. Other schemes, such as cookie API keys, are
 
 ## Parameters
 
-Header and cookie parameters are not sent yet, so an operation that needs one cannot be called
-through this SDK until support is added.
+Required parameters are method arguments and optional ones are fields of the operation's
+`...Options` record. Header parameters are sent as headers. Cookie parameters are sent in a
+`Cookie` header, with each value percent-encoded.
 
 ## Errors
 

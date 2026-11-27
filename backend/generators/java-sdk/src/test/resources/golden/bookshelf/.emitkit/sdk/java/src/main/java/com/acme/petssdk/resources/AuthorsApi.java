@@ -28,7 +28,7 @@ public final class AuthorsApi {
     if (options != null && options.sort() != null) {
       query.put("sort", String.valueOf(options.sort()));
     }
-    HttpResponse<String> response = client.request("GET", "/authors", query, null);
+    HttpResponse<String> response = client.request("GET", "/authors", query, null, null);
     return read(response, new TypeReference<List<Author>>() {});
   }
 
@@ -38,6 +38,7 @@ public final class AuthorsApi {
         client.request(
             "GET",
             "/authors/" + segment(String.valueOf(authorId)) + "/books",
+            null,
             null,
             null);
     return read(response, new TypeReference<List<Book>>() {});

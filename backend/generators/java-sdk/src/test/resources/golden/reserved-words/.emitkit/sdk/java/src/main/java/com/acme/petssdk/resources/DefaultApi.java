@@ -3,6 +3,7 @@ package com.acme.petssdk.resources;
 
 import com.acme.petssdk.ReservedWordsClient;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Operations tagged default. */
@@ -16,7 +17,7 @@ public final class DefaultApi {
 
   /** POST /delete */
   public void delete() {
-    client.request("POST", "/delete", null, null);
+    client.request("POST", "/delete", null, null, null);
   }
 
   /** GET /default */
@@ -25,7 +26,7 @@ public final class DefaultApi {
     if (options != null && options.default_() != null) {
       query.put("default", options.default_());
     }
-    client.request("GET", "/default", query, null);
+    client.request("GET", "/default", query, null, null);
   }
 
   public record DefaultOptions(

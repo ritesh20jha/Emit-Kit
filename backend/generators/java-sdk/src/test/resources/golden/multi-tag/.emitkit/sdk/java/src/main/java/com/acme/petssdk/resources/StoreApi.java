@@ -2,6 +2,7 @@
 package com.acme.petssdk.resources;
 
 import com.acme.petssdk.MultiTagClient;
+import java.util.List;
 
 /** Operations tagged store. */
 public final class StoreApi {
@@ -14,6 +15,6 @@ public final class StoreApi {
 
   /** GET /store/orders */
   public void listStoreOrders() {
-    client.request("GET", "/store/orders", null, null);
+    client.request("GET", "/store/orders", null, null, null);
   }
 }
