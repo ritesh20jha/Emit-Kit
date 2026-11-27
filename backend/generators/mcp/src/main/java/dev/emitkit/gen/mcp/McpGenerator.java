@@ -8,6 +8,7 @@ import dev.emitkit.gen.core.GeneratorId;
 import dev.emitkit.gen.core.Templates;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.Operation;
+import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.RequestBody;
 import dev.emitkit.spec.naming.Language;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Emits a stdio Model Context Protocol server under {@code {outputDir}mcp/}: one tool per
@@ -60,16 +62,18 @@ public final class McpGenerator implements Generator {
     Set<String> taken = new HashSet<>();
     List<Tool> tools = new ArrayList<>();
     for (Operation op : model.operations()) {
+      List<Parameter> parameters =
+          op.parameters().stream().filter(p -> !isReservedHeader(p)).toList();
       tools.add(
           new Tool(
               toolName(op.operationId(), taken),
               description(op),
               op.method(),
               op.path(),
-              params(op),
+              params(parameters),
               op.requestBody() != null,
               op.security(),
-              inputSchema(op, renderer)));
+              inputSchema(parameters, op.requestBody(), renderer)));
     }
     return List.copyOf(tools);
   }
@@ -167,8 +171,20 @@ public final class McpGenerator implements Generator {
     return text.replaceAll("\\s+", " ").strip();
   }
 
-  private static List<Tool.Param> params(Operation op) {
-    return op.parameters().stream()
+  /**
+   * Header names the server sets itself: Authorization, Accept and Content-Type. A header parameter
+   * with one of these names, compared without case, is not a tool input.
+   */
+  private static final Set<String> RUNNER_HEADERS =
+      Set.of("authorization", "accept", "content-type");
+
+  private static boolean isReservedHeader(Parameter p) {
+    return p.in() == ParamLocation.HEADER
+        && RUNNER_HEADERS.contains(p.name().toLowerCase(Locale.ROOT));
+  }
+
+  private static List<Tool.Param> params(List<Parameter> parameters) {
+    return parameters.stream()
         .map(p -> new Tool.Param(p.name(), p.in().name().toLowerCase(Locale.ROOT)))
         .toList();
   }
@@ -177,16 +193,16 @@ public final class McpGenerator implements Generator {
    * {@code {type: "object", properties: {<params>, body}, required: [...]}}. A parameter and the
    * body share one namespace, so a parameter named {@code body} keeps its own property.
    */
-  private static Map<String, Object> inputSchema(Operation op, JsonSchemaRenderer renderer) {
+  private static Map<String, Object> inputSchema(
+      List<Parameter> parameters, @Nullable RequestBody body, JsonSchemaRenderer renderer) {
     Map<String, Object> properties = new LinkedHashMap<>();
     Set<String> required = new LinkedHashSet<>();
-    for (Parameter p : op.parameters()) {
+    for (Parameter p : parameters) {
       properties.putIfAbsent(p.name(), renderer.render(p.schema(), p.description()));
       if (p.required()) {
         required.add(p.name());
       }
     }
-    RequestBody body = op.requestBody();
     if (body != null) {
       properties.putIfAbsent("body", renderer.render(body.schema(), null));
       if (body.required()) {

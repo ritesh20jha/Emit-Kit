@@ -28,6 +28,7 @@ set in the client's server configuration.
 | `API_KEY` | no | Sent in the header, query parameter or cookie the spec declares, on the tools whose operation accepts that API key. |
 
 A tool sends a credential only when its operation's security requirement lists the scheme, so an
-operation that declares `security: []` gets no credentials.
+operation that declares `security: []` gets no credentials. When an operation lists alternative security requirements,
+every configured credential named by any of the operation's alternative security requirements is sent, with at most one API key per request.
 
 Request bodies are sent as JSON. The tools are listed in `src/tools.ts`.

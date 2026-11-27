@@ -24,8 +24,15 @@ import dev.emitkit.spec.model.PrimitiveType;
 import dev.emitkit.spec.model.RefSchema;
 import dev.emitkit.spec.model.RequestBody;
 import dev.emitkit.spec.model.Schema;
+import dev.emitkit.spec.parse.ParseResult;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -160,20 +167,79 @@ class McpGeneratorTest {
   void serverDefaultsToTheFirstAbsoluteServerUrl() {
     String server = source(generate("bookshelf"), "src/server.ts");
     assertThat(server)
-        .contains("const DEFAULT_BASE_URL = \"https://api.bookshelf.example.com/v1\";")
-        .contains("process.env.API_BASE_URL || DEFAULT_BASE_URL");
+        .contains("const DEFAULT_BASE_URL: string = \"https://api.bookshelf.example.com/v1\";")
+        .contains("const configured = process.env.API_BASE_URL ?? \"\";")
+        .contains("return { baseUrl: DEFAULT_BASE_URL.replace(/\\/+$/, \"\") };");
   }
 
   @Test
   void serverWithNoUsableUrlExitsWithOneStderrLine() {
-    // No servers and no API_BASE_URL: fail with one clear line, not an uncaught error on import.
+    // No servers and no API_BASE_URL: write one line to stderr, then exit 1. Nothing connects.
     var files =
         generator.generate(model(List.of(operation("listThings", "/things")), Map.of()), ctx());
     assertThat(source(files, "src/server.ts"))
-        .contains("const DEFAULT_BASE_URL = \"\";")
-        .contains("process.stderr.write(\"API_BASE_URL is required")
-        .contains("process.exit(1);")
+        .contains("const DEFAULT_BASE_URL: string = \"\";")
+        .contains("process.stderr.write(message, () => process.exit(1));")
+        .contains("API_BASE_URL is required")
         .doesNotContain("throw new Error(\"API_BASE_URL");
+  }
+
+  @Test
+  void serverRejectsABaseUrlThatIsNotAbsoluteHttp() {
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("must be an absolute http(s) URL");
+  }
+
+  @Test
+  void serverDoesNotExitWhenImported() {
+    // The entry point runs only when this file is the process's entry; a plain import is inert.
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("export async function main")
+        .contains("process.argv[1]");
+  }
+
+  @Test
+  void readmeStatesThatAlternativesSendEveryConfiguredCredential() {
+    assertThat(source(generate("bookshelf"), "README.md"))
+        .contains(
+            "every configured credential named by any of the operation's alternative security"
+                + " requirements is sent");
+  }
+
+  @Test
+  void reservedHeaderParametersAreNotToolInputs() {
+    var listItems =
+        McpGenerator.tools(local("apikey-precedence")).stream()
+            .filter(t -> t.name().equals("list_items"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(listItems.params())
+        .extracting(McpGenerator.Tool.Param::name)
+        .doesNotContain("Authorization", "Accept", "Content-Type")
+        .contains("X-Api-Key");
+    assertThat(listItems.inputSchemaJson())
+        .doesNotContain("\"Authorization\"")
+        .doesNotContain("\"Accept\"")
+        .doesNotContain("\"Content-Type\"");
+  }
+
+  @Test
+  void apiKeyPrecedenceSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "apikey-precedence", generator.generate(local("apikey-precedence"), ctx()));
+  }
+
+  /** A spec under this module's {@code src/test/resources/specs/}, parsed into the model. */
+  private static ApiModel local(String name) {
+    String text;
+    try {
+      text = Files.readString(Path.of("src", "test", "resources", "specs", name + ".yaml"));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    ParseResult result = new SpecParser().parse(text);
+    assertThat(result.errors()).isEmpty();
+    return Objects.requireNonNull(result.model());
   }
 
   @Test
