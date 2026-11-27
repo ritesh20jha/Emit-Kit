@@ -37,12 +37,16 @@ const SECURITY_SCHEMES = new Map<string, Credential>([
   ]
 ]);
 
-const baseUrl = (process.env.API_BASE_URL ?? "").replace(/\/+$/, "");
+/** Base URL used when API_BASE_URL is not set. Empty when the spec declares no absolute server URL. */
+const DEFAULT_BASE_URL = "https://api.bookshelf.example.com/v1";
+
+const baseUrl = (process.env.API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
 const apiToken = process.env.API_TOKEN;
 const apiKey = process.env.API_KEY;
 
-if (!baseUrl) {
-  throw new Error("API_BASE_URL is required, for example https://api.example.com");
+if (baseUrl === "") {
+  process.stderr.write("API_BASE_URL is required: the API declares no absolute server URL. Set it, for example to https://api.example.com\n");
+  process.exit(1);
 }
 
 type Args = Record<string, unknown>;

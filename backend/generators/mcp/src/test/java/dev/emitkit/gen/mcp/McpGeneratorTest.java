@@ -157,6 +157,26 @@ class McpGeneratorTest {
   }
 
   @Test
+  void serverDefaultsToTheFirstAbsoluteServerUrl() {
+    String server = source(generate("bookshelf"), "src/server.ts");
+    assertThat(server)
+        .contains("const DEFAULT_BASE_URL = \"https://api.bookshelf.example.com/v1\";")
+        .contains("process.env.API_BASE_URL || DEFAULT_BASE_URL");
+  }
+
+  @Test
+  void serverWithNoUsableUrlExitsWithOneStderrLine() {
+    // No servers and no API_BASE_URL: fail with one clear line, not an uncaught error on import.
+    var files =
+        generator.generate(model(List.of(operation("listThings", "/things")), Map.of()), ctx());
+    assertThat(source(files, "src/server.ts"))
+        .contains("const DEFAULT_BASE_URL = \"\";")
+        .contains("process.stderr.write(\"API_BASE_URL is required")
+        .contains("process.exit(1);")
+        .doesNotContain("throw new Error(\"API_BASE_URL");
+  }
+
+  @Test
   void packageAndBinUseTheMcpSuffixSoTheyDoNotClashWithTheCliOrSdk() {
     String json = source(generate("petstore"), "package.json");
     assertThat(json)

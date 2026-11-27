@@ -23,7 +23,7 @@ set in the client's server configuration.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `API_BASE_URL` | yes | Base URL that each tool's path is appended to, for example `https://api.example.com/v1`. A trailing slash is removed. |
+| `API_BASE_URL` | no | Base URL that each tool's path is appended to, for example `https://api.example.com/v1`. A trailing slash is removed. Defaults to `https://api.bookshelf.example.com/v1`. |
 | `API_TOKEN` | no | Sent as `Authorization: Bearer <token>` on the tools whose operation accepts a bearer or OAuth2 token. |
 | `API_KEY` | no | Sent in the header, query parameter or cookie the spec declares, on the tools whose operation accepts that API key. |
 
