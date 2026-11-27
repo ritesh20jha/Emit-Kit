@@ -144,6 +144,49 @@ class SpecParserOperationsTest {
     assertThat(put.responses().get("200").description()).isEqualTo("all good");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"3.0.3", "3.1.0"})
+  void resolvesComponentParametersAtPathAndOperationLevel(String openapi) {
+    var r =
+        parser.parse(
+            """
+            openapi: %s
+            info: {title: Refs, version: "1"}
+            paths:
+              /pets/{petId}:
+                parameters:
+                  - $ref: '#/components/parameters/PetId'
+                get:
+                  operationId: getPet
+                  parameters:
+                    - $ref: '#/components/parameters/Limit'
+                    - {name: q, in: query, schema: {type: string}}
+                  responses:
+                    '200': {description: ok}
+            components:
+              parameters:
+                PetId:
+                  name: petId
+                  in: path
+                  required: true
+                  description: The pet's id.
+                  schema: {type: string}
+                Limit:
+                  name: limit
+                  in: query
+                  schema: {type: integer}
+            """
+                .formatted(openapi));
+
+    var op = only(r);
+    assertThat(op.parameters())
+        .extracting(Parameter::name, Parameter::in, Parameter::required, Parameter::description)
+        .containsExactly(
+            tuple("petId", ParamLocation.PATH, true, "The pet's id."),
+            tuple("limit", ParamLocation.QUERY, false, null),
+            tuple("q", ParamLocation.QUERY, false, null));
+  }
+
   @Test
   void relativeExternalRefIsRejectedWithoutResolving() {
     var r =
