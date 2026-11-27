@@ -87,6 +87,26 @@ class CliGeneratorTest {
   }
 
   @Test
+  void eachCommandCarriesItsEffectiveSecurityRequirement() {
+    var files = generate("bookshelf");
+    // listAuthors declares security: [], so it sends no credentials.
+    assertThat(source(files, "src/commands/authors.ts")).contains("security: [],");
+    // createLoan accepts an API key or an OAuth2 token, not the global bearer token.
+    assertThat(source(files, "src/commands/loans.ts"))
+        .contains("security: [\"apiKeyAuth\", \"oauth2\"],");
+    // returnLoan declares no security, so it inherits the global requirement.
+    assertThat(source(files, "src/commands/loans.ts")).contains("security: [\"bearerAuth\"],");
+  }
+
+  @Test
+  void securitySchemesMapToTheirCredentialLocation() {
+    assertThat(source(generate("bookshelf"), "src/index.ts"))
+        .contains("[\"bearerAuth\", { kind: \"bearer\" }]")
+        .contains("[\"apiKeyAuth\", { kind: \"apiKey\", in: \"header\", name: \"X-Api-Key\" }]")
+        .contains("[\"oauth2\", { kind: \"bearer\" }]");
+  }
+
+  @Test
   void paramsNamedLikeGlobalOptionsGetSuffixedFlags() {
     var op =
         operation(

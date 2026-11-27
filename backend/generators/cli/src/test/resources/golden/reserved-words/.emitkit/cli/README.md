@@ -16,8 +16,9 @@ petstore <group> <operation> [options]
 ```
 
 Global options, accepted before or after the command: `--base-url <url>`, `--token <token>` (sent
-as a bearer token), `--api-key <key>` (sent in the header or query parameter the API declares), and
-`--output json|table` (default `json`). Request bodies use `--json <body|@file>`.
+as a bearer token), `--api-key <key>` (sent in the header, query parameter or cookie the API
+declares), and `--output json|table` (default `json`). A credential is sent only to operations whose
+security requirement declares it. Request bodies use `--json <body|@file>`.
 
 ## Base URL
 

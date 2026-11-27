@@ -24,6 +24,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: {{{methodLiteral}}},
         path: {{{pathExpr}}},
+        security: {{{securityLiteral}}},
 {{#hasQuery}}
         query: {
 {{#query}}

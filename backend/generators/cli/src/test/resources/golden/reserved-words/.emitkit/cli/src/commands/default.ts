@@ -15,6 +15,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "POST",
         path: "/delete",
+        security: [],
       }),
     );
 
@@ -26,6 +27,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/default",
+        security: [],
         query: {
           "default": opts["default"],
         },

@@ -16,6 +16,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/pets",
+        security: [],
         query: {
           "limit": opts["limit"],
         },
@@ -30,6 +31,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "POST",
         path: "/pets",
+        security: [],
         body: opts["json"],
         contentType: "application/json",
       }),
@@ -43,6 +45,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/pets/" + encodeURIComponent(String(opts["petId"])),
+        security: [],
       }),
     );
 }

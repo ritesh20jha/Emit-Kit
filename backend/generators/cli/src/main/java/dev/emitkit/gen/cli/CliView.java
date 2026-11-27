@@ -7,11 +7,12 @@ import dev.emitkit.gen.core.GeneratorContext;
 import dev.emitkit.gen.core.PackageNames;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.SecurityScheme;
-import dev.emitkit.spec.model.SecurityScheme.Kind;
 import dev.emitkit.spec.model.Server;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /** Values rendered by the CLI's index.ts, package.json, tsconfig.json and README templates. */
 record CliView(
@@ -25,12 +26,13 @@ record CliView(
     String defaultBaseUrl,
     String defaultBaseUrlLiteral,
     boolean hasDefaultBaseUrl,
-    String apiKeyHeadersLiteral,
-    String apiKeyQueriesLiteral,
+    String securitySchemesLiteral,
     List<CommandGroup> groups,
     List<CommandLine> commands) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
+
+  private static final String BEARER = "{ kind: \"bearer\" }";
 
   /** One README entry: the full command line a user types, such as {@code petstore pets}. */
   record CommandLine(String text) {}
@@ -41,13 +43,6 @@ record CliView(
     String packageName =
         (scope == null || scope.isEmpty() ? "" : "@" + scope + "/") + names.npmName() + "-cli";
     String defaultUrl = defaultBaseUrl(model.servers());
-    List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
-    List<String> headers = apiKeyNames(schemes, "header");
-    List<String> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
-    if (headers.isEmpty() && queries.isEmpty()) {
-      // No API key scheme is declared, so --api-key falls back to the conventional header.
-      headers = List.of(quote("X-API-Key"));
-    }
     List<CommandGroup> groups = CommandGroup.of(model);
     List<CommandLine> commands = new ArrayList<>();
     for (CommandGroup group : groups) {
@@ -67,8 +62,7 @@ record CliView(
         defaultUrl,
         quote(defaultUrl),
         !defaultUrl.isEmpty(),
-        "[" + String.join(", ", headers) + "]",
-        "[" + String.join(", ", queries) + "]",
+        securitySchemesLiteral(model.securitySchemes().values()),
         groups,
         List.copyOf(commands));
   }
@@ -85,10 +79,36 @@ record CliView(
     return servers.get(0).url();
   }
 
-  private static List<String> apiKeyNames(List<SecurityScheme> schemes, String location) {
-    return schemes.stream()
-        .filter(s -> s.kind() == Kind.API_KEY && location.equals(s.in()) && s.paramName() != null)
-        .map(s -> quote(s.paramName()))
-        .toList();
+  /**
+   * A TypeScript array literal of {@code [name, credential]} pairs, one per scheme that a command
+   * can send a credential for. Schemes the CLI cannot fill, such as HTTP basic, are left out.
+   */
+  static String securitySchemesLiteral(Collection<SecurityScheme> schemes) {
+    List<String> entries = new ArrayList<>();
+    for (SecurityScheme scheme : schemes) {
+      String credential = credential(scheme);
+      if (credential != null) {
+        entries.add("[" + quote(scheme.name()) + ", " + credential + "]");
+      }
+    }
+    return entries.isEmpty() ? "[]" : "[\n  " + String.join(",\n  ", entries) + ",\n]";
+  }
+
+  /** The TypeScript {@code Credential} value for a scheme, or null when no option fills it. */
+  private static @Nullable String credential(SecurityScheme scheme) {
+    return switch (scheme.kind()) {
+      case OAUTH2, OPENID_CONNECT -> BEARER;
+      case HTTP -> "bearer".equalsIgnoreCase(scheme.scheme()) ? BEARER : null;
+      case API_KEY -> apiKeyCredential(scheme);
+    };
+  }
+
+  private static @Nullable String apiKeyCredential(SecurityScheme scheme) {
+    String in = scheme.in();
+    boolean supported = "header".equals(in) || "query".equals(in) || "cookie".equals(in);
+    if (!supported || scheme.paramName() == null) {
+      return null;
+    }
+    return "{ kind: \"apiKey\", in: " + quote(in) + ", name: " + quote(scheme.paramName()) + " }";
   }
 }

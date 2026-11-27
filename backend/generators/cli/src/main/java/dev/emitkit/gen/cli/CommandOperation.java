@@ -31,7 +31,8 @@ record CommandOperation(
     boolean hasHeaders,
     boolean hasCookies,
     boolean hasBody,
-    String contentTypeLiteral) {
+    String contentTypeLiteral,
+    String securityLiteral) {
 
   /** Global options and the body flag. A parameter with one of these flags gets a suffix. */
   private static final Set<String> RESERVED_FLAGS =
@@ -112,7 +113,13 @@ record CommandOperation(
         !headers.isEmpty(),
         !cookies.isEmpty(),
         body != null,
-        body == null ? quote("") : quote(body.contentType()));
+        body == null ? quote("") : quote(body.contentType()),
+        securityLiteral(op.security()));
+  }
+
+  /** The scheme names of the operation's effective security requirement, as a string array. */
+  static String securityLiteral(List<String> schemes) {
+    return "[" + String.join(", ", schemes.stream().map(TsLiterals::quote).toList()) + "]";
   }
 
   /**

@@ -11,6 +11,8 @@ export interface Invocation {
   method: string;
   /** Path below the base URL, with path parameters already URL-encoded. */
   path: string;
+  /** Scheme names of the operation's effective security requirement. Empty sends no credentials. */
+  security: string[];
   query?: Record<string, string | undefined>;
   headers?: Record<string, string | undefined>;
   cookies?: Record<string, string | undefined>;
@@ -30,10 +32,18 @@ type GlobalOptions = {
 
 /** Base URL used when --base-url is not passed. Empty when no server is an absolute http(s) URL. */
 const DEFAULT_BASE_URL = "https://api.bookshelf.example.com/v1";
-/** Headers that receive the --api-key value. */
-const API_KEY_HEADERS: string[] = ["X-Api-Key"];
-/** Query parameters that receive the --api-key value, used only when no header scheme exists. */
-const API_KEY_QUERIES: string[] = [];
+
+/** Where a security scheme's credential goes: the bearer token, or the API key in a location. */
+type Credential =
+  | { kind: "bearer" }
+  | { kind: "apiKey"; in: "header" | "query" | "cookie"; name: string };
+
+/** Credential for each security scheme the spec declares, keyed by scheme name. */
+const SECURITY_SCHEMES = new Map<string, Credential>([
+  ["bearerAuth", { kind: "bearer" }],
+  ["apiKeyAuth", { kind: "apiKey", in: "header", name: "X-Api-Key" }],
+  ["oauth2", { kind: "bearer" }],
+]);
 
 const program = new Command()
   .name("petstore")
@@ -41,8 +51,8 @@ const program = new Command()
   .version("1.2.3")
   .configureHelp({ showGlobalOptions: true })
   .option("--base-url <url>", "Base URL of the API")
-  .option("--token <token>", "Bearer token, sent as Authorization: Bearer <token>")
-  .option("--api-key <key>", "API key, sent in the header or query parameter the API declares")
+  .option("--token <token>", "Bearer token, sent as Authorization: Bearer <token> where the operation accepts it")
+  .option("--api-key <key>", "API key, sent where the operation accepts it, in the location the API declares")
   .addOption(new Option("--output <format>", "Output format").choices(["json", "table"]).default("json"));
 
 const run: Runner = async (call) => {
@@ -53,16 +63,20 @@ const run: Runner = async (call) => {
   }
   const url = new URL(baseUrl.replace(/\/+$/, "") + call.path);
   const headers = new Headers({ Accept: "application/json" });
-  if (globals.token !== undefined) {
-    headers.set("Authorization", `Bearer ${globals.token}`);
-  }
-  const apiKey = globals.apiKey;
-  if (apiKey !== undefined) {
-    for (const name of API_KEY_HEADERS) {
-      headers.set(name, apiKey);
-    }
-    for (const name of API_KEY_QUERIES) {
-      url.searchParams.set(name, apiKey);
+  const cookies: string[] = [];
+  // Only the credentials that this operation's security requirement declares are sent.
+  for (const schemeName of call.security) {
+    const credential = SECURITY_SCHEMES.get(schemeName);
+    if (credential?.kind === "bearer" && globals.token !== undefined) {
+      headers.set("Authorization", `Bearer ${globals.token}`);
+    } else if (credential?.kind === "apiKey" && globals.apiKey !== undefined) {
+      if (credential.in === "header") {
+        headers.set(credential.name, globals.apiKey);
+      } else if (credential.in === "query") {
+        url.searchParams.set(credential.name, globals.apiKey);
+      } else {
+        cookies.push(`${credential.name}=${encodeURIComponent(globals.apiKey)}`);
+      }
     }
   }
   for (const [name, value] of Object.entries(call.query ?? {})) {
@@ -75,9 +89,11 @@ const run: Runner = async (call) => {
       headers.set(name, value);
     }
   }
-  const cookies = Object.entries(call.cookies ?? {}).flatMap(([name, value]) =>
-    value === undefined ? [] : [`${name}=${encodeURIComponent(value)}`],
-  );
+  for (const [name, value] of Object.entries(call.cookies ?? {})) {
+    if (value !== undefined) {
+      cookies.push(`${name}=${encodeURIComponent(value)}`);
+    }
+  }
   if (cookies.length > 0) {
     headers.set("Cookie", cookies.join("; "));
   }
