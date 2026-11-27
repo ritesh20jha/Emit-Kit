@@ -42,7 +42,17 @@ final class PyTypeRenderer {
 
   /** Names the generated modules import, so no definition may take one. */
   private static final Set<String> IMPORTED =
-      Set.of("Any", "BaseModel", "ConfigDict", "Enum", "Field", "Optional", "TypeAdapter", "Union");
+      Set.of(
+          "Annotated",
+          "Any",
+          "BaseModel",
+          "ConfigDict",
+          "Enum",
+          "Field",
+          "Literal",
+          "Optional",
+          "TypeAdapter",
+          "Union");
 
   /** Lower-case names used in annotations; a field of one of these would shadow it. */
   private static final Set<String> FIELD_SHADOWS =
@@ -67,7 +77,8 @@ final class PyTypeRenderer {
           "update_forward_refs",
           "validate");
 
-  private static final Set<String> TYPING = Set.of("Any", "Optional", "Union");
+  private static final Set<String> TYPING =
+      Set.of("Annotated", "Any", "Literal", "Optional", "Union");
   private static final Set<String> PYDANTIC = Set.of("BaseModel", "ConfigDict", "Field");
   private static final Pattern INTEGER = Pattern.compile("-?(0|[1-9]\\d*)");
   private static final Pattern NUMBER =
@@ -136,8 +147,24 @@ final class PyTypeRenderer {
   private final Map<Schema, Definition> inline = new HashMap<>();
   private final List<Definition> defs = new ArrayList<>();
 
+  /** Discriminator property names of the discriminated unions in the document. */
+  private final Set<String> discriminators = new HashSet<>();
+
   PyTypeRenderer(ApiModel model) {
     this.model = model;
+    for (Schema schema : model.schemas().values()) {
+      collectDiscriminators(schema);
+    }
+    for (Operation op : model.operations()) {
+      op.parameters().forEach(p -> collectDiscriminators(p.schema()));
+      if (op.requestBody() != null) {
+        collectDiscriminators(op.requestBody().schema());
+      }
+      Schema response = successSchema(op);
+      if (response != null) {
+        collectDiscriminators(response);
+      }
+    }
     for (var entry : model.schemas().entrySet()) {
       String key = entry.getKey();
       components.put(key, define(unique(names.type(key), taken), key, entry.getValue()));
@@ -275,16 +302,77 @@ final class PyTypeRenderer {
   }
 
   /**
-   * A plain Union. The oneOf discriminator is intentionally not emitted as {@code
-   * Field(discriminator=...)} until OneOfSchema carries a mapping: option models type the
-   * discriminator as str, which pydantic rejects in a discriminated union.
+   * A Union of the options. When the oneOf is a discriminated union (see {@link #discriminatedBy}),
+   * it is annotated with pydantic's discriminator so that the payload is matched on that property.
    */
   private String union(OneOfSchema o, String hint, Scope scope) {
     List<String> options = new ArrayList<>();
     for (int i = 0; i < o.options().size(); i++) {
       options.add(typeOf(o.options().get(i), hint + " option " + (i + 1), scope));
     }
-    return scope.use("Union") + "[" + String.join(", ", options) + "]";
+    String union = scope.use("Union") + "[" + String.join(", ", options) + "]";
+    String discriminator = discriminatedBy(o);
+    if (discriminator == null) {
+      return union;
+    }
+    return scope.use("Annotated")
+        + "["
+        + union
+        + ", "
+        + scope.use("Field")
+        + "(discriminator="
+        + PyClientView.quote(discriminator)
+        + ")]";
+  }
+
+  /**
+   * The discriminator property of a oneOf when every option is an object whose property of that
+   * name is an enum with one value, so that each option is identified by one value. Otherwise null.
+   */
+  private String discriminatedBy(OneOfSchema o) {
+    String property = o.discriminator();
+    if (property == null || o.options().isEmpty()) {
+      return null;
+    }
+    for (Schema option : o.options()) {
+      ObjectSchema object = objectOf(option, new HashSet<>());
+      Schema value = object == null ? null : object.properties().get(property);
+      if (value == null || singleValueEnum(value) == null) {
+        return null;
+      }
+    }
+    return property;
+  }
+
+  /** The enum, when the schema is one with exactly one value, or a reference to one. */
+  private EnumSchema singleValueEnum(Schema schema) {
+    Schema target = schema instanceof RefSchema r ? model.schemas().get(r.name()) : schema;
+    return target instanceof EnumSchema e && e.values().size() == 1 ? e : null;
+  }
+
+  /**
+   * Records the discriminator of each discriminated union in a schema tree. Named schemas are
+   * walked on their own, so references are not followed.
+   */
+  private void collectDiscriminators(Schema schema) {
+    switch (schema) {
+      case OneOfSchema o -> {
+        String discriminator = discriminatedBy(o);
+        if (discriminator != null) {
+          discriminators.add(discriminator);
+        }
+        o.options().forEach(this::collectDiscriminators);
+      }
+      case ObjectSchema o -> {
+        o.properties().values().forEach(this::collectDiscriminators);
+        if (o.additionalProperties() != null) {
+          collectDiscriminators(o.additionalProperties());
+        }
+      }
+      case ArraySchema a -> collectDiscriminators(a.items());
+      case AllOfSchema a -> a.parts().forEach(this::collectDiscriminators);
+      default -> {}
+    }
   }
 
   private String allOf(AllOfSchema all, String hint, Scope scope) {
@@ -390,7 +478,18 @@ final class PyTypeRenderer {
     }
     String py = unique(base, used);
     boolean required = o.required().contains(raw);
-    String type = typeOf(schema, owner.hint + " " + raw, scope);
+    EnumSchema single = discriminators.contains(raw) ? singleValueEnum(schema) : null;
+    // A discriminator field is a Literal: pydantic matches a discriminated union on literal values.
+    String type =
+        single == null
+            ? typeOf(schema, owner.hint + " " + raw, scope)
+            : nullable(
+                scope.use("Literal")
+                    + "["
+                    + enumLiteral(enumBase(single), single.values().get(0))
+                    + "]",
+                schema.nullable(),
+                scope);
     if (!required && !schema.nullable()) {
       type = wrapOptional(type, scope);
     }

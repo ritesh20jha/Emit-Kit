@@ -13,7 +13,6 @@ from .errors import (
 )
 from .models import (
     AudioFormat,
-    AudioFormatKind,
     Author,
     Book,
     BookCopies,
@@ -23,7 +22,6 @@ from .models import (
     BookPatch,
     EbookFormat,
     EbookFormatFileType,
-    EbookFormatKind,
     Error,
     Genre,
     ListAuthorsSort,
@@ -32,7 +30,6 @@ from .models import (
     LoanStatus,
     PrintFormat,
     PrintFormatBinding,
-    PrintFormatKind,
 )
 
 __all__ = [
@@ -47,7 +44,6 @@ __all__ = [
     "ServerError",
     "UnauthorizedError",
     "AudioFormat",
-    "AudioFormatKind",
     "Author",
     "Book",
     "BookCopies",
@@ -57,7 +53,6 @@ __all__ = [
     "BookPatch",
     "EbookFormat",
     "EbookFormatFileType",
-    "EbookFormatKind",
     "Error",
     "Genre",
     "ListAuthorsSort",
@@ -66,5 +61,4 @@ __all__ = [
     "LoanStatus",
     "PrintFormat",
     "PrintFormatBinding",
-    "PrintFormatKind",
 ]

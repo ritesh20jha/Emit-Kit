@@ -10,8 +10,10 @@ import dev.emitkit.gen.core.PackageNames;
 import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.gen.core.golden.GoldenFiles;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.EnumSchema;
 import dev.emitkit.spec.model.Info;
 import dev.emitkit.spec.model.ObjectSchema;
+import dev.emitkit.spec.model.OneOfSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
@@ -75,6 +77,42 @@ class PythonSdkGeneratorTest {
     assertThat(content("polymorphism", "models.py"))
         .contains("Pet = Union[Cat, Dog]")
         .doesNotContain("discriminator");
+  }
+
+  @Test
+  void discriminatedOneOfIsAnnotatedAndItsDiscriminatorFieldsAreLiterals() {
+    assertThat(content("bookshelf", "models.py"))
+        .contains(
+            "BookFormat = Annotated[Union[PrintFormat, EbookFormat, AudioFormat], "
+                + "Field(discriminator=\"kind\")]")
+        .contains("    kind: Literal[\"print\"]")
+        .contains("    kind: Literal[\"ebook\"]")
+        .contains("    kind: Literal[\"audio\"]")
+        .doesNotContain("class PrintFormatKind");
+  }
+
+  @Test
+  void oneOfWhoseOptionsDoNotAllFixTheDiscriminatorStaysPlain() {
+    // Probe1 allows two kinds, so the discriminator cannot tell the options apart.
+    var twoKinds = new EnumSchema(PrimitiveType.STRING, List.of("a", "b"), false, null);
+    var oneKind = new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null);
+    var probe1 = new ObjectSchema(Map.of("kind", twoKinds), Set.of("kind"), null, false, null);
+    var probe2 = new ObjectSchema(Map.of("kind", oneKind), Set.of("kind"), null, false, null);
+    var probes =
+        new OneOfSchema(
+            List.of(new RefSchema("Probe1", false, null), new RefSchema("Probe2", false, null)),
+            "kind",
+            false,
+            null);
+    assertThat(
+            sdkFile(
+                extended(
+                    FixtureSpecs.load("bookshelf"),
+                    null,
+                    Map.of("Probe1", probe1, "Probe2", probe2, "Probes", probes)),
+                "acme_pets/models.py"))
+        .contains("Probes = Union[Probe1, Probe2]")
+        .doesNotContain("Probes = Annotated");
   }
 
   @Test
