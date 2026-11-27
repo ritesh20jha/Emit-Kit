@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -57,8 +58,9 @@ public final class AuthSchemesClient {
   }
 
   /**
-   * Sends a request with the configured credentials, retrying 429 and 5xx responses with backoff.
-   * Other non-2xx statuses throw an {@link ApiException}.
+   * Sends a request with the credentials of the security schemes in {@code security}, and no others.
+   * An empty list sends none. Retries 429 and 5xx responses with backoff. Other non-2xx statuses
+   * throw an {@link ApiException}.
    *
    * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
    * encoded here, and entries with a null name or value are skipped. A null query or header map is
@@ -69,8 +71,9 @@ public final class AuthSchemesClient {
       String path,
       Map<String, String> query,
       Map<String, String> headers,
-      Object body) {
-    HttpRequest request = buildRequest(method, path, query, headers, body);
+      Object body,
+      List<String> security) {
+    HttpRequest request = buildRequest(method, path, query, headers, body, security);
     for (int attempt = 0; ; attempt++) {
       HttpResponse<String> response = send(request);
       int status = response.statusCode();
@@ -90,8 +93,17 @@ public final class AuthSchemesClient {
       String path,
       Map<String, String> query,
       Map<String, String> headers,
-      Object body) {
-    Map<String, String> allQuery = new LinkedHashMap<>(config.authQuery());
+      Object body,
+      List<String> security) {
+    Map<String, String> allHeaders = new LinkedHashMap<>();
+    Map<String, String> allQuery = new LinkedHashMap<>();
+    for (String scheme : security) {
+      ClientConfig.Credential credential = config.credentials().get(scheme);
+      if (credential != null) {
+        allHeaders.putAll(credential.headers());
+        allQuery.putAll(credential.query());
+      }
+    }
     if (query != null) {
       query.forEach(
           (name, value) -> {
@@ -100,17 +112,17 @@ public final class AuthSchemesClient {
             }
           });
     }
-    HttpRequest.Builder builder =
-        HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
-    config.authHeaders().forEach(builder::header);
     if (headers != null) {
       headers.forEach(
           (name, value) -> {
             if (name != null && value != null) {
-              builder.header(name, value);
+              allHeaders.put(name, value);
             }
           });
     }
+    HttpRequest.Builder builder =
+        HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
+    allHeaders.forEach(builder::header);
     builder.timeout(config.timeout());
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());
@@ -249,23 +261,34 @@ public final class AuthSchemesClient {
         throw new IllegalArgumentException(
             "AuthSchemesClient: maxRetries must be a non-negative integer");
       }
-      Map<String, String> headers = new LinkedHashMap<>();
-      Map<String, String> query = new LinkedHashMap<>();
+      // Credentials are keyed by security scheme. An operation sends only the schemes it lists.
+      Map<String, ClientConfig.Credential> credentials = new LinkedHashMap<>();
       if (apiKey != null) {
-        headers.put("X-API-Key", apiKey);
+        credentials.put(
+            "headerKey",
+            new ClientConfig.Credential(Map.of("X-API-Key", apiKey), Map.of()));
+        credentials.put(
+            "queryKey",
+            new ClientConfig.Credential(Map.of(), Map.of("api_key", apiKey)));
       }
       if (bearerToken != null) {
-        headers.put("Authorization", "Bearer " + bearerToken);
+        credentials.put(
+            "bearerAuth",
+            new ClientConfig.Credential(Map.of("Authorization", "Bearer " + bearerToken), Map.of()));
+        credentials.put(
+            "oauth",
+            new ClientConfig.Credential(Map.of("Authorization", "Bearer " + bearerToken), Map.of()));
       }
-      // A bearer token, when given, takes precedence over basic credentials.
-      if (basicUsername != null && !headers.containsKey("Authorization")) {
-        headers.put("Authorization", basicCredentials(basicUsername, basicPassword));
+      if (basicUsername != null && bearerToken == null) {
+        credentials.put(
+            "basicAuth",
+            new ClientConfig.Credential(Map.of("Authorization", basicCredentials(basicUsername, basicPassword)), Map.of()));
       }
       // Redirects are intentionally not followed, so credentials never leave the configured host.
       java.net.http.HttpClient client =
           httpClient == null ? java.net.http.HttpClient.newHttpClient() : httpClient;
       return new AuthSchemesClient(
-          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, headers, query));
+          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, credentials));
     }
 
     private static String basicCredentials(String username, String password) {

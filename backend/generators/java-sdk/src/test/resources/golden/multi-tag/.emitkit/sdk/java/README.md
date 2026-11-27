@@ -29,6 +29,10 @@ Credentials are set on the builder. Each method exists only when the API declare
 scheme: `apiKey` for API key schemes, `bearerToken` for HTTP bearer, OAuth2 and OpenID Connect
 schemes, and `basic` for HTTP basic. Other schemes, such as cookie API keys, are not mapped.
 
+Each operation sends only the credentials of the security schemes in its own requirement, or the
+API's global one when it declares none. An operation with an empty requirement sends no
+credentials.
+
 ## Parameters
 
 Required parameters are method arguments and optional ones are fields of the operation's

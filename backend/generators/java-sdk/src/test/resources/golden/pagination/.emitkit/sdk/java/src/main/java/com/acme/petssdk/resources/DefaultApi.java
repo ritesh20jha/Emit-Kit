@@ -28,7 +28,7 @@ public final class DefaultApi {
     if (options != null && options.limit() != null) {
       query.put("limit", String.valueOf(options.limit()));
     }
-    HttpResponse<String> response = client.request("GET", "/items", query, null, null);
+    HttpResponse<String> response = client.request("GET", "/items", query, null, null, List.of());
     return read(response, new TypeReference<ListItemsResponse>() {});
   }
 

@@ -15,31 +15,31 @@ public final class DefaultApi {
 
   /** GET /header-key */
   public void getWithHeaderKey() {
-    client.request("GET", "/header-key", null, null, null);
+    client.request("GET", "/header-key", null, null, null, List.of("headerKey"));
   }
 
   /** GET /query-key */
   public void getWithQueryKey() {
-    client.request("GET", "/query-key", null, null, null);
+    client.request("GET", "/query-key", null, null, null, List.of("queryKey"));
   }
 
   /** GET /basic */
   public void getWithBasic() {
-    client.request("GET", "/basic", null, null, null);
+    client.request("GET", "/basic", null, null, null, List.of("basicAuth"));
   }
 
   /** GET /oauth */
   public void getWithOAuth() {
-    client.request("GET", "/oauth", null, null, null);
+    client.request("GET", "/oauth", null, null, null, List.of("oauth"));
   }
 
   /** GET /public */
   public void getPublic() {
-    client.request("GET", "/public", null, null, null);
+    client.request("GET", "/public", null, null, null, List.of());
   }
 
   /** GET /inherited */
   public void getInherited() {
-    client.request("GET", "/inherited", null, null, null);
+    client.request("GET", "/inherited", null, null, null, List.of("bearerAuth"));
   }
 }

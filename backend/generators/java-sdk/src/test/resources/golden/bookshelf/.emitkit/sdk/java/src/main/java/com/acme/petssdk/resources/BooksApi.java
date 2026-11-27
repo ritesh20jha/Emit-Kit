@@ -40,7 +40,8 @@ public final class BooksApi {
     if (options != null && options.available() != null) {
       query.put("available", String.valueOf(options.available()));
     }
-    HttpResponse<String> response = client.request("GET", "/books", query, null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/books", query, null, null, List.of("bearerAuth"));
     return read(response, new TypeReference<BookPage>() {});
   }
 
@@ -48,26 +49,33 @@ public final class BooksApi {
   public Book createBook(String idempotencyKey, BookInput body) {
     Map<String, String> headers = new LinkedHashMap<>();
     headers.put("Idempotency-Key", idempotencyKey);
-    HttpResponse<String> response = client.request("POST", "/books", null, headers, body);
+    HttpResponse<String> response =
+        client.request("POST", "/books", null, headers, body, List.of("bearerAuth"));
     return read(response, new TypeReference<Book>() {});
   }
 
   /** Get a book */
   public Book getBook(String bookId) {
     HttpResponse<String> response =
-        client.request("GET", "/books/" + segment(bookId), null, null, null);
+        client.request("GET", "/books/" + segment(bookId), null, null, null, List.of("bearerAuth"));
     return read(response, new TypeReference<Book>() {});
   }
 
   /** Remove a book */
   public void deleteBook(String bookId) {
-    client.request("DELETE", "/books/" + segment(bookId), null, null, null);
+    client.request("DELETE", "/books/" + segment(bookId), null, null, null, List.of("bearerAuth"));
   }
 
   /** Update a book */
   public Book updateBook(String bookId, BookPatch body) {
     HttpResponse<String> response =
-        client.request("PATCH", "/books/" + segment(bookId), null, null, body);
+        client.request(
+            "PATCH",
+            "/books/" + segment(bookId),
+            null,
+            null,
+            body,
+            List.of("bearerAuth"));
     return read(response, new TypeReference<Book>() {});
   }
 

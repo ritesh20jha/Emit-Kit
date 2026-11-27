@@ -33,14 +33,21 @@ public final class LoansApi {
     if (!cookies.isEmpty()) {
       headers.put("Cookie", String.join("; ", cookies));
     }
-    HttpResponse<String> response = client.request("POST", "/loans", null, headers, body);
+    HttpResponse<String> response =
+        client.request("POST", "/loans", null, headers, body, List.of("apiKeyAuth", "oauth2"));
     return read(response, new TypeReference<Loan>() {});
   }
 
   /** Return a book */
   public Loan returnLoan(String loanId) {
     HttpResponse<String> response =
-        client.request("POST", "/loans/" + segment(loanId) + "/return", null, null, null);
+        client.request(
+            "POST",
+            "/loans/" + segment(loanId) + "/return",
+            null,
+            null,
+            null,
+            List.of("bearerAuth"));
     return read(response, new TypeReference<Loan>() {});
   }
 

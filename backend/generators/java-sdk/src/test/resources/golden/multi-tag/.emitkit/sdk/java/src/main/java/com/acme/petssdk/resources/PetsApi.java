@@ -17,7 +17,13 @@ public final class PetsApi {
 
   /** GET /pets/{id}/inventory */
   public void getPetInventory(int id) {
-    client.request("GET", "/pets/" + segment(String.valueOf(id)) + "/inventory", null, null, null);
+    client.request(
+        "GET",
+        "/pets/" + segment(String.valueOf(id)) + "/inventory",
+        null,
+        null,
+        null,
+        List.of());
   }
 
   /** Percent-encodes one path segment. URLEncoder writes spaces as '+', so use %20. */

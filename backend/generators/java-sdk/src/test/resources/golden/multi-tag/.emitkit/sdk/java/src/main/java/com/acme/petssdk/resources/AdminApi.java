@@ -15,6 +15,6 @@ public final class AdminApi {
 
   /** POST /admin/reset */
   public void resetPets() {
-    client.request("POST", "/admin/reset", null, null, null);
+    client.request("POST", "/admin/reset", null, null, null, List.of());
   }
 }

@@ -8,6 +8,7 @@ import dev.emitkit.spec.model.SecurityScheme.Kind;
 import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.naming.Language;
 import dev.emitkit.spec.naming.NameStrategy;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -35,8 +36,12 @@ record JavaClientView(
     boolean hasApiKey,
     boolean hasBearer,
     boolean hasBasic,
-    List<Literal> apiKeyHeaders,
-    List<Literal> apiKeyQueries,
+    /** Statements that put each API key scheme's credential into the builder's map. */
+    List<Literal> apiKeyCredentials,
+    List<Literal> bearerCredentials,
+    List<Literal> basicCredentials,
+    /** The condition under which basic credentials are used, as a bearer token takes precedence. */
+    String basicCondition,
     List<Accessor> accessors) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
@@ -62,8 +67,8 @@ record JavaClientView(
     List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
     String defaultUrl = defaultBaseUrl(model.servers());
     String advice = baseUrlAdvice(model.servers());
-    List<Literal> headers = apiKeyNames(schemes, "header");
-    List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
+    List<Literal> apiKeys = apiKeyCredentials(schemes);
+    boolean hasBearer = schemes.stream().anyMatch(JavaClientView::isBearerScheme);
     List<Accessor> accessors =
         JavaResourceRenderer.groups(model).stream()
             .map(g ->
@@ -84,12 +89,15 @@ record JavaClientView(
         !defaultUrl.isEmpty(),
         advice,
         quote(className + ": baseUrl is required. " + advice),
-        !headers.isEmpty() || !queries.isEmpty(),
-        schemes.stream().anyMatch(JavaClientView::isBearerScheme),
+        !apiKeys.isEmpty(),
+        hasBearer,
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
-        headers,
-        queries,
+        apiKeys,
+        bearerCredentials(schemes),
+        basicCredentials(schemes),
+        // A bearer token, when given, takes precedence over basic credentials.
+        hasBearer ? "basicUsername != null && bearerToken == null" : "basicUsername != null",
         accessors);
   }
 
@@ -199,10 +207,58 @@ record JavaClientView(
     return out.append('"').toString();
   }
 
-  private static List<Literal> apiKeyNames(List<SecurityScheme> schemes, String location) {
+  /**
+   * One statement per API key scheme sent in a header or a query parameter, which carries the
+   * builder's single API key in the scheme's own location and name.
+   */
+  private static List<Literal> apiKeyCredentials(List<SecurityScheme> schemes) {
+    var out = new ArrayList<Literal>();
+    for (SecurityScheme s : schemes) {
+      if (s.kind() != Kind.API_KEY || s.paramName() == null) {
+        continue;
+      }
+      String key = quote(s.paramName()) + ", apiKey)";
+      if ("header".equals(s.in())) {
+        out.add(new Literal(putCredential(s.name(), "Map.of(" + key, "Map.of()")));
+      } else if ("query".equals(s.in())) {
+        out.add(new Literal(putCredential(s.name(), "Map.of()", "Map.of(" + key)));
+      }
+    }
+    return out;
+  }
+
+  /** One statement per bearer scheme: OAuth2 and OpenID Connect carry the token as a bearer. */
+  private static List<Literal> bearerCredentials(List<SecurityScheme> schemes) {
     return schemes.stream()
-        .filter(s -> s.kind() == Kind.API_KEY && location.equals(s.in()) && s.paramName() != null)
-        .map(s -> new Literal(quote(s.paramName())))
+        .filter(JavaClientView::isBearerScheme)
+        .map(s ->
+            new Literal(
+                putCredential(
+                    s.name(), "Map.of(\"Authorization\", \"Bearer \" + bearerToken)", "Map.of()")))
         .toList();
+  }
+
+  /** One statement per HTTP basic scheme. */
+  private static List<Literal> basicCredentials(List<SecurityScheme> schemes) {
+    return schemes.stream()
+        .filter(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme()))
+        .map(s ->
+            new Literal(
+                putCredential(
+                    s.name(),
+                    "Map.of(\"Authorization\", basicCredentials(basicUsername, basicPassword))",
+                    "Map.of()")))
+        .toList();
+  }
+
+  /** A statement that adds one credential, with its headers and query, under its scheme name. */
+  private static String putCredential(String scheme, String headers, String query) {
+    return "credentials.put(\n            "
+        + quote(scheme)
+        + ",\n            new ClientConfig.Credential("
+        + headers
+        + ", "
+        + query
+        + "));";
   }
 }

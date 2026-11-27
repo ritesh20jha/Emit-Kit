@@ -204,20 +204,33 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
-  void apiKeyIsSentInHeaderOnlyWhenAHeaderSchemeExists() {
+  void apiKeySchemesSendTheKeyInTheirOwnLocationAndName() {
     // auth-schemes declares both a header and a query apiKey scheme.
     assertThat(clientSource(FixtureSpecs.load("auth-schemes")))
-        .contains("headers.put(\"X-API-Key\", apiKey);")
-        .doesNotContain("\"api_key\"");
+        .contains("new ClientConfig.Credential(Map.of(\"X-API-Key\", apiKey), Map.of())")
+        .contains("new ClientConfig.Credential(Map.of(), Map.of(\"api_key\", apiKey))");
   }
 
   @Test
-  void apiKeyFallsBackToTheQueryParameterWithoutAHeaderScheme() {
+  void apiKeyInTheQueryIsSentAsAQueryParameter() {
     var queryKey =
         new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
     assertThat(clientSource(Map.of("queryKey", queryKey)))
-        .contains("query.put(\"api_key\", apiKey);")
-        .doesNotContain("headers.put(\"");
+        .contains("new ClientConfig.Credential(Map.of(), Map.of(\"api_key\", apiKey))")
+        .doesNotContain("X-API-Key");
+  }
+
+  @Test
+  void operationsSendOnlyTheCredentialsOfTheirSecurityRequirement() {
+    var files = generate("bookshelf", ".emitkit/", names("com.acme", "pets-sdk"));
+    // listAuthors declares "security: []", so it sends no credentials at all.
+    assertThat(content(files, SRC + "resources/AuthorsApi.java"))
+        .contains("\"/authors\", query, null, null, List.of());");
+    assertThat(content(files, SRC + "resources/LoansApi.java"))
+        .contains("List.of(\"apiKeyAuth\", \"oauth2\")");
+    assertThat(content(files, SRC + "resources/BooksApi.java")).contains("List.of(\"bearerAuth\")");
+    assertThat(content(files, SRC + "BookshelfApiClient.java"))
+        .contains("config.credentials().get(scheme)", "allHeaders.putAll(credential.headers());");
   }
 
   @ParameterizedTest
@@ -228,7 +241,7 @@ class JavaSdkGeneratorTest {
     var scheme = new SecurityScheme("auth", kind, null, null, null);
     assertThat(clientSource(Map.of("auth", scheme)))
         .contains("public Builder bearerToken(String bearerToken)")
-        .contains("headers.put(\"Authorization\", \"Bearer \" + bearerToken);");
+        .contains("Map.of(\"Authorization\", \"Bearer \" + bearerToken)");
   }
 
   @Test
@@ -329,10 +342,8 @@ class JavaSdkGeneratorTest {
                 generate("auth-schemes", ".emitkit/", names("com.acme", "pets-sdk")),
                 SRC + "ClientConfig.java"))
         .contains("public String toString()")
-        .contains("authHeaders.keySet()")
-        .contains("authQuery.keySet()")
-        .doesNotContain("+ authHeaders +")
-        .doesNotContain("+ authQuery +");
+        .contains("credentials.keySet()")
+        .doesNotContain("+ credentials +");
   }
 
   @Test

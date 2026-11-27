@@ -15,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -56,8 +57,9 @@ public final class NoOperationIdsClient {
   }
 
   /**
-   * Sends a request with the configured credentials, retrying 429 and 5xx responses with backoff.
-   * Other non-2xx statuses throw an {@link ApiException}.
+   * Sends a request with the credentials of the security schemes in {@code security}, and no others.
+   * An empty list sends none. Retries 429 and 5xx responses with backoff. Other non-2xx statuses
+   * throw an {@link ApiException}.
    *
    * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
    * encoded here, and entries with a null name or value are skipped. A null query or header map is
@@ -68,8 +70,9 @@ public final class NoOperationIdsClient {
       String path,
       Map<String, String> query,
       Map<String, String> headers,
-      Object body) {
-    HttpRequest request = buildRequest(method, path, query, headers, body);
+      Object body,
+      List<String> security) {
+    HttpRequest request = buildRequest(method, path, query, headers, body, security);
     for (int attempt = 0; ; attempt++) {
       HttpResponse<String> response = send(request);
       int status = response.statusCode();
@@ -89,8 +92,17 @@ public final class NoOperationIdsClient {
       String path,
       Map<String, String> query,
       Map<String, String> headers,
-      Object body) {
-    Map<String, String> allQuery = new LinkedHashMap<>(config.authQuery());
+      Object body,
+      List<String> security) {
+    Map<String, String> allHeaders = new LinkedHashMap<>();
+    Map<String, String> allQuery = new LinkedHashMap<>();
+    for (String scheme : security) {
+      ClientConfig.Credential credential = config.credentials().get(scheme);
+      if (credential != null) {
+        allHeaders.putAll(credential.headers());
+        allQuery.putAll(credential.query());
+      }
+    }
     if (query != null) {
       query.forEach(
           (name, value) -> {
@@ -99,17 +111,17 @@ public final class NoOperationIdsClient {
             }
           });
     }
-    HttpRequest.Builder builder =
-        HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
-    config.authHeaders().forEach(builder::header);
     if (headers != null) {
       headers.forEach(
           (name, value) -> {
             if (name != null && value != null) {
-              builder.header(name, value);
+              allHeaders.put(name, value);
             }
           });
     }
+    HttpRequest.Builder builder =
+        HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
+    allHeaders.forEach(builder::header);
     builder.timeout(config.timeout());
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());
@@ -225,13 +237,13 @@ public final class NoOperationIdsClient {
         throw new IllegalArgumentException(
             "NoOperationIdsClient: maxRetries must be a non-negative integer");
       }
-      Map<String, String> headers = new LinkedHashMap<>();
-      Map<String, String> query = new LinkedHashMap<>();
+      // Credentials are keyed by security scheme. An operation sends only the schemes it lists.
+      Map<String, ClientConfig.Credential> credentials = new LinkedHashMap<>();
       // Redirects are intentionally not followed, so credentials never leave the configured host.
       java.net.http.HttpClient client =
           httpClient == null ? java.net.http.HttpClient.newHttpClient() : httpClient;
       return new NoOperationIdsClient(
-          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, headers, query));
+          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, credentials));
     }
   }
 }

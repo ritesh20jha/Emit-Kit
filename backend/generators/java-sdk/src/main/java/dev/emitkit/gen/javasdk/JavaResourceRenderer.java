@@ -235,6 +235,7 @@ final class JavaResourceRenderer {
     callArgs.add(anyQuery ? "query" : "null");
     callArgs.add(anyHeaders ? "headers" : "null");
     callArgs.add(body == null ? "null" : "body");
+    callArgs.add(securityList(op));
     String summary = op.summary() != null ? op.summary() : method + " " + op.path();
     String doc = JavaClientView.docText(summary);
 
@@ -311,6 +312,13 @@ final class JavaResourceRenderer {
     String argIndent = indent + "    ";
     String argLines = args.stream().map(a -> argIndent + a).collect(Collectors.joining(",\n"));
     return start + indent + "client.request(\n" + argLines + ");\n";
+  }
+
+  /** The security scheme names an operation's effective requirement lists, as a List literal. */
+  private static String securityList(Operation op) {
+    return "List.of("
+        + op.security().stream().map(JavaClientView::quote).collect(Collectors.joining(", "))
+        + ")";
   }
 
   /** The 2xx response that carries a body, the first in document order, or null. */
