@@ -23,6 +23,11 @@ export interface Invocation {
 
 export type Runner = (call: Invocation) => Promise<void>;
 
+/** An integer outside the safe range, kept as the text the API sent so that it prints exactly. */
+class RawNumber {
+  constructor(readonly text: string) {}
+}
+
 type GlobalOptions = {
   baseUrl?: string;
   token?: string;
@@ -119,15 +124,32 @@ function printOutput(text: string, format: GlobalOptions["output"]): void {
   if (text === "") {
     return;
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+  // The body is written as received. Parsing it would round integers outside the safe range.
+  const output = text.endsWith("\n") ? text : `${text}\n`;
+  if (format === "json") {
+    process.stdout.write(output);
     return;
   }
-  const table = format === "table" ? renderTable(value) : undefined;
-  process.stdout.write(table ?? `${JSON.stringify(value, null, 2)}\n`);
+  let value: unknown;
+  try {
+    value = parseJson(text);
+  } catch {
+    process.stdout.write(output);
+    return;
+  }
+  process.stdout.write(renderTable(value) ?? output);
+}
+
+/** JSON.parse that keeps each integer outside the safe range as the text the API sent. */
+function parseJson(text: string): unknown {
+  return JSON.parse(text, (_key, value: unknown, context?: { source?: string }) =>
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    !Number.isSafeInteger(value) &&
+    context?.source !== undefined
+      ? new RawNumber(context.source)
+      : value,
+  );
 }
 
 /** Renders an object, or an array of objects, as an aligned table. Other shapes return undefined. */
@@ -140,13 +162,31 @@ function renderTable(value: unknown): string | undefined {
   if (columns.length === 0) {
     return undefined;
   }
-  const cell = (v: unknown) => (typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? ""));
   const rows = items.map((item) => columns.map((column) => cell(item[column])));
   const widths = columns.map((column, i) => Math.max(column.length, ...rows.map((row) => row[i].length)));
   const line = (cells: string[]) => cells.map((text, i) => text.padEnd(widths[i])).join("  ").trimEnd();
   return `${[line(columns), ...rows.map(line)].join("\n")}\n`;
 }
 
+/** Text for one table cell. Nested values are written as compact JSON. */
+function cell(value: unknown): string {
+  return typeof value === "object" && value !== null ? compactJson(value) : String(value ?? "");
+}
+
+function compactJson(value: unknown): string {
+  if (value instanceof RawNumber) {
+    return value.text;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(compactJson).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const members = Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}:${compactJson(item)}`);
+    return `{${members.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof RawNumber);
 }

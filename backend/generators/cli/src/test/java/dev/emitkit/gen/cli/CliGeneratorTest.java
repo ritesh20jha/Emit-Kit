@@ -107,6 +107,17 @@ class CliGeneratorTest {
   }
 
   @Test
+  void jsonOutputIsNotReparsedThroughNumbers() {
+    // Parsing integers outside the safe range through Number rounds them, so the CLI must print
+    // the response text as received, and the table view must read those integers from source.
+    String index = source(generate("petstore"), "src/index.ts");
+    assertThat(index)
+        .doesNotContain("JSON.stringify(value, null, 2)")
+        .contains("context?.source")
+        .contains("Number.isSafeInteger");
+  }
+
+  @Test
   void paramsNamedLikeGlobalOptionsGetSuffixedFlags() {
     var op =
         operation(
