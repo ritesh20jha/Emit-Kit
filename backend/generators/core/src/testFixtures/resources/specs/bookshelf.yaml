@@ -1,0 +1,490 @@
+openapi: 3.1.0
+info:
+  title: Bookshelf API
+  version: 1.0.0
+  description: >-
+    A small library-catalogue API used to exercise EmitKit end to end. It covers
+    every parameter location, enums, oneOf with a discriminator, allOf, nested
+    arrays, nullable fields, reserved-word property names and three kinds of
+    security scheme.
+  contact:
+    name: EmitKit Playground
+    url: https://github.com/ritesh20jha/emitkit-playground
+servers:
+  - url: https://api.bookshelf.example.com/v1
+    description: Production
+tags:
+  - name: books
+    description: Catalogue entries
+  - name: authors
+    description: People who write books
+  - name: loans
+    description: Borrowing and returning books
+security:
+  - bearerAuth: []
+paths:
+  /books:
+    get:
+      operationId: listBooks
+      summary: List books
+      description: Returns a page of books, optionally filtered by genre and availability.
+      tags: [books]
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: genre
+          in: query
+          description: Only return books in this genre.
+          schema:
+            $ref: '#/components/schemas/Genre'
+        - name: available
+          in: query
+          description: Only return books with at least one free copy.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: A page of books.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createBook
+      summary: Add a book
+      description: Adds a new book to the catalogue.
+      tags: [books]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Client-generated key that makes retries safe.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookInput'
+      responses:
+        '201':
+          description: The created book.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Book'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /books/{bookId}:
+    parameters:
+      - $ref: '#/components/parameters/BookId'
+    get:
+      operationId: getBook
+      summary: Get a book
+      description: Returns one book by its id.
+      tags: [books]
+      responses:
+        '200':
+          description: The book.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Book'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateBook
+      summary: Update a book
+      description: Changes some fields of a book. Fields left out are kept.
+      tags: [books]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookPatch'
+      responses:
+        '200':
+          description: The updated book.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Book'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteBook
+      summary: Remove a book
+      description: Removes a book from the catalogue.
+      tags: [books]
+      responses:
+        '204':
+          description: The book was removed.
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /authors:
+    get:
+      operationId: listAuthors
+      summary: List authors
+      description: Returns every author, sorted by name.
+      tags: [authors]
+      security: []
+      parameters:
+        - name: sort
+          in: query
+          description: Sort direction.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+      responses:
+        '200':
+          description: All authors.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Author'
+  /authors/{authorId}/books:
+    get:
+      operationId: listAuthorBooks
+      summary: List an author's books
+      description: Returns the books written by one author.
+      tags: [authors, books]
+      parameters:
+        - name: authorId
+          in: path
+          required: true
+          description: The author's id.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The author's books.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Book'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /loans:
+    post:
+      operationId: createLoan
+      summary: Borrow a book
+      description: Lends a free copy of a book to a member.
+      tags: [loans]
+      security:
+        - apiKeyAuth: []
+        - oauth2: [loans:write]
+      parameters:
+        - name: session
+          in: cookie
+          description: Kiosk session, when borrowing from a library terminal.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanRequest'
+      responses:
+        '201':
+          description: The loan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+        '409':
+          description: No free copy is available.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /loans/{loanId}/return:
+    post:
+      operationId: returnLoan
+      summary: Return a book
+      description: Ends a loan and frees the copy.
+      tags: [loans]
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          description: The loan's id.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The closed loan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.bookshelf.example.com/oauth/token
+          scopes:
+            loans:write: Create and return loans
+  parameters:
+    BookId:
+      name: bookId
+      in: path
+      required: true
+      description: The book's id.
+      schema:
+        type: string
+    PageCursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from the previous page.
+      schema:
+        type: string
+    PageSize:
+      name: limit
+      in: query
+      description: Page size.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: The request was invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Genre:
+      type: string
+      description: Shelf a book sits on.
+      enum: [fiction, non-fiction, science, history, poetry]
+    Author:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        born:
+          type: string
+          format: date
+        website:
+          type: [string, 'null']
+          format: uri
+    BookInput:
+      type: object
+      required: [title, authorIds, genre]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        subtitle:
+          type: string
+        authorIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+        genre:
+          $ref: '#/components/schemas/Genre'
+        isbn:
+          type: string
+          pattern: '^(97[89])?\d{9}[\dX]$'
+        pageCount:
+          type: integer
+          format: int32
+        price:
+          type: number
+          format: double
+        keywords:
+          type: array
+          items:
+            type: string
+        # Reserved words in one or more target languages; checks name escaping.
+        class:
+          type: string
+          description: Library classification code.
+        default:
+          type: boolean
+          description: Whether this edition is the default one shown.
+        import:
+          type: boolean
+          description: Whether the book was imported from another catalogue.
+        format:
+          $ref: '#/components/schemas/BookFormat'
+    Book:
+      allOf:
+        - $ref: '#/components/schemas/BookInput'
+        - type: object
+          required: [id, createdAt, copies]
+          properties:
+            id:
+              type: string
+            createdAt:
+              type: string
+              format: date-time
+            copies:
+              type: object
+              required: [total, available]
+              properties:
+                total:
+                  type: integer
+                available:
+                  type: integer
+            authors:
+              type: array
+              items:
+                $ref: '#/components/schemas/Author'
+    BookPatch:
+      type: object
+      properties:
+        title:
+          type: string
+        subtitle:
+          type: [string, 'null']
+        genre:
+          $ref: '#/components/schemas/Genre'
+        price:
+          type: number
+          format: double
+    BookPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Book'
+        nextCursor:
+          type: [string, 'null']
+    BookFormat:
+      description: Physical or digital form of the book.
+      oneOf:
+        - $ref: '#/components/schemas/PrintFormat'
+        - $ref: '#/components/schemas/EbookFormat'
+        - $ref: '#/components/schemas/AudioFormat'
+      discriminator:
+        propertyName: kind
+        mapping:
+          print: '#/components/schemas/PrintFormat'
+          ebook: '#/components/schemas/EbookFormat'
+          audio: '#/components/schemas/AudioFormat'
+    PrintFormat:
+      type: object
+      required: [kind, binding]
+      properties:
+        kind:
+          type: string
+          enum: [print]
+        binding:
+          type: string
+          enum: [hardcover, paperback]
+    EbookFormat:
+      type: object
+      required: [kind, fileType]
+      properties:
+        kind:
+          type: string
+          enum: [ebook]
+        fileType:
+          type: string
+          enum: [epub, pdf, mobi]
+        drm:
+          type: boolean
+    AudioFormat:
+      type: object
+      required: [kind, durationSeconds]
+      properties:
+        kind:
+          type: string
+          enum: [audio]
+        durationSeconds:
+          type: integer
+        narrator:
+          type: string
+    LoanRequest:
+      type: object
+      required: [bookId, memberId]
+      properties:
+        bookId:
+          type: string
+        memberId:
+          type: string
+        days:
+          type: integer
+          minimum: 1
+          maximum: 28
+          default: 14
+    Loan:
+      type: object
+      required: [id, bookId, memberId, status, dueAt]
+      properties:
+        id:
+          type: string
+        bookId:
+          type: string
+        memberId:
+          type: string
+        status:
+          type: string
+          enum: [active, returned, overdue]
+        dueAt:
+          type: string
+          format: date-time
+        returnedAt:
+          type: [string, 'null']
+          format: date-time
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string

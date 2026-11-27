@@ -26,6 +26,7 @@ public final class FixtureSpecs {
           "reserved-words",
           "deep-nesting",
           "multi-tag",
+          "bookshelf",
           "big-200-ops");
 
   private static final List<String> FOLDERS = List.of("/specs/", "/golden-inputs/");
