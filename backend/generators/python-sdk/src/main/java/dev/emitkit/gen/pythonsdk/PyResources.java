@@ -29,8 +29,7 @@ import java.util.regex.Pattern;
 /**
  * The resource modules, {@code {pkg}/resources/{tag}.py}: one module per tag, each with a sync
  * {@code {Tag}Resource} and an {@code Async{Tag}Resource} holding one method per operation. Path
- * and query parameters and the request body are keyword-only arguments; headers and cookies are not
- * sent.
+ * path, query, header and cookie parameters and the request body are keyword-only arguments.
  */
 final class PyResources {
 
@@ -127,22 +126,33 @@ final class PyResources {
     List<String> args = new ArrayList<>();
     Map<String, String> pathNames = new HashMap<>();
     List<String> query = new ArrayList<>();
+    List<String> headers = new ArrayList<>();
+    List<String> cookies = new ArrayList<>();
     for (Parameter p : op.parameters()) {
-      if (p.in() != ParamLocation.PATH && p.in() != ParamLocation.QUERY) {
-        continue;
-      }
       String py = PyTypeRenderer.unique(names.member(p.name()), argNames);
       String type = types.typeOf(p.schema(), PyTypeRenderer.hint(op, p.name()), scope);
       boolean path = p.in() == ParamLocation.PATH;
       boolean required = path || p.required();
       String annotated = annotated(type, required, p.schema(), scope);
       String value = sentValue(p.schema(), annotated, py, scope);
-      if (path) {
-        pathNames.put(p.name(), value);
-        args.add(py + ": " + annotated);
-      } else {
-        query.add(PyClientView.quote(p.name()) + ": " + value);
-        args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+      String entry = PyClientView.quote(p.name()) + ": " + value;
+      switch (p.in()) {
+        case PATH -> {
+          pathNames.put(p.name(), value);
+          args.add(py + ": " + annotated);
+        }
+        case QUERY -> {
+          query.add(entry);
+          args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+        }
+        case HEADER -> {
+          headers.add(entry);
+          args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+        }
+        case COOKIE -> {
+          cookies.add(entry);
+          args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+        }
       }
     }
     List<String> request = new ArrayList<>();
@@ -151,6 +161,12 @@ final class PyResources {
     if (!query.isEmpty()) {
       scope.use("Any");
       request.add("query=" + scope.use("_drop_none") + "({" + String.join(", ", query) + "})");
+    }
+    if (!headers.isEmpty()) {
+      request.add("headers={" + String.join(", ", headers) + "}");
+    }
+    if (!cookies.isEmpty()) {
+      request.add("cookies={" + String.join(", ", cookies) + "}");
     }
     if (op.requestBody() != null) {
       String py = PyTypeRenderer.unique("body", argNames);

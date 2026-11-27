@@ -27,9 +27,9 @@ class BooksResource:
         response = self._client._request("GET", "/books", query=_drop_none({"cursor": cursor, "limit": limit, "genre": TypeAdapter(Optional[Genre]).dump_python(genre, mode='json'), "available": available}))
         return TypeAdapter(BookPage).validate_python(response.json())
 
-    def create_book(self, *, body: BookInput) -> Book:
+    def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:
         """Add a book"""
-        response = self._client._request("POST", "/books", json_body=TypeAdapter(BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
+        response = self._client._request("POST", "/books", headers={"Idempotency-Key": idempotency_key}, json_body=TypeAdapter(BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
         return TypeAdapter(Book).validate_python(response.json())
 
     def get_book(self, *, book_id: str) -> Book:
@@ -58,9 +58,9 @@ class AsyncBooksResource:
         response = await self._client._request("GET", "/books", query=_drop_none({"cursor": cursor, "limit": limit, "genre": TypeAdapter(Optional[Genre]).dump_python(genre, mode='json'), "available": available}))
         return TypeAdapter(BookPage).validate_python(response.json())
 
-    async def create_book(self, *, body: BookInput) -> Book:
+    async def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:
         """Add a book"""
-        response = await self._client._request("POST", "/books", json_body=TypeAdapter(BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
+        response = await self._client._request("POST", "/books", headers={"Idempotency-Key": idempotency_key}, json_body=TypeAdapter(BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
         return TypeAdapter(Book).validate_python(response.json())
 
     async def get_book(self, *, book_id: str) -> Book:

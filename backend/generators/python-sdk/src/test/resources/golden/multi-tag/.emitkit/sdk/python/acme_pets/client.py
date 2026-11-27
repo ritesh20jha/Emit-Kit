@@ -6,6 +6,7 @@ import json
 import time
 from types import TracebackType
 from typing import Any, Dict, Mapping, Optional, Type
+from urllib.parse import quote
 
 import httpx
 
@@ -77,19 +78,22 @@ class MultiTagClient:
         path: str,
         *,
         query: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+        cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
     ) -> httpx.Response:
         """Sends a request with the configured credentials. 429 and 5xx responses are retried with
         exponential backoff, up to max_retries times. Any other non-2xx status raises an ApiError
         subclass. Returns the successful response for the caller to parse."""
         params: Dict[str, Any] = {**self._params, **(query or {})}
+        request_headers = {**_request_headers(headers, cookies), **self._headers}
         attempt = 0
         while True:
             response = self._http.request(
                 method,
                 self._base_url + path,
                 params=params,
-                headers=self._headers,
+                headers=request_headers,
                 json=json_body,
             )
             if response.is_success:
@@ -149,19 +153,22 @@ class AsyncMultiTagClient:
         path: str,
         *,
         query: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+        cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
     ) -> httpx.Response:
         """Sends a request with the configured credentials. 429 and 5xx responses are retried with
         exponential backoff, up to max_retries times. Any other non-2xx status raises an ApiError
         subclass. Returns the successful response for the caller to parse."""
         params: Dict[str, Any] = {**self._params, **(query or {})}
+        request_headers = {**_request_headers(headers, cookies), **self._headers}
         attempt = 0
         while True:
             response = await self._http.request(
                 method,
                 self._base_url + path,
                 params=params,
-                headers=self._headers,
+                headers=request_headers,
                 json=json_body,
             )
             if response.is_success:
@@ -184,6 +191,29 @@ def _check_max_retries(max_retries: int, error: str) -> int:
     if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
         raise ValueError(error)
     return max_retries
+
+
+def _header_text(value: Any) -> str:
+    """The text sent for a header or cookie value. Booleans are sent as true or false."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _request_headers(
+    headers: Optional[Mapping[str, Any]], cookies: Optional[Mapping[str, Any]]
+) -> Dict[str, str]:
+    """The header parameters, plus one Cookie header for the cookie parameters with their values
+    URL-encoded. Parameters left unset (None) are not sent."""
+    values = {name: _header_text(value) for name, value in (headers or {}).items() if value is not None}
+    pairs = [
+        f"{name}={quote(_header_text(value), safe='')}"
+        for name, value in (cookies or {}).items()
+        if value is not None
+    ]
+    if pairs:
+        values["Cookie"] = "; ".join(pairs)
+    return values
 
 
 def _is_retryable(status: int) -> bool:

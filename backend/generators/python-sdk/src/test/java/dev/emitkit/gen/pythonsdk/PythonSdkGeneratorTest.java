@@ -360,6 +360,28 @@ class PythonSdkGeneratorTest {
         .contains("\n    \"Genre\",\n");
   }
 
+  @Test
+  void requiredHeaderIsAKeywordArgumentSentAsAHeader() {
+    assertThat(content("bookshelf", "resources/books.py"))
+        .contains("def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:")
+        .contains("headers={\"Idempotency-Key\": idempotency_key}");
+  }
+
+  @Test
+  void optionalCookieIsAKeywordArgumentSentAsACookie() {
+    assertThat(content("bookshelf", "resources/loans.py"))
+        .contains("session: Optional[str] = None")
+        .contains("cookies={\"session\": session}");
+  }
+
+  @Test
+  void clientSendsHeaderAndCookieParameters() {
+    assertThat(content("bookshelf", "client.py"))
+        .contains("headers: Optional[Mapping[str, Any]] = None,")
+        .contains("cookies: Optional[Mapping[str, Any]] = None,")
+        .contains("quote(_header_text(value), safe=''");
+  }
+
   /** A file of the {@code acme_pets} package generated from the named fixture. */
   private String content(String fixture, String relative) {
     return content(generate(fixture, ".emitkit/", names("acme-pets")), "acme_pets/" + relative);
