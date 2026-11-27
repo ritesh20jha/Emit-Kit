@@ -342,6 +342,14 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
+  void packageIsMarkedAsTyped() {
+    assertThat(generate("petstore", ".emitkit/", names("acme-pets")))
+        .filteredOn(f -> f.path().equals(ROOT + "acme_pets/py.typed"))
+        .singleElement()
+        .satisfies(f -> assertThat(f.content()).isEmpty());
+  }
+
+  @Test
   void modelsAndEnumsAreReExportedFromThePackage() {
     assertThat(content("bookshelf", "__init__.py"))
         .contains("from .models import (")
