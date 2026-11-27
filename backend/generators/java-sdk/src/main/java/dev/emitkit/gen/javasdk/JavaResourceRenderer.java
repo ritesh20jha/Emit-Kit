@@ -194,7 +194,7 @@ final class JavaResourceRenderer {
       JavaTypeRenderer.claim(javaNames, name, p.name(), "parameters of " + op.operationId());
       boolean required = p.required() || p.in() == ParamLocation.PATH;
       if (required) {
-        args.add(types.type(p.schema(), true, null, api) + " " + name);
+        args.add(paramType(types, p.schema(), true, base, api, p.name()) + " " + name);
       }
       if (p.in() == ParamLocation.PATH) {
         pathValues.put(p.name(), wire(types, p.schema(), name));
@@ -205,7 +205,7 @@ final class JavaResourceRenderer {
         String send = send(p.in(), p.name(), wire(types, p.schema(), name));
         sendLines.append("    ").append(send).append('\n');
       } else {
-        optionComps.add(types.type(p.schema(), false, null, options) + " " + name);
+        optionComps.add(paramType(types, p.schema(), false, base, api, p.name()) + " " + name);
         String send = send(p.in(), p.name(), wire(types, p.schema(), "options." + name + "()"));
         sendLines.append("    if (options != null && options.").append(name);
         sendLines.append("() != null) {\n");
@@ -279,6 +279,29 @@ final class JavaResourceRenderer {
       case COOKIE -> "cookies.add(cookie(" + key + ", " + value + "));";
       case PATH -> throw new IllegalArgumentException("path parameters are not sent separately");
     };
+  }
+
+  /**
+   * The Java type of a parameter. An inline enum, or an array of one, is declared in the resource
+   * class as {@code {Op}{Param}}, so the options record and the methods can both name it.
+   */
+  private static String paramType(
+      JavaTypeRenderer types,
+      Schema schema,
+      boolean required,
+      String base,
+      Scope api,
+      String paramName) {
+    String hint =
+        isInlineEnum(schema)
+            ? base + NameStrategy.forLanguage(Language.JAVA).type(paramName)
+            : null;
+    return types.type(schema, required, hint, api);
+  }
+
+  private static boolean isInlineEnum(Schema schema) {
+    return schema instanceof EnumSchema
+        || (schema instanceof ArraySchema a && isInlineEnum(a.items()));
   }
 
   private static boolean isArray(JavaTypeRenderer types, Schema schema) {
@@ -397,6 +420,9 @@ final class JavaResourceRenderer {
         return "String.valueOf(" + expr + ".value())";
       }
       return wire(types, target, expr);
+    }
+    if (schema instanceof EnumSchema) {
+      return "String.valueOf(" + expr + ".value())";
     }
     if (schema instanceof ArraySchema a) {
       if (a.items() instanceof ArraySchema) {

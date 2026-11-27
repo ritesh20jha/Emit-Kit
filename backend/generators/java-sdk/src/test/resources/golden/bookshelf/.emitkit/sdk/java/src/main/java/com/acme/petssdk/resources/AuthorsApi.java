@@ -4,6 +4,7 @@ package com.acme.petssdk.resources;
 import com.acme.petssdk.BookshelfApiClient;
 import com.acme.petssdk.model.Author;
 import com.acme.petssdk.model.Book;
+import com.fasterxml.jackson.annotation.JsonValue;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.net.URLEncoder;
@@ -30,7 +31,7 @@ public final class AuthorsApi {
   public List<Author> listAuthors(ListAuthorsOptions options) {
     Map<String, String> query = new LinkedHashMap<>();
     if (options != null && options.sort() != null) {
-      query.put("sort", String.valueOf(options.sort()));
+      query.put("sort", String.valueOf(options.sort().value()));
     }
     HttpResponse<String> response = client.request("GET", "/authors", query, null, null, List.of());
     return read(response, new TypeReference<List<Author>>() {});
@@ -66,7 +67,23 @@ public final class AuthorsApi {
     }
   }
 
+  public enum ListAuthorsSort {
+    ASC("asc"),
+    DESC("desc");
+
+    private final String value;
+
+    ListAuthorsSort(String value) {
+      this.value = value;
+    }
+
+    @JsonValue
+    public String value() {
+      return value;
+    }
+  }
+
   public record ListAuthorsOptions(
-      String sort
+      ListAuthorsSort sort
   ) {}
 }

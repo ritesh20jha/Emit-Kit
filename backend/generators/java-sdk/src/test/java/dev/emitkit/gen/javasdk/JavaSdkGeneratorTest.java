@@ -180,6 +180,19 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
+  void inlineEnumParameterIsAGeneratedEnumThatSendsItsWireValue() {
+    var files = generate("bookshelf", ".emitkit/", names("com.acme", "pets-sdk"));
+    assertThat(content(files, SRC + "resources/AuthorsApi.java"))
+        .contains(
+            "public enum ListAuthorsSort {",
+            "ASC(\"asc\"),",
+            "DESC(\"desc\");",
+            "ListAuthorsSort sort",
+            "query.put(\"sort\", String.valueOf(options.sort().value()));")
+        .doesNotContain("String sort");
+  }
+
+  @Test
   void integerEnumConstantsAreLegalIdentifiers() {
     assertThat(content("enums", SRC + "model/Priority.java")).contains("_1(1),", "@JsonValue");
   }
