@@ -5,8 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.JdbcType;
+import org.hibernate.dialect.type.PostgreSQLJsonPGObjectJsonType;
 
 /**
  * A stored copy of a project's OpenAPI spec, identified by its content hash. Maps to {@code
@@ -25,7 +25,9 @@ public class SpecSnapshot extends BaseEntity {
   @Column(name = "raw_content", nullable = false)
   private String rawContent;
 
-  @JdbcTypeCode(SqlTypes.JSON)
+  // A json column, bound as a json value. SqlTypes.JSON binds jsonb on PostgreSQL, which would
+  // re-sort the keys of the model before storing it.
+  @JdbcType(PostgreSQLJsonPGObjectJsonType.class)
   @Column(name = "api_model", nullable = false)
   private String apiModel;
 
