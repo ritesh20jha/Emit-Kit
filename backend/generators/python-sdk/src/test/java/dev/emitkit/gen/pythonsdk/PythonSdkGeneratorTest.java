@@ -385,6 +385,19 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
+  void retriesAreLimitedToRepeatableRequestsAndHonourRetryAfter() {
+    assertThat(clientSource("Petstore", List.of()))
+        .contains(
+            "_IDEMPOTENT_METHODS = frozenset({\"GET\", \"HEAD\", \"PUT\", \"DELETE\", \"OPTIONS\"})")
+        .contains("MAX_RETRY_AFTER_SECONDS = 30")
+        .contains("def _may_retry(")
+        .contains("def _retry_delay(")
+        .contains("def _parse_retry_after(")
+        .contains("if not _may_retry(method, request_headers, response.status_code)")
+        .contains("await asyncio.sleep(delay)");
+  }
+
+  @Test
   void requiredHeaderIsAKeywordArgumentSentAsAHeader() {
     assertThat(content("bookshelf", "resources/books.py"))
         .contains("def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:")

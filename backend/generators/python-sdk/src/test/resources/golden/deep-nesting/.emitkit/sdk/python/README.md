@@ -66,8 +66,9 @@ Non-2xx responses raise an `ApiError` subclass: `BadRequestError` (400), `Unauth
 `ServerError` (5xx). Other statuses raise a plain `ApiError`. Each error carries `status`, `body`
 and `headers`.
 
-429 and 5xx responses are retried with exponential backoff, twice by default. Set `max_retries` to
-change that.
+A 429 or 5xx response is retried up to `max_retries` times (twice by default), but only when the request
+may be repeated: a GET, HEAD, PUT, DELETE or OPTIONS request, or one that carries an `Idempotency-Key`
+header. A `Retry-After` header sets the wait, up to 30 seconds. Otherwise the wait grows exponentially.
 
 ## Build
 

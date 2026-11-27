@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from types import TracebackType
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Type
 from urllib.parse import quote
@@ -26,6 +28,10 @@ from .resources.default import AsyncDefaultResource, DefaultResource
 DEFAULT_BASE_URL = ""
 DEFAULT_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SECONDS = 0.5
+# The longest wait a Retry-After header can ask for.
+MAX_RETRY_AFTER_SECONDS = 30.0
+# Methods that may be repeated without effect. Other requests are retried only with an Idempotency-Key.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "PUT", "DELETE", "OPTIONS"})
 # Where each security scheme's credential is sent, as (location, name). An apiKey goes in the header
 # or query parameter it names; bearer and basic credentials go in the Authorization header.
 _SCHEME_LOCATIONS: Dict[str, Tuple[str, str]] = {
@@ -93,10 +99,10 @@ class NoOperationIdsClient:
         json_body: Any = None,
         security: Sequence[str] = (),
     ) -> httpx.Response:
-        """Sends a request with the credentials of the named security schemes. 429 and 5xx
-        responses are retried with exponential backoff, up to max_retries times. Any other non-2xx
-        status raises an ApiError subclass. Returns the successful response for the caller to
-        parse."""
+        """Sends a request with the credentials of the named security schemes. A 429 or 5xx response
+        is retried up to max_retries times, but only when the request may be repeated. Any other
+        non-2xx status raises an ApiError subclass. Returns the successful response for the caller
+        to parse."""
         auth_headers, auth_params = self._auth(security)
         params: Dict[str, Any] = {**auth_params, **(query or {})}
         request_headers = {**_request_headers(headers, cookies), **auth_headers}
@@ -111,10 +117,11 @@ class NoOperationIdsClient:
             )
             if response.is_success:
                 return response
-            if not _is_retryable(response.status_code) or attempt >= self._max_retries:
+            if not _may_retry(method, request_headers, response.status_code) or attempt >= self._max_retries:
                 raise _to_api_error(response)
+            delay = _retry_delay(response, attempt)
             response.close()
-            time.sleep(RETRY_BASE_DELAY_SECONDS * 2**attempt)
+            time.sleep(delay)
             attempt += 1
 
 
@@ -179,10 +186,10 @@ class AsyncNoOperationIdsClient:
         json_body: Any = None,
         security: Sequence[str] = (),
     ) -> httpx.Response:
-        """Sends a request with the credentials of the named security schemes. 429 and 5xx
-        responses are retried with exponential backoff, up to max_retries times. Any other non-2xx
-        status raises an ApiError subclass. Returns the successful response for the caller to
-        parse."""
+        """Sends a request with the credentials of the named security schemes. A 429 or 5xx response
+        is retried up to max_retries times, but only when the request may be repeated. Any other
+        non-2xx status raises an ApiError subclass. Returns the successful response for the caller
+        to parse."""
         auth_headers, auth_params = self._auth(security)
         params: Dict[str, Any] = {**auth_params, **(query or {})}
         request_headers = {**_request_headers(headers, cookies), **auth_headers}
@@ -197,10 +204,11 @@ class AsyncNoOperationIdsClient:
             )
             if response.is_success:
                 return response
-            if not _is_retryable(response.status_code) or attempt >= self._max_retries:
+            if not _may_retry(method, request_headers, response.status_code) or attempt >= self._max_retries:
                 raise _to_api_error(response)
+            delay = _retry_delay(response, attempt)
             await response.aclose()
-            await asyncio.sleep(RETRY_BASE_DELAY_SECONDS * 2**attempt)
+            await asyncio.sleep(delay)
             attempt += 1
 
 
@@ -246,6 +254,42 @@ def _request_headers(
 
 def _is_retryable(status: int) -> bool:
     return status == 429 or status >= 500
+
+
+def _may_retry(method: str, headers: Mapping[str, str], status: int) -> bool:
+    """Whether a response with this status may be retried. Only 429 and 5xx qualify, and only for
+    a request that may be repeated: an idempotent method, or one that carries an Idempotency-Key."""
+    if not _is_retryable(status):
+        return False
+    if method.upper() in _IDEMPOTENT_METHODS:
+        return True
+    return any(name.lower() == "idempotency-key" for name in headers)
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Seconds to wait before the next attempt: the Retry-After of the response, capped at
+    MAX_RETRY_AFTER_SECONDS, or the exponential backoff when the response has none."""
+    retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+    if retry_after is None:
+        return RETRY_BASE_DELAY_SECONDS * 2**attempt
+    return min(retry_after, MAX_RETRY_AFTER_SECONDS)
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """The wait a Retry-After value asks for, given as integer seconds or an HTTP date. None when
+    the value is absent or cannot be read."""
+    if value is None:
+        return None
+    text = value.strip()
+    if text.isascii() and text.isdigit():
+        return float(text)
+    try:
+        when = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
 _ERROR_TYPES: Dict[int, Type[ApiError]] = {
