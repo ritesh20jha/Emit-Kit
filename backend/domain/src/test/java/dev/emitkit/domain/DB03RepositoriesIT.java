@@ -7,8 +7,12 @@ import dev.emitkit.common.id.Ids;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -184,6 +188,62 @@ class DB03RepositoriesIT extends PostgresIT {
           assertThat(r.getDiffSummary()).isEqualTo("{\"added\": 1}");
           assertThat(r.getStepOutputs()).isEqualTo("{\"FETCH_SPEC\": {\"commit\": \"abc\"}}");
         });
+  }
+
+  @Test
+  void apiModel_propertyOrderSurvivesSaveAndReload() {
+    // Property order is visible API: it sets record constructor order in generated code. The
+    // names are neither alphabetical nor sorted by length, so jsonb's canonical order differs.
+    List<String> specOrder =
+        List.of(
+            "title",
+            "subtitle",
+            "authorIds",
+            "genre",
+            "isbn",
+            "pageCount",
+            "price",
+            "keywords",
+            "class",
+            "default",
+            "import",
+            "format");
+    SpecSnapshot saved =
+        snapshots.saveAndFlush(
+            new SpecSnapshot(
+                null,
+                project.getId(),
+                "hash-order",
+                "openapi: 3.1.0",
+                objectModelJson(specOrder),
+                "1.0.0"));
+    em.clear();
+
+    String stored =
+        jdbc.queryForObject(
+            "select api_model::text from spec_snapshots where id = ?", String.class, saved.getId());
+    assertThat(propertyKeysIn(stored)).containsExactlyElementsOf(specOrder);
+
+    assertThat(snapshots.findById(saved.getId()))
+        .hasValueSatisfying(
+            s -> assertThat(propertyKeysIn(s.getApiModel())).containsExactlyElementsOf(specOrder));
+  }
+
+  /** An object schema whose property values are empty, so only the keys carry order. */
+  private static String objectModelJson(List<String> properties) {
+    String props =
+        properties.stream().map(name -> "\"" + name + "\":{}").collect(Collectors.joining(","));
+    return "{\"schemas\":{\"Book\":{\"kind\":\"object\",\"properties\":{" + props + "}}}}";
+  }
+
+  /** The property names of the Book object, in the order they appear in the document text. */
+  private static List<String> propertyKeysIn(String json) {
+    Matcher m = Pattern.compile("\"([A-Za-z]+)\"\\s*:\\s*\\{\\}").matcher(json);
+    List<String> keys = new ArrayList<>();
+    while (m.find()) {
+      keys.add(m.group(1));
+    }
+    return keys;
   }
 
   @Test
