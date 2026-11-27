@@ -7,11 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field
 class Error(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    type_: Optional[str] = Field(default=None, alias="type")
-    from_: Optional[str] = Field(default=None, alias="from")
-    self_: Optional[str] = Field(default=None, alias="self")
-    field_2fa: Optional[bool] = Field(default=None, alias="2fa")
-    class_: Optional[str] = Field(default=None, alias="class")
+    type_: Optional[str] = Field(default=None, validation_alias="type", serialization_alias="type")
+    from_: Optional[str] = Field(default=None, validation_alias="from", serialization_alias="from")
+    self_: Optional[str] = Field(default=None, validation_alias="self", serialization_alias="self")
+    field_2fa: Optional[bool] = Field(default=None, validation_alias="2fa", serialization_alias="2fa")
+    class_: Optional[str] = Field(default=None, validation_alias="class", serialization_alias="class")
 
 
 class None_(BaseModel):

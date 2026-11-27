@@ -79,7 +79,8 @@ final class PyTypeRenderer {
 
   private static final Set<String> TYPING =
       Set.of("Annotated", "Any", "Literal", "Optional", "Union");
-  private static final Set<String> PYDANTIC = Set.of("BaseModel", "ConfigDict", "Field");
+  private static final Set<String> PYDANTIC =
+      Set.of("BaseModel", "ConfigDict", "Field", "model_validator");
   private static final Pattern INTEGER = Pattern.compile("-?(0|[1-9]\\d*)");
   private static final Pattern NUMBER =
       Pattern.compile("-?(0|[1-9]\\d*)(\\.\\d+)?([eE][-+]?\\d+)?");
@@ -99,13 +100,18 @@ final class PyTypeRenderer {
     final Kind kind;
     final Schema schema;
     final String hint;
+
+    /** The schema the definition was created from, before allOf parts are merged. */
+    final Schema origin;
+
     final Set<String> deps = new LinkedHashSet<>();
 
-    Definition(String name, Kind kind, Schema schema, String hint) {
+    Definition(String name, Kind kind, Schema schema, String hint, Schema origin) {
       this.name = name;
       this.kind = kind;
       this.schema = schema;
       this.hint = hint;
+      this.origin = origin;
     }
   }
 
@@ -147,8 +153,12 @@ final class PyTypeRenderer {
   private final Map<Schema, Definition> inline = new HashMap<>();
   private final List<Definition> defs = new ArrayList<>();
 
-  /** Discriminator property names of the discriminated unions in the document. */
-  private final Set<String> discriminators = new HashSet<>();
+  /**
+   * The discriminator property of each option of a discriminated union, keyed by the option's own
+   * schema (a reference is resolved to its target). Only the model built from that schema types the
+   * property as a Literal.
+   */
+  private final Map<Schema, String> optionDiscriminators = new HashMap<>();
 
   PyTypeRenderer(ApiModel model) {
     this.model = model;
@@ -287,7 +297,7 @@ final class PyTypeRenderer {
         shape = merged;
       }
     }
-    Definition d = new Definition(name, kind, shape, hint);
+    Definition d = new Definition(name, kind, shape, hint, schema);
     defs.add(d);
     return d;
   }
@@ -334,10 +344,17 @@ final class PyTypeRenderer {
     if (property == null || o.options().isEmpty()) {
       return null;
     }
+    Set<String> values = new HashSet<>();
     for (Schema option : o.options()) {
       ObjectSchema object = objectOf(option, new HashSet<>());
       Schema value = object == null ? null : object.properties().get(property);
-      if (value == null || singleValueEnum(value) == null) {
+      EnumSchema single = value == null ? null : singleValueEnum(value);
+      // Each option must always send its value, and no two options may share one.
+      if (single == null
+          || !object.required().contains(property)
+          || value.nullable()
+          || single.nullable()
+          || !values.add(single.values().get(0))) {
         return null;
       }
     }
@@ -359,7 +376,13 @@ final class PyTypeRenderer {
       case OneOfSchema o -> {
         String discriminator = discriminatedBy(o);
         if (discriminator != null) {
-          discriminators.add(discriminator);
+          for (Schema option : o.options()) {
+            Schema resolved =
+                option instanceof RefSchema r ? model.schemas().get(r.name()) : option;
+            if (resolved != null) {
+              optionDiscriminators.putIfAbsent(resolved, discriminator);
+            }
+          }
         }
         o.options().forEach(this::collectDiscriminators);
       }
@@ -456,10 +479,46 @@ final class PyTypeRenderer {
       lines.add("");
     }
     Set<String> used = new HashSet<>();
+    List<String> literals = new ArrayList<>();
     for (var property : o.properties().entrySet()) {
-      lines.add(field(d, o, property.getKey(), property.getValue(), used, scope));
+      String raw = property.getKey();
+      EnumSchema single = literalOf(d, raw, property.getValue());
+      if (single != null) {
+        literals.add(PyClientView.quote(raw) + ": " + literalText(single));
+      }
+      lines.add(field(d, o, raw, property.getValue(), used, scope));
+    }
+    if (!literals.isEmpty()) {
+      // A field default is not an explicit value, so a dump with exclude_unset would drop the
+      // discriminator. Filling it in before validation keeps it in the payload.
+      lines.add("");
+      lines.add("    @" + scope.use("model_validator") + "(mode=\"before\")");
+      lines.add("    @classmethod");
+      lines.add(
+          "    def _fill_discriminators(cls, data: "
+              + scope.use("Any")
+              + ") -> "
+              + scope.use("Any")
+              + ":");
+      lines.add("        if isinstance(data, dict):");
+      lines.add("            data = {" + String.join(", ", literals) + ", **data}");
+      lines.add("        return data");
     }
     return String.join("\n", lines);
+  }
+
+  /**
+   * The single enum value a field must hold, when the field is the discriminator of a discriminated
+   * union that the model is an option of. Such a field is typed as a Literal. Otherwise null.
+   */
+  private EnumSchema literalOf(Definition owner, String raw, Schema schema) {
+    String discriminator = optionDiscriminators.get(owner.origin);
+    return raw.equals(discriminator) ? singleValueEnum(schema) : null;
+  }
+
+  /** The Literal argument of a single-value enum, as Python text. */
+  private String literalText(EnumSchema single) {
+    return enumLiteral(enumBase(single), single.values().get(0));
   }
 
   /** One field line. A name that differs from the spec name gets an alias. */
@@ -478,30 +537,31 @@ final class PyTypeRenderer {
     }
     String py = unique(base, used);
     boolean required = o.required().contains(raw);
-    EnumSchema single = discriminators.contains(raw) ? singleValueEnum(schema) : null;
-    // A discriminator field is a Literal: pydantic matches a discriminated union on literal values.
+    EnumSchema single = literalOf(owner, raw, schema);
+    // A discriminator field is a Literal, so pydantic can match a discriminated union on it. Its
+    // default is its single value, so the model can be built without it.
     String type =
         single == null
             ? typeOf(schema, owner.hint + " " + raw, scope)
             : nullable(
-                scope.use("Literal")
-                    + "["
-                    + enumLiteral(enumBase(single), single.values().get(0))
-                    + "]",
-                schema.nullable(),
-                scope);
+                scope.use("Literal") + "[" + literalText(single) + "]", schema.nullable(), scope);
     if (!required && !schema.nullable()) {
       type = wrapOptional(type, scope);
     }
     String value = null;
     if (!py.equals(raw)) {
-      value =
-          scope.use("Field")
-              + "("
-              + (required ? "" : "default=None, ")
-              + "alias="
-              + PyClientView.quote(raw)
-              + ")";
+      List<String> args = new ArrayList<>();
+      if (single != null) {
+        args.add("default=" + literalText(single));
+      } else if (!required) {
+        args.add("default=None");
+      }
+      // Both aliases carry the spec name, so the attribute keeps its own name when it differs.
+      args.add("validation_alias=" + PyClientView.quote(raw));
+      args.add("serialization_alias=" + PyClientView.quote(raw));
+      value = scope.use("Field") + "(" + String.join(", ", args) + ")";
+    } else if (single != null) {
+      value = literalText(single);
     } else if (!required) {
       value = "None";
     }

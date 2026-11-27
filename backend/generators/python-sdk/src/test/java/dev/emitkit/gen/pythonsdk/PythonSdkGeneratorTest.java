@@ -69,7 +69,7 @@ class PythonSdkGeneratorTest {
   void reservedPropertyGetsAlias() {
     assertThat(content("reserved-words", "models.py"))
         .contains("from_: ")
-        .contains("alias=\"from\"");
+        .contains("validation_alias=\"from\", serialization_alias=\"from\"");
   }
 
   @Test
@@ -160,9 +160,12 @@ class PythonSdkGeneratorTest {
             sdkFile(
                 extended(FixtureSpecs.load("reserved-words"), null, Map.of("Probe", probe)),
                 "acme_pets/models.py"))
-        .contains("schema_: Optional[str] = Field(default=None, alias=\"schema\")")
-        .contains("json_: Optional[str] = Field(default=None, alias=\"json\")")
-        .contains("field_model_name: Optional[str] = Field(default=None, alias=\"model_name\")");
+        .contains(
+            "schema_: Optional[str] = Field(default=None, validation_alias=\"schema\", serialization_alias=\"schema\")")
+        .contains(
+            "json_: Optional[str] = Field(default=None, validation_alias=\"json\", serialization_alias=\"json\")")
+        .contains(
+            "field_model_name: Optional[str] = Field(default=None, validation_alias=\"model_name\", serialization_alias=\"model_name\")");
   }
 
   /** The base document with one more operation (when given) and more component schemas. */
@@ -474,6 +477,97 @@ class PythonSdkGeneratorTest {
         .contains("headers: Optional[Mapping[str, Any]] = None,")
         .contains("cookies: Optional[Mapping[str, Any]] = None,")
         .contains("quote(_header_text(value), safe=''");
+  }
+
+  @Test
+  void aliasesAreValidationAndSerializationAliases() {
+    assertThat(content("reserved-words", "models.py"))
+        .contains("from_: ")
+        .contains("validation_alias=\"from\", serialization_alias=\"from\"")
+        .doesNotContain(" alias=\"from\"");
+  }
+
+  @Test
+  void discriminatorFieldsDefaultToTheirValueAndKeepItOnDump() {
+    assertThat(content("bookshelf", "models.py"))
+        .contains("    kind: Literal[\"print\"] = \"print\"")
+        .contains("@model_validator(mode=\"before\")")
+        .contains("data = {\"kind\": \"print\", **data}");
+  }
+
+  @Test
+  void literalStaysOnTheOptionsOfADiscriminatedUnion() {
+    // Stray is not an option of BookFormat, so its single-value kind keeps its enum class.
+    var kind = new EnumSchema(PrimitiveType.STRING, List.of("x"), false, null);
+    var stray = new ObjectSchema(Map.of("kind", kind), Set.of("kind"), null, false, null);
+    assertThat(
+            sdkFile(
+                extended(FixtureSpecs.load("bookshelf"), null, Map.of("Stray", stray)),
+                "acme_pets/models.py"))
+        .contains("class StrayKind(str, Enum):")
+        .contains("    kind: StrayKind")
+        .contains("    kind: Literal[\"print\"]");
+  }
+
+  @Test
+  void optionalDiscriminatorLeavesTheUnionPlain() {
+    var kind = new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null);
+    var probe1 = new ObjectSchema(Map.of("kind", kind), Set.of(), null, false, null);
+    var probe2 =
+        new ObjectSchema(
+            Map.of("kind", new EnumSchema(PrimitiveType.STRING, List.of("d"), false, null)),
+            Set.of("kind"),
+            null,
+            false,
+            null);
+    var probes =
+        new OneOfSchema(
+            List.of(new RefSchema("Probe1", false, null), new RefSchema("Probe2", false, null)),
+            "kind",
+            false,
+            null);
+    assertThat(
+            sdkFile(
+                extended(
+                    FixtureSpecs.load("bookshelf"),
+                    null,
+                    Map.of("Probe1", probe1, "Probe2", probe2, "Probes", probes)),
+                "acme_pets/models.py"))
+        .contains("Probes = Union[Probe1, Probe2]")
+        .doesNotContain("Probes = Annotated");
+  }
+
+  @Test
+  void duplicateDiscriminatorValuesLeaveTheUnionPlain() {
+    var probe1 =
+        new ObjectSchema(
+            Map.of("kind", new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null)),
+            Set.of("kind"),
+            null,
+            false,
+            null);
+    var probe2 =
+        new ObjectSchema(
+            Map.of("kind", new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null)),
+            Set.of("kind"),
+            null,
+            false,
+            null);
+    var probes =
+        new OneOfSchema(
+            List.of(new RefSchema("Probe1", false, null), new RefSchema("Probe2", false, null)),
+            "kind",
+            false,
+            null);
+    assertThat(
+            sdkFile(
+                extended(
+                    FixtureSpecs.load("bookshelf"),
+                    null,
+                    Map.of("Probe1", probe1, "Probe2", probe2, "Probes", probes)),
+                "acme_pets/models.py"))
+        .contains("Probes = Union[Probe1, Probe2]")
+        .doesNotContain("Probes = Annotated");
   }
 
   /** A file of the {@code acme_pets} package generated from the named fixture. */

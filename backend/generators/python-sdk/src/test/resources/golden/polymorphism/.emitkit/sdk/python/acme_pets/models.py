@@ -13,7 +13,7 @@ class Owner(BaseModel):
 class Cat(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    pet_type: str = Field(alias="petType")
+    pet_type: str = Field(validation_alias="petType", serialization_alias="petType")
     lives: int
     owner: Optional[Owner] = None
 
@@ -21,7 +21,7 @@ class Cat(BaseModel):
 class Dog(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    pet_type: str = Field(alias="petType")
+    pet_type: str = Field(validation_alias="petType", serialization_alias="petType")
     good: Optional[bool] = None
 
 
@@ -53,7 +53,7 @@ class Kitten(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: Optional[str] = None
-    age_months: Optional[int] = Field(default=None, alias="ageMonths")
+    age_months: Optional[int] = Field(default=None, validation_alias="ageMonths", serialization_alias="ageMonths")
 
 
 OptionalOwner = Optional[Owner]
