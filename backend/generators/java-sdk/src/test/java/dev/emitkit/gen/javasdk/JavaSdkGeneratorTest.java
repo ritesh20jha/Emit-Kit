@@ -245,6 +245,22 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
+  void retriesOnlyIdempotentRequests() {
+    assertThat(clientSource(FixtureSpecs.load("petstore")))
+        .contains("Set.of(\"GET\", \"HEAD\", \"PUT\", \"DELETE\", \"OPTIONS\")")
+        .contains("request.headers().firstValue(\"Idempotency-Key\").isPresent()")
+        .contains("if (!retryable || !isRetryable(status)");
+  }
+
+  @Test
+  void retryAfterSetsTheWaitAndIsCappedAtThirtySeconds() {
+    assertThat(clientSource(FixtureSpecs.load("petstore")))
+        .contains("response.headers().firstValue(\"Retry-After\")")
+        .contains("DateTimeFormatter.RFC_1123_DATE_TIME")
+        .contains("Math.min(Math.max(millis, 0), MAX_DELAY_MILLIS)");
+  }
+
+  @Test
   void noAbsoluteServerAsksForAFullBaseUrl() {
     String advice =
         "The API declares no absolute server URL. Pass the full base URL, e.g. "

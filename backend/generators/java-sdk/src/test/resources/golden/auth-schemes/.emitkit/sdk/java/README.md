@@ -46,3 +46,7 @@ and 403), `NotFoundException` (404), `ConflictException` (409), `RateLimitExcept
 `ServerException` (5xx). Other statuses throw a plain `ApiException`. A failed connection throws
 `UncheckedIOException`. 429 and 5xx responses are retried twice by default, and requests time out
 after 60 seconds. Set `maxRetries` or `timeout` on the builder to change these.
+
+Only idempotent requests are retried: GET, HEAD, PUT, DELETE and OPTIONS, and any request that
+sends an `Idempotency-Key` header. A `Retry-After` header on the response sets the wait, as seconds
+or an HTTP date, capped at 30 seconds. Without one, the wait doubles from 500 milliseconds.

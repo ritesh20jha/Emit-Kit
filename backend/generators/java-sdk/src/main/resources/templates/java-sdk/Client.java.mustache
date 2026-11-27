@@ -16,6 +16,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 {{#hasBasic}}
 import java.util.Base64;
 {{/hasBasic}}
@@ -23,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.StringJoiner;
 
 /** Client for the {{title}} API. */
@@ -33,7 +39,11 @@ public final class {{className}} {
   private static final int DEFAULT_MAX_RETRIES = 2;
   private static final long RETRY_BASE_DELAY_MILLIS = 500;
   private static final int MAX_BACKOFF_SHIFT = 10;
+  /** Cap on any wait before a retry, including one that Retry-After asks for. */
   private static final long MAX_DELAY_MILLIS = 30_000;
+  /** Methods that are safe to repeat. Other requests are retried only with an Idempotency-Key. */
+  private static final Set<String> SAFE_METHODS =
+      Set.of("GET", "HEAD", "PUT", "DELETE", "OPTIONS");
   /** Shared by requests and the resource classes. Unknown response fields are ignored. */
   private static final ObjectMapper MAPPER =
       new ObjectMapper()
@@ -65,8 +75,9 @@ public final class {{className}} {
 
   /**
    * Sends a request with the credentials of the security schemes in {@code security}, and no others.
-   * An empty list sends none. Retries 429 and 5xx responses with backoff. Other non-2xx statuses
-   * throw an {@link ApiException}.
+   * An empty list sends none. Retries 429 and 5xx responses with backoff, but only for GET, HEAD,
+   * PUT, DELETE and OPTIONS requests and requests with an Idempotency-Key header. Other non-2xx
+   * statuses throw an {@link ApiException}.
    *
    * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
    * encoded here, and entries with a null name or value are skipped. A null query or header map is
@@ -80,17 +91,20 @@ public final class {{className}} {
       Object body,
       List<String> security) {
     HttpRequest request = buildRequest(method, path, query, headers, body, security);
+    // A retry could repeat a side effect, so only idempotent requests are retried.
+    boolean retryable =
+        SAFE_METHODS.contains(request.method())
+            || request.headers().firstValue("Idempotency-Key").isPresent();
     for (int attempt = 0; ; attempt++) {
       HttpResponse<String> response = send(request);
       int status = response.statusCode();
       if (status >= 200 && status < 300) {
         return response;
       }
-      if (!isRetryable(status) || attempt >= config.maxRetries()) {
+      if (!retryable || !isRetryable(status) || attempt >= config.maxRetries()) {
         throw toApiException(status, response.body());
       }
-      long delay = RETRY_BASE_DELAY_MILLIS << Math.min(attempt, MAX_BACKOFF_SHIFT);
-      sleep(Math.min(delay, MAX_DELAY_MILLIS));
+      sleep(retryDelayMillis(response, attempt));
     }
   }
 
@@ -175,6 +189,37 @@ public final class {{className}} {
 
   private static boolean isRetryable(int status) {
     return status == 429 || status >= 500;
+  }
+
+  /** The wait before a retry: Retry-After when the response has one, else exponential backoff. */
+  private static long retryDelayMillis(HttpResponse<String> response, int attempt) {
+    Optional<Long> retryAfter = retryAfterMillis(response);
+    if (retryAfter.isPresent()) {
+      return retryAfter.get();
+    }
+    long delay = RETRY_BASE_DELAY_MILLIS << Math.min(attempt, MAX_BACKOFF_SHIFT);
+    return Math.min(delay, MAX_DELAY_MILLIS);
+  }
+
+  /**
+   * The Retry-After wait in milliseconds, capped at 30 seconds. It is either a number of seconds or
+   * an HTTP date. Empty when the header is absent or is neither form.
+   */
+  private static Optional<Long> retryAfterMillis(HttpResponse<String> response) {
+    String value = response.headers().firstValue("Retry-After").orElse("").strip();
+    if (value.matches("\\d{1,9}")) {
+      return Optional.of(Math.min(Long.parseLong(value) * 1000, MAX_DELAY_MILLIS));
+    }
+    if (value.matches("\\d+")) {
+      return Optional.of(MAX_DELAY_MILLIS);
+    }
+    try {
+      Instant date = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+      long millis = Duration.between(Instant.now(), date).toMillis();
+      return Optional.of(Math.min(Math.max(millis, 0), MAX_DELAY_MILLIS));
+    } catch (DateTimeParseException e) {
+      return Optional.empty();
+    }
   }
 
   private static ApiException toApiException(int status, String body) {
