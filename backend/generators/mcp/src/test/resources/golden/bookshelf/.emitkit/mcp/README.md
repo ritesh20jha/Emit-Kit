@@ -24,7 +24,10 @@ set in the client's server configuration.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `API_BASE_URL` | yes | Base URL that each tool's path is appended to, for example `https://api.example.com/v1`. A trailing slash is removed. |
-| `API_TOKEN` | no | Sent as `Authorization: Bearer <token>` on every request. |
-| `API_KEY` | no | Sent in the API key header or query parameter the spec declares. Unused when the spec declares none. |
+| `API_TOKEN` | no | Sent as `Authorization: Bearer <token>` on the tools whose operation accepts a bearer or OAuth2 token. |
+| `API_KEY` | no | Sent in the header, query parameter or cookie the spec declares, on the tools whose operation accepts that API key. |
+
+A tool sends a credential only when its operation's security requirement lists the scheme, so an
+operation that declares `security: []` gets no credentials.
 
 Request bodies are sent as JSON. The tools are listed in `src/tools.ts`.

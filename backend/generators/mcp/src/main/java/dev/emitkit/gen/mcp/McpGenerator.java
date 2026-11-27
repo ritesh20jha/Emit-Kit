@@ -68,6 +68,7 @@ public final class McpGenerator implements Generator {
               op.path(),
               params(op),
               op.requestBody() != null,
+              op.security(),
               inputSchema(op, renderer)));
     }
     return List.copyOf(tools);
@@ -82,6 +83,8 @@ public final class McpGenerator implements Generator {
    * @param path path template with {@code {name}} placeholders
    * @param params the operation's parameters, in declaration order
    * @param hasBody whether the operation has a request body, passed as the {@code body} argument
+   * @param security scheme names of the operation's effective security requirement; empty when the
+   *     tool sends no credentials
    * @param inputSchema the arguments as a JSON Schema object
    */
   record Tool(
@@ -91,6 +94,7 @@ public final class McpGenerator implements Generator {
       String path,
       List<Param> params,
       boolean hasBody,
+      List<String> security,
       Map<String, Object> inputSchema) {
 
     /**
@@ -121,6 +125,7 @@ public final class McpGenerator implements Generator {
               })
               .toList());
       out.put("hasBody", hasBody);
+      out.put("security", security);
       out.put("inputSchema", inputSchema);
       return out;
     }

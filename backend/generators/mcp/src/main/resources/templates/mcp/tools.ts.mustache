@@ -8,6 +8,8 @@ export interface ApiTool {
   path: string;
   params: { name: string; in: "path" | "query" | "header" | "cookie" }[];
   hasBody: boolean;
+  /** Scheme names of the tool's effective security requirement. Empty sends no credentials. */
+  security: string[];
   inputSchema: Tool["inputSchema"];
 }
 

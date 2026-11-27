@@ -7,6 +7,7 @@ import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SchemaId;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SpecVersion;
+import dev.emitkit.gen.core.GeneratedFile;
 import dev.emitkit.gen.core.GeneratorContext;
 import dev.emitkit.gen.core.GeneratorId;
 import dev.emitkit.gen.core.PackageNames;
@@ -96,6 +97,26 @@ class McpGeneratorTest {
   }
 
   @Test
+  void eachToolCarriesItsEffectiveSecurityRequirement() {
+    String tools = source(generate("bookshelf"), "src/tools.ts");
+    // listAuthors declares security: [], so its tool sends no credentials.
+    assertThat(tools).contains("\"name\": \"list_authors\"").contains("\"security\": []");
+    // createLoan accepts an API key or an OAuth2 token, not the global bearer token.
+    assertThat(tools).contains("\"security\": [\n      \"apiKeyAuth\",\n      \"oauth2\"\n    ]");
+  }
+
+  @Test
+  void serverMapsSecuritySchemesToCredentials() {
+    // Json.write pretty-prints, so each pair spans lines; check the members of each entry.
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("\"bearerAuth\",")
+        .contains("\"apiKeyAuth\",")
+        .contains("\"kind\": \"apiKey\"")
+        .contains("\"in\": \"header\"")
+        .contains("\"name\": \"X-Api-Key\"");
+  }
+
+  @Test
   void recursiveRefRendersEmptySchemaAtTheSecondVisit() {
     var node =
         new ObjectSchema(
@@ -126,6 +147,20 @@ class McpGeneratorTest {
             false);
     String json = McpGenerator.tools(model(List.of(op), Map.of())).getFirst().inputSchemaJson();
     assertThat(json.replaceAll("\\s", "")).contains("\"enum\":[1,2,null]");
+  }
+
+  private List<GeneratedFile> generate(String fixture) {
+    return generator.generate(FixtureSpecs.load(fixture), ctx());
+  }
+
+  /** Content of a file under {@code .emitkit/mcp/}, addressed relative to that root. */
+  private static String source(List<GeneratedFile> files, String relative) {
+    String path = ".emitkit/mcp/" + relative;
+    return files.stream()
+        .filter(f -> f.path().equals(path))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("no generated file " + path))
+        .content();
   }
 
   private static GeneratorContext ctx() {

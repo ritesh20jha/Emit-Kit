@@ -8,6 +8,8 @@ export interface ApiTool {
   path: string;
   params: { name: string; in: "path" | "query" | "header" | "cookie" }[];
   hasBody: boolean;
+  /** Scheme names of the tool's effective security requirement. Empty sends no credentials. */
+  security: string[];
   inputSchema: Tool["inputSchema"];
 }
 
@@ -24,6 +26,7 @@ export const tools: ApiTool[] = [
       }
     ],
     "hasBody": false,
+    "security": [],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -42,6 +45,7 @@ export const tools: ApiTool[] = [
     "path": "/pets",
     "params": [],
     "hasBody": true,
+    "security": [],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -82,6 +86,7 @@ export const tools: ApiTool[] = [
       }
     ],
     "hasBody": false,
+    "security": [],
     "inputSchema": {
       "type": "object",
       "properties": {

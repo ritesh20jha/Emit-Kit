@@ -7,10 +7,35 @@ import { tools, type ApiTool } from "./tools.js";
 
 const SERVER_NAME = "@acme/petstore-mcp";
 const SERVER_VERSION = "1.2.3";
-const API_KEY_HEADERS: string[] = [
-  "X-Api-Key"
-];
-const API_KEY_QUERIES: string[] = [];
+
+/** Where a security scheme's credential goes: the bearer token, or the API key in a location. */
+type Credential =
+  | { kind: "bearer" }
+  | { kind: "apiKey"; in: "header" | "query" | "cookie"; name: string };
+
+/** Credential for each security scheme the spec declares, keyed by scheme name. */
+const SECURITY_SCHEMES = new Map<string, Credential>([
+  [
+    "bearerAuth",
+    {
+      "kind": "bearer"
+    }
+  ],
+  [
+    "apiKeyAuth",
+    {
+      "kind": "apiKey",
+      "in": "header",
+      "name": "X-Api-Key"
+    }
+  ],
+  [
+    "oauth2",
+    {
+      "kind": "bearer"
+    }
+  ]
+]);
 
 const baseUrl = (process.env.API_BASE_URL ?? "").replace(/\/+$/, "");
 const apiToken = process.env.API_TOKEN;
@@ -62,19 +87,23 @@ async function callApi(tool: ApiTool, args: Args): Promise<{ text: string; isErr
       cookies.push(`${param.name}=${encodeURIComponent(toText(value))}`);
     }
   }
+  // Only the credentials that this tool's security requirement declares are sent.
+  for (const schemeName of tool.security) {
+    const credential = SECURITY_SCHEMES.get(schemeName);
+    if (credential?.kind === "bearer" && apiToken) {
+      headers["Authorization"] = `Bearer ${apiToken}`;
+    } else if (credential?.kind === "apiKey" && apiKey) {
+      if (credential.in === "header") {
+        headers[credential.name] = apiKey;
+      } else if (credential.in === "query") {
+        query.set(credential.name, apiKey);
+      } else {
+        cookies.push(`${credential.name}=${encodeURIComponent(apiKey)}`);
+      }
+    }
+  }
   if (cookies.length > 0) {
     headers["Cookie"] = cookies.join("; ");
-  }
-  if (apiToken) {
-    headers["Authorization"] = `Bearer ${apiToken}`;
-  }
-  if (apiKey) {
-    for (const name of API_KEY_HEADERS) {
-      headers[name] = apiKey;
-    }
-    for (const name of API_KEY_QUERIES) {
-      query.set(name, apiKey);
-    }
   }
   let body: string | undefined;
   if (tool.hasBody && args.body !== undefined) {
