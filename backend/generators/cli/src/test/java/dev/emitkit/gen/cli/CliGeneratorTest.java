@@ -15,8 +15,15 @@ import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.parse.ParseResult;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -87,6 +94,31 @@ class CliGeneratorTest {
   }
 
   @Test
+  void readmeStatesThatAlternativesSendEveryConfiguredCredential() {
+    assertThat(source(generate("bookshelf"), "README.md"))
+        .contains(
+            "every configured credential named by any of the operation's alternative security"
+                + " requirements is sent");
+  }
+
+  @Test
+  void apiKeyPrecedenceSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "apikey-precedence", generator.generate(local("apikey-precedence"), ctx()));
+  }
+
+  @Test
+  void reservedHeaderParametersBecomeNoOptions() {
+    // Authorization, Accept and Content-Type are set by the runner, so no option may carry them.
+    String commands = source(generate(local("apikey-precedence")), "src/commands/default.ts");
+    assertThat(commands)
+        .doesNotContain("--authorization")
+        .doesNotContain("--accept")
+        .doesNotContain("--content-type")
+        .contains("--x-api-key <value>");
+  }
+
+  @Test
   void eachCommandCarriesItsEffectiveSecurityRequirement() {
     var files = generate("bookshelf");
     // listAuthors declares security: [], so it sends no credentials.
@@ -108,13 +140,15 @@ class CliGeneratorTest {
 
   @Test
   void jsonOutputIsNotReparsedThroughNumbers() {
-    // Parsing integers outside the safe range through Number rounds them, so the CLI must print
-    // the response text as received, and the table view must read those integers from source.
+    // Parsing integers outside the safe range through Number rounds them. JSON output is
+    // re-indented
+    // by tokens instead of being parsed, and the table view marks large integers before parsing.
     String index = source(generate("petstore"), "src/index.ts");
     assertThat(index)
         .doesNotContain("JSON.stringify(value, null, 2)")
-        .contains("context?.source")
-        .contains("Number.isSafeInteger");
+        .doesNotContain("context?.source")
+        .contains("function prettyJson")
+        .contains("function markLargeIntegers");
   }
 
   @Test
@@ -208,6 +242,19 @@ class CliGeneratorTest {
   private static GeneratorContext ctx(String outputDir) {
     var names = new PackageNames("acme", "petstore", "petstore", "dev.acme", "petstore");
     return new GeneratorContext(outputDir, "1.2.3", names, List.of("typescript"), Optional.empty());
+  }
+
+  /** A spec under this module's {@code src/test/resources/specs/}, parsed into the model. */
+  private static ApiModel local(String name) {
+    String text;
+    try {
+      text = Files.readString(Path.of("src", "test", "resources", "specs", name + ".yaml"));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    ParseResult result = new SpecParser().parse(text);
+    assertThat(result.errors()).isEmpty();
+    return Objects.requireNonNull(result.model());
   }
 
   /** Generated files for a fixture, under the default output directory. */

@@ -18,7 +18,8 @@ npm install -g {{packageName}}
 Global options, accepted before or after the command: `--base-url <url>`, `--token <token>` (sent
 as a bearer token), `--api-key <key>` (sent in the header, query parameter or cookie the API
 declares), and `--output json|table` (default `json`). A credential is sent only to operations whose
-security requirement declares it. Request bodies use `--json <body|@file>`.
+security requirement declares it. When an operation lists alternative security requirements,
+every configured credential named by any of the operation's alternative security requirements is sent, with at most one API key per request. Request bodies use `--json <body|@file>`.
 
 ## Base URL
 

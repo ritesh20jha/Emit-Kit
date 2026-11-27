@@ -60,8 +60,20 @@ record CommandOperation(
     return List.copyOf(out);
   }
 
+  /**
+   * Header names the runner sets itself: Authorization, Accept and Content-Type. A header parameter
+   * with one of these names, compared without case, gets no option.
+   */
+  private static final Set<String> RUNNER_HEADERS =
+      Set.of("authorization", "accept", "content-type");
+
+  private static boolean isReservedHeader(Parameter p) {
+    return p.in() == ParamLocation.HEADER
+        && RUNNER_HEADERS.contains(p.name().toLowerCase(Locale.ROOT));
+  }
+
   private static CommandOperation build(String name, Operation op) {
-    List<Parameter> params = op.parameters();
+    List<Parameter> params = op.parameters().stream().filter(p -> !isReservedHeader(p)).toList();
     List<String> flags =
         Names.unique(params.stream().map(p -> flagBase(p.name())).toList(), RESERVED_FLAGS);
     List<Flag> flagList = new ArrayList<>();

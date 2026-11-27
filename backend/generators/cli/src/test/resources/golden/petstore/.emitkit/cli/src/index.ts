@@ -21,11 +21,6 @@ export interface Invocation {
 
 export type Runner = (call: Invocation) => Promise<void>;
 
-/** An integer outside the safe range, kept as the text the API sent so that it prints exactly. */
-class RawNumber {
-  constructor(readonly text: string) {}
-}
-
 type GlobalOptions = {
   baseUrl?: string;
   token?: string;
@@ -40,6 +35,14 @@ const DEFAULT_BASE_URL = "";
 type Credential =
   | { kind: "bearer" }
   | { kind: "apiKey"; in: "header" | "query" | "cookie"; name: string };
+
+type ApiKeyCredential = Extract<Credential, { kind: "apiKey" }>;
+
+/** Prefix that marks a string as a large integer's digits. Private-use, so it cannot be typed by accident. */
+const LARGE_INTEGER_MARK = "";
+
+/** Characters that separate JSON tokens, outside strings. */
+const DELIMITER = /[\s",:{}[\]]/;
 
 /** Credential for each security scheme the spec declares, keyed by scheme name. */
 const SECURITY_SCHEMES = new Map<string, Credential>([]);
@@ -62,22 +65,7 @@ const run: Runner = async (call) => {
   }
   const url = new URL(baseUrl.replace(/\/+$/, "") + call.path);
   const headers = new Headers({ Accept: "application/json" });
-  const cookies: string[] = [];
-  // Only the credentials that this operation's security requirement declares are sent.
-  for (const schemeName of call.security) {
-    const credential = SECURITY_SCHEMES.get(schemeName);
-    if (credential?.kind === "bearer" && globals.token !== undefined) {
-      headers.set("Authorization", `Bearer ${globals.token}`);
-    } else if (credential?.kind === "apiKey" && globals.apiKey !== undefined) {
-      if (credential.in === "header") {
-        headers.set(credential.name, globals.apiKey);
-      } else if (credential.in === "query") {
-        url.searchParams.set(credential.name, globals.apiKey);
-      } else {
-        cookies.push(`${credential.name}=${encodeURIComponent(globals.apiKey)}`);
-      }
-    }
-  }
+  // Parameters go first, so that a credential applied below replaces a parameter of the same name.
   for (const [name, value] of Object.entries(call.query ?? {})) {
     if (value !== undefined) {
       url.searchParams.set(name, value);
@@ -88,13 +76,38 @@ const run: Runner = async (call) => {
       headers.set(name, value);
     }
   }
+  const cookies = new Map<string, string>();
   for (const [name, value] of Object.entries(call.cookies ?? {})) {
     if (value !== undefined) {
-      cookies.push(`${name}=${encodeURIComponent(value)}`);
+      cookies.set(name, value);
     }
   }
-  if (cookies.length > 0) {
-    headers.set("Cookie", cookies.join("; "));
+  // Only the schemes that this operation's security requirement names are considered.
+  const credentials = call.security.flatMap((name) => {
+    const credential = SECURITY_SCHEMES.get(name);
+    return credential === undefined ? [] : [credential];
+  });
+  if (globals.token !== undefined && credentials.some((credential) => credential.kind === "bearer")) {
+    headers.set("Authorization", `Bearer ${globals.token}`);
+  }
+  if (globals.apiKey !== undefined) {
+    // One API key per request: the first header or cookie scheme in the operation's order, and a
+    // query scheme only when no header or cookie scheme applies.
+    const keys = credentials.filter((credential): credential is ApiKeyCredential => credential.kind === "apiKey");
+    const key: ApiKeyCredential | undefined = keys.find((credential) => credential.in !== "query") ?? keys[0];
+    if (key?.in === "header") {
+      headers.set(key.name, globals.apiKey);
+    } else if (key?.in === "query") {
+      url.searchParams.set(key.name, globals.apiKey);
+    } else if (key !== undefined) {
+      cookies.set(key.name, globals.apiKey);
+    }
+  }
+  if (cookies.size > 0) {
+    headers.set(
+      "Cookie",
+      [...cookies].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join("; "),
+    );
   }
   let body: string | undefined;
   if (call.body !== undefined) {
@@ -120,32 +133,130 @@ function printOutput(text: string, format: GlobalOptions["output"]): void {
   if (text === "") {
     return;
   }
-  // The body is written as received. Parsing it would round integers outside the safe range.
-  const output = text.endsWith("\n") ? text : `${text}\n`;
-  if (format === "json") {
-    process.stdout.write(output);
-    return;
-  }
   let value: unknown;
   try {
-    value = parseJson(text);
+    value = JSON.parse(markLargeIntegers(text));
   } catch {
-    process.stdout.write(output);
+    // Not JSON: print the body as received.
+    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
     return;
   }
-  process.stdout.write(renderTable(value) ?? output);
+  if (format === "table") {
+    const table = renderTable(value);
+    process.stdout.write(table ?? (text.endsWith("\n") ? text : `${text}\n`));
+    return;
+  }
+  process.stdout.write(`${prettyJson(text)}\n`);
 }
 
-/** JSON.parse that keeps each integer outside the safe range as the text the API sent. */
-function parseJson(text: string): unknown {
-  return JSON.parse(text, (_key, value: unknown, context?: { source?: string }) =>
-    typeof value === "number" &&
-    Number.isInteger(value) &&
-    !Number.isSafeInteger(value) &&
-    context?.source !== undefined
-      ? new RawNumber(context.source)
-      : value,
-  );
+/**
+ * Re-indents JSON text by its tokens, so no number is ever read as a number and every digit is
+ * written as received. Strings are copied verbatim, escapes included. Empty objects and arrays stay
+ * on one line.
+ */
+function prettyJson(text: string): string {
+  let out = "";
+  let depth = 0;
+  let i = 0;
+  const newline = (level: number) => `\n${"  ".repeat(level)}`;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      const end = endOfString(text, i);
+      out += text.slice(i, end);
+      i = end;
+    } else if (c === "{" || c === "[") {
+      const close = c === "{" ? "}" : "]";
+      const next = skipSpace(text, i + 1);
+      if (text[next] === close) {
+        out += c + close;
+        i = next + 1;
+      } else {
+        depth += 1;
+        out += c + newline(depth);
+        i += 1;
+      }
+    } else if (c === "}" || c === "]") {
+      depth -= 1;
+      out += newline(depth) + c;
+      i += 1;
+    } else if (c === ",") {
+      out += "," + newline(depth);
+      i += 1;
+    } else if (c === ":") {
+      out += ": ";
+      i += 1;
+    } else if (isSpace(c)) {
+      i += 1;
+    } else {
+      const end = endOfToken(text, i);
+      out += text.slice(i, end);
+      i = end;
+    }
+  }
+  return out;
+}
+
+/** Marks each integer outside the safe range as a string, so that JSON.parse keeps its digits. */
+function markLargeIntegers(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      const end = endOfString(text, i);
+      out += text.slice(i, end);
+      i = end;
+    } else if (DELIMITER.test(c)) {
+      out += c;
+      i += 1;
+    } else {
+      const end = endOfToken(text, i);
+      const token = text.slice(i, end);
+      out += isLargeInteger(token) ? `"${LARGE_INTEGER_MARK}${token}"` : token;
+      i = end;
+    }
+  }
+  return out;
+}
+
+function isSpace(c: string): boolean {
+  return c === " " || c === "\n" || c === "\r" || c === "\t";
+}
+
+function skipSpace(text: string, from: number): number {
+  let i = from;
+  while (i < text.length && isSpace(text[i])) {
+    i += 1;
+  }
+  return i;
+}
+
+/** Index just past the closing quote of the string that opens at {@code start}. */
+function endOfString(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length && text[i] !== '"') {
+    i += text[i] === "\\" ? 2 : 1;
+  }
+  return Math.min(i + 1, text.length);
+}
+
+/** Index just past a run of non-delimiter characters, which is a number, true, false or null. */
+function endOfToken(text: string, start: number): number {
+  let i = start;
+  while (i < text.length && !DELIMITER.test(text[i])) {
+    i += 1;
+  }
+  return i === start ? start + 1 : i;
+}
+
+function isLargeInteger(token: string): boolean {
+  return /^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token));
+}
+
+/** The digits of a large integer marked by markLargeIntegers, or undefined for any other value. */
+function largeInteger(value: unknown): string | undefined {
+  return typeof value === "string" && value.startsWith(LARGE_INTEGER_MARK) ? value.slice(1) : undefined;
 }
 
 /** Renders an object, or an array of objects, as an aligned table. Other shapes return undefined. */
@@ -166,12 +277,17 @@ function renderTable(value: unknown): string | undefined {
 
 /** Text for one table cell. Nested values are written as compact JSON. */
 function cell(value: unknown): string {
+  const digits = largeInteger(value);
+  if (digits !== undefined) {
+    return digits;
+  }
   return typeof value === "object" && value !== null ? compactJson(value) : String(value ?? "");
 }
 
 function compactJson(value: unknown): string {
-  if (value instanceof RawNumber) {
-    return value.text;
+  const digits = largeInteger(value);
+  if (digits !== undefined) {
+    return digits;
   }
   if (Array.isArray(value)) {
     return `[${value.map(compactJson).join(",")}]`;
@@ -184,5 +300,5 @@ function compactJson(value: unknown): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof RawNumber);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
