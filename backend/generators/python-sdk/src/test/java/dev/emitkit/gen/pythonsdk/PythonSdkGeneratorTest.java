@@ -50,7 +50,8 @@ class PythonSdkGeneratorTest {
         "no-operation-ids",
         "reserved-words",
         "deep-nesting",
-        "multi-tag"
+        "multi-tag",
+        "bookshelf"
       })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
