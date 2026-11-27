@@ -1,6 +1,7 @@
 package dev.emitkit.gen.mcp;
 
 import dev.emitkit.gen.core.GeneratorContext;
+import dev.emitkit.gen.core.PackageNames;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.SecurityScheme;
 import java.util.ArrayList;
@@ -15,7 +16,9 @@ import org.jspecify.annotations.Nullable;
  * valid TypeScript, the others are plain text.
  *
  * @param title single-line API title for the README heading
- * @param packageNameLiteral npm package name as a string literal, also the MCP server name
+ * @param packageNameLiteral npm package name, {@code <base>-mcp} with the scope when there is one
+ * @param binLiteral executable name, {@code <base>-mcp}, which keeps it apart from the CLI's bin
+ * @param serverNameLiteral the name the server reports: the SDK-style package name, {@code <base>}
  * @param versionLiteral package version as a string literal
  * @param securitySchemesJson each scheme's credential as {@code [name, credential]} pairs, as JSON
  * @param toolsJson the tool list as a JSON array
@@ -23,18 +26,21 @@ import org.jspecify.annotations.Nullable;
 record McpView(
     String title,
     String packageNameLiteral,
+    String binLiteral,
+    String serverNameLiteral,
     String versionLiteral,
     String securitySchemesJson,
     String toolsJson) {
 
   static McpView of(ApiModel model, GeneratorContext ctx, List<McpGenerator.Tool> tools) {
-    var names = ctx.names();
+    PackageNames names = ctx.names();
     String scope = names.npmScope();
-    String packageName =
-        scope == null || scope.isEmpty() ? names.npmName() : "@" + scope + "/" + names.npmName();
+    String prefix = scope == null || scope.isEmpty() ? "" : "@" + scope + "/";
     return new McpView(
         McpGenerator.oneLine(model.info().title()),
-        Json.quote(packageName),
+        Json.quote(prefix + names.npmName() + "-mcp"),
+        Json.quote(names.npmName() + "-mcp"),
+        Json.quote(prefix + names.npmName()),
         Json.quote(ctx.version()),
         securitySchemesJson(model.securitySchemes().values()),
         Json.write(tools.stream().map(McpGenerator.Tool::asMap).toList()));

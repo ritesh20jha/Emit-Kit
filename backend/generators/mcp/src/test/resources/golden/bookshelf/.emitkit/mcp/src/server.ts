@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { tools, type ApiTool } from "./tools.js";
 
-const SERVER_NAME = "@acme/petstore-mcp";
+const SERVER_NAME = "@acme/petstore";
 const SERVER_VERSION = "1.2.3";
 
 /** Where a security scheme's credential goes: the bearer token, or the API key in a location. */

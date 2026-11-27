@@ -97,6 +97,28 @@ class McpGeneratorTest {
   }
 
   @Test
+  void packageAndBinUseTheMcpSuffixSoTheyDoNotClashWithTheCliOrSdk() {
+    String json = source(generate("petstore"), "package.json");
+    assertThat(json)
+        .contains("\"name\": \"@acme/petstore-mcp\",")
+        .contains("\"petstore-mcp\": \"dist/server.js\"")
+        .doesNotContain("\"@acme/petstore\"");
+    // The server reports its name unchanged; only the package and bin carry the suffix.
+    assertThat(source(generate("petstore"), "src/server.ts"))
+        .contains("const SERVER_NAME = \"@acme/petstore\";");
+    var unscoped =
+        new GeneratorContext(
+            ".emitkit/",
+            "1.2.3",
+            new PackageNames(null, "petstore", null, null, null),
+            List.of(),
+            Optional.empty());
+    assertThat(source(generator.generate(FixtureSpecs.load("petstore"), unscoped), "package.json"))
+        .contains("\"name\": \"petstore-mcp\",")
+        .contains("\"petstore-mcp\": \"dist/server.js\"");
+  }
+
+  @Test
   void eachToolCarriesItsEffectiveSecurityRequirement() {
     String tools = source(generate("bookshelf"), "src/tools.ts");
     // listAuthors declares security: [], so its tool sends no credentials.
@@ -167,7 +189,7 @@ class McpGeneratorTest {
     return new GeneratorContext(
         ".emitkit/",
         "1.2.3",
-        new PackageNames("acme", "petstore-mcp", "petstore", "dev.acme", "petstore"),
+        new PackageNames("acme", "petstore", "petstore", "dev.acme", "petstore"),
         List.of(),
         Optional.empty());
   }
