@@ -36,7 +36,7 @@ class McpGeneratorTest {
   private final McpGenerator generator = new McpGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "polymorphism"})
+  @ValueSource(strings = {"petstore", "polymorphism", "bookshelf"})
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }

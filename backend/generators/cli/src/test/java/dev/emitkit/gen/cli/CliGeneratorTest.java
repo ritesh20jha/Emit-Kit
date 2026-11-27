@@ -31,7 +31,7 @@ class CliGeneratorTest {
   private final CliGenerator generator = new CliGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "multi-tag", "reserved-words", "auth-schemes"})
+  @ValueSource(strings = {"petstore", "multi-tag", "reserved-words", "auth-schemes", "bookshelf"})
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
