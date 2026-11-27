@@ -97,6 +97,66 @@ class McpGeneratorTest {
   }
 
   @Test
+  void toolDescriptionIsTheSummaryThenTheDescription() {
+    var op =
+        new Operation(
+            "listBooks",
+            false,
+            "GET",
+            "/books",
+            "books",
+            "List books",
+            "Returns a page of books.\nNewest first.",
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().description())
+        .isEqualTo("List books\n\nReturns a page of books.\nNewest first.");
+  }
+
+  @Test
+  void toolDescriptionIsTheDescriptionAloneWithoutASummary() {
+    var op =
+        new Operation(
+            "listBooks",
+            false,
+            "GET",
+            "/books",
+            "books",
+            null,
+            "Returns a page of books.",
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().description())
+        .isEqualTo("Returns a page of books.");
+  }
+
+  @Test
+  void toolDescriptionIsTheSummaryWhenTheDescriptionRepeatsIt() {
+    var op =
+        new Operation(
+            "listBooks",
+            false,
+            "GET",
+            "/books",
+            "books",
+            "List books",
+            "List   books",
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().description())
+        .isEqualTo("List books");
+  }
+
+  @Test
   void packageAndBinUseTheMcpSuffixSoTheyDoNotClashWithTheCliOrSdk() {
     String json = source(generate("petstore"), "package.json");
     assertThat(json)

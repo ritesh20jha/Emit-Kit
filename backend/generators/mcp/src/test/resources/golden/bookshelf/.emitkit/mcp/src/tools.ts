@@ -16,7 +16,7 @@ export interface ApiTool {
 export const tools: ApiTool[] = [
   {
     "name": "list_books",
-    "description": "List books",
+    "description": "List books\n\nReturns a page of books, optionally filtered by genre and availability.",
     "method": "GET",
     "path": "/books",
     "params": [
@@ -74,7 +74,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "create_book",
-    "description": "Add a book",
+    "description": "Add a book\n\nAdds a new book to the catalogue.",
     "method": "POST",
     "path": "/books",
     "params": [
@@ -241,7 +241,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "get_book",
-    "description": "Get a book",
+    "description": "Get a book\n\nReturns one book by its id.",
     "method": "GET",
     "path": "/books/{bookId}",
     "params": [
@@ -269,7 +269,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "delete_book",
-    "description": "Remove a book",
+    "description": "Remove a book\n\nRemoves a book from the catalogue.",
     "method": "DELETE",
     "path": "/books/{bookId}",
     "params": [
@@ -297,7 +297,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "update_book",
-    "description": "Update a book",
+    "description": "Update a book\n\nChanges some fields of a book. Fields left out are kept.",
     "method": "PATCH",
     "path": "/books/{bookId}",
     "params": [
@@ -356,7 +356,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "list_authors",
-    "description": "List authors",
+    "description": "List authors\n\nReturns every author, sorted by name.",
     "method": "GET",
     "path": "/authors",
     "params": [
@@ -384,7 +384,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "list_author_books",
-    "description": "List an author's books",
+    "description": "List an author's books\n\nReturns the books written by one author.",
     "method": "GET",
     "path": "/authors/{authorId}/books",
     "params": [
@@ -413,7 +413,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "create_loan",
-    "description": "Borrow a book",
+    "description": "Borrow a book\n\nLends a free copy of a book to a member.",
     "method": "POST",
     "path": "/loans",
     "params": [
@@ -460,7 +460,7 @@ export const tools: ApiTool[] = [
   },
   {
     "name": "return_loan",
-    "description": "Return a book",
+    "description": "Return a book\n\nEnds a loan and frees the copy.",
     "method": "POST",
     "path": "/loans/{loanId}/return",
     "params": [

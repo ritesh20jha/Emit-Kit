@@ -78,7 +78,7 @@ public final class McpGenerator implements Generator {
    * One MCP tool.
    *
    * @param name snake_case, at most 64 characters, unique within the server
-   * @param description one line: the summary, else the description, else {@code METHOD path}
+   * @param description the summary, a blank line and the description; see {@link #description}
    * @param method HTTP method
    * @param path path template with {@code {name}} placeholders
    * @param params the operation's parameters, in declaration order
@@ -145,9 +145,21 @@ public final class McpGenerator implements Generator {
     return name;
   }
 
+  /**
+   * The summary, a blank line, then the description. The description alone stands in when there is
+   * no summary, and the summary alone when the description repeats it. With neither, the tool is
+   * described as {@code METHOD path}.
+   */
   static String description(Operation op) {
-    String text = firstNonBlank(op.summary(), op.description());
-    return text == null ? op.method() + " " + op.path() : oneLine(text);
+    String summary = op.summary() == null ? "" : oneLine(op.summary());
+    String description = op.description() == null ? "" : op.description().strip();
+    if (summary.isEmpty()) {
+      return description.isEmpty() ? op.method() + " " + op.path() : description;
+    }
+    if (description.isEmpty() || oneLine(description).equals(summary)) {
+      return summary;
+    }
+    return summary + "\n\n" + description;
   }
 
   /** Collapses whitespace runs, so the text is one line. */
@@ -200,12 +212,5 @@ public final class McpGenerator implements Generator {
 
   private static String truncate(String text, int max) {
     return text.length() <= max ? text : text.substring(0, max);
-  }
-
-  private static String firstNonBlank(String first, String second) {
-    if (first != null && !first.isBlank()) {
-      return first;
-    }
-    return second != null && !second.isBlank() ? second : null;
   }
 }
