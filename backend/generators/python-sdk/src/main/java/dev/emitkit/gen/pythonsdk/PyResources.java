@@ -36,6 +36,13 @@ final class PyResources {
   /** Argument names the method body needs: a parameter of one of these would shadow them. */
   private static final Set<String> ARG_SHADOWS = Set.of("list", "response", "self", "str");
 
+  /**
+   * Lower-case header names the SDK sets itself: the credentials and the request's media types. An
+   * operation's parameter of one of these names is not an argument.
+   */
+  private static final Set<String> RESERVED_HEADERS =
+      Set.of("accept", "authorization", "content-type");
+
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]*)}");
   private static final Set<String> TYPING =
       Set.of("Annotated", "Any", "Literal", "Optional", "Union");
@@ -109,8 +116,8 @@ final class PyResources {
         PyClientView.docText(tag),
         className,
         "Async" + className,
-        view.className(),
-        view.asyncClassName(),
+        "_" + view.className(),
+        "_" + view.asyncClassName(),
         imports(scope, view),
         imports.contains("_drop_none"),
         plans.stream().map(p -> method(p, false)).toList(),
@@ -129,13 +136,25 @@ final class PyResources {
     List<String> query = new ArrayList<>();
     List<String> headers = new ArrayList<>();
     List<String> cookies = new ArrayList<>();
+    // The location of the first parameter that took each argument name, so that a later parameter
+    // from another location with the same name can take a location-prefixed one.
+    Map<String, ParamLocation> firstLocation = new HashMap<>();
     for (Parameter p : op.parameters()) {
-      String py = PyTypeRenderer.unique(names.member(p.name()), argNames);
+      if (p.in() == ParamLocation.HEADER && RESERVED_HEADERS.contains(lower(p.name()))) {
+        continue;
+      }
+      String base = names.member(p.name());
+      ParamLocation first = firstLocation.putIfAbsent(base, p.in());
+      String py =
+          first != null && first != p.in()
+              ? PyTypeRenderer.unique(lower(p.in().name()) + "_" + base, argNames)
+              : PyTypeRenderer.unique(base, argNames);
       String type = types.typeOf(p.schema(), PyTypeRenderer.hint(op, p.name()), scope);
       boolean path = p.in() == ParamLocation.PATH;
       boolean required = path || p.required();
       String annotated = annotated(type, required, p.schema(), scope);
-      String value = sentValue(p.schema(), annotated, py, scope);
+      boolean optional = !path && (!p.required() || p.schema().nullable());
+      String value = sentValue(p.schema(), type, optional, py, scope);
       String entry = PyClientView.quote(p.name()) + ": " + value;
       switch (p.in()) {
         case PATH -> {
@@ -175,9 +194,13 @@ final class PyResources {
       String type = types.typeOf(schema, PyTypeRenderer.hint(op, "request"), scope);
       boolean required = op.requestBody().required();
       args.add(keywordArg(py, type, required, schema, scope));
+      // Typed as Any: the body is only serialised, and pydantic 2.8's stubs type a union's adapter
+      // as Never, which mypy --strict would reject.
       String dump =
           scope.use("TypeAdapter")
-              + "("
+              + "["
+              + scope.use("Any")
+              + "]("
               + type
               + ").dump_python("
               + py
@@ -226,6 +249,10 @@ final class PyResources {
     return out.toString();
   }
 
+  private static String lower(String text) {
+    return text.toLowerCase(Locale.ROOT);
+  }
+
   /** A keyword-only argument: required, or defaulting to None with an Optional type. */
   private static String keywordArg(
       String name, String type, boolean required, Schema schema, Scope scope) {
@@ -245,11 +272,15 @@ final class PyResources {
    * The expression that sends a path or query value. Primitives are sent as they are. Any other
    * type, such as an enum, is dumped in JSON mode so the wire form is its value.
    */
-  private static String sentValue(Schema schema, String annotated, String py, Scope scope) {
+  private static String sentValue(
+      Schema schema, String type, boolean optional, String py, Scope scope) {
     if (isPrimitive(schema)) {
       return py;
     }
-    return scope.use("TypeAdapter") + "(" + annotated + ").dump_python(" + py + ", mode='json')";
+    // The adapter is built for the bare type, which pydantic 2.8's stubs can type under mypy
+    // --strict; an optional value is dumped only when it is set.
+    String dump = scope.use("TypeAdapter") + "(" + type + ").dump_python(" + py + ", mode='json')";
+    return optional ? "None if " + py + " is None else " + dump : dump;
   }
 
   private static boolean isPrimitive(Schema schema) {
@@ -338,10 +369,15 @@ final class PyResources {
     if (!scope.names.isEmpty()) {
       groups.add("from ..models import " + String.join(", ", new TreeSet<>(scope.names)));
     }
+    // Aliased, so that a model of the same name as a client class is not shadowed.
     groups.add(
         "if TYPE_CHECKING:\n    from ..client import "
             + view.className()
+            + " as _"
+            + view.className()
             + ", "
+            + view.asyncClassName()
+            + " as _"
             + view.asyncClassName());
     return String.join("\n\n", groups);
   }

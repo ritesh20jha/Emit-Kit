@@ -33,8 +33,8 @@ RETRY_BASE_DELAY_SECONDS = 0.5
 MAX_RETRY_AFTER_SECONDS = 30.0
 # Methods that may be repeated without effect. Other requests are retried only with an Idempotency-Key.
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "PUT", "DELETE", "OPTIONS"})
-# Where each security scheme's credential is sent, as (location, name). An apiKey goes in the header
-# or query parameter it names; bearer and basic credentials go in the Authorization header.
+# Where each security scheme's credential is sent, as (location, name). An apiKey goes in the header,
+# cookie or query parameter it names; bearer and basic credentials go in the Authorization header.
 _SCHEME_LOCATIONS: Dict[str, Tuple[str, str]] = {
     "headerKey": ("header", "X-API-Key"),
     "queryKey": ("query", "api_key"),
@@ -88,26 +88,33 @@ class AuthSchemesClient:
         if self._owns_http:
             self._http.close()
 
-    def _auth(self, security: Sequence[str]) -> Tuple[Dict[str, str], Dict[str, str]]:
-        """The headers and query parameters that carry the credentials of the named security
+    def _auth(
+        self, security: Sequence[str]
+    ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+        """The headers, query parameters and cookies that carry the credentials of the named security
         schemes. A scheme without a configured credential contributes nothing."""
         headers: Dict[str, str] = {}
         params: Dict[str, str] = {}
-        for scheme in security:
-            location = _SCHEME_LOCATIONS.get(scheme)
-            if location is None:
-                continue
-            kind, name = location
-            if kind == "header" and self._api_key is not None:
+        cookies: Dict[str, str] = {}
+        locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
+        kinds = {kind for kind, _ in locations}
+        # One apiKey is sent per request, so the key is never in the URL while a header or cookie
+        # scheme applies.
+        key = _api_key_location(locations)
+        if key is not None and self._api_key is not None:
+            kind, name = key
+            if kind == "header":
                 headers[name] = self._api_key
-            if kind == "query" and self._api_key is not None:
+            elif kind == "cookie":
+                cookies[name] = self._api_key
+            else:
                 params[name] = self._api_key
-            if kind == "bearer" and self._bearer_token is not None:
-                headers["Authorization"] = f"Bearer {self._bearer_token}"
-            # A bearer token takes precedence over basic credentials, whatever the order.
-            if kind == "basic" and self._basic is not None:
-                headers.setdefault("Authorization", _basic_credentials(*self._basic))
-        return headers, params
+        if "bearer" in kinds and self._bearer_token is not None:
+            headers["Authorization"] = f"Bearer {self._bearer_token}"
+        # A bearer token takes precedence over basic credentials, whatever the order.
+        if "basic" in kinds and self._basic is not None:
+            headers.setdefault("Authorization", _basic_credentials(*self._basic))
+        return headers, params, cookies
 
     def _request(
         self,
@@ -124,9 +131,9 @@ class AuthSchemesClient:
         is retried up to max_retries times, but only when the request may be repeated. Any other
         non-2xx status raises an ApiError subclass. Returns the successful response for the caller
         to parse."""
-        auth_headers, auth_params = self._auth(security)
-        params: Dict[str, Any] = {**auth_params, **(query or {})}
-        request_headers = {**_request_headers(headers, cookies), **auth_headers}
+        auth_headers, auth_params, auth_cookies = self._auth(security)
+        params: Dict[str, Any] = {**(query or {}), **auth_params}
+        request_headers = _request_headers(headers, cookies, auth_headers, auth_cookies)
         attempt = 0
         while True:
             response = self._http.request(
@@ -138,7 +145,10 @@ class AuthSchemesClient:
             )
             if response.is_success:
                 return response
-            if not _may_retry(method, request_headers, response.status_code) or attempt >= self._max_retries:
+            if (
+                not _may_retry(method, request_headers, response.status_code)
+                or attempt >= self._max_retries
+            ):
                 raise _to_api_error(response)
             delay = _retry_delay(response, attempt)
             response.close()
@@ -190,26 +200,33 @@ class AsyncAuthSchemesClient:
         if self._owns_http:
             await self._http.aclose()
 
-    def _auth(self, security: Sequence[str]) -> Tuple[Dict[str, str], Dict[str, str]]:
-        """The headers and query parameters that carry the credentials of the named security
+    def _auth(
+        self, security: Sequence[str]
+    ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+        """The headers, query parameters and cookies that carry the credentials of the named security
         schemes. A scheme without a configured credential contributes nothing."""
         headers: Dict[str, str] = {}
         params: Dict[str, str] = {}
-        for scheme in security:
-            location = _SCHEME_LOCATIONS.get(scheme)
-            if location is None:
-                continue
-            kind, name = location
-            if kind == "header" and self._api_key is not None:
+        cookies: Dict[str, str] = {}
+        locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
+        kinds = {kind for kind, _ in locations}
+        # One apiKey is sent per request, so the key is never in the URL while a header or cookie
+        # scheme applies.
+        key = _api_key_location(locations)
+        if key is not None and self._api_key is not None:
+            kind, name = key
+            if kind == "header":
                 headers[name] = self._api_key
-            if kind == "query" and self._api_key is not None:
+            elif kind == "cookie":
+                cookies[name] = self._api_key
+            else:
                 params[name] = self._api_key
-            if kind == "bearer" and self._bearer_token is not None:
-                headers["Authorization"] = f"Bearer {self._bearer_token}"
-            # A bearer token takes precedence over basic credentials, whatever the order.
-            if kind == "basic" and self._basic is not None:
-                headers.setdefault("Authorization", _basic_credentials(*self._basic))
-        return headers, params
+        if "bearer" in kinds and self._bearer_token is not None:
+            headers["Authorization"] = f"Bearer {self._bearer_token}"
+        # A bearer token takes precedence over basic credentials, whatever the order.
+        if "basic" in kinds and self._basic is not None:
+            headers.setdefault("Authorization", _basic_credentials(*self._basic))
+        return headers, params, cookies
 
     async def _request(
         self,
@@ -226,9 +243,9 @@ class AsyncAuthSchemesClient:
         is retried up to max_retries times, but only when the request may be repeated. Any other
         non-2xx status raises an ApiError subclass. Returns the successful response for the caller
         to parse."""
-        auth_headers, auth_params = self._auth(security)
-        params: Dict[str, Any] = {**auth_params, **(query or {})}
-        request_headers = {**_request_headers(headers, cookies), **auth_headers}
+        auth_headers, auth_params, auth_cookies = self._auth(security)
+        params: Dict[str, Any] = {**(query or {}), **auth_params}
+        request_headers = _request_headers(headers, cookies, auth_headers, auth_cookies)
         attempt = 0
         while True:
             response = await self._http.request(
@@ -240,7 +257,10 @@ class AsyncAuthSchemesClient:
             )
             if response.is_success:
                 return response
-            if not _may_retry(method, request_headers, response.status_code) or attempt >= self._max_retries:
+            if (
+                not _may_retry(method, request_headers, response.status_code)
+                or attempt >= self._max_retries
+            ):
                 raise _to_api_error(response)
             delay = _retry_delay(response, attempt)
             await response.aclose()
@@ -261,30 +281,64 @@ def _check_max_retries(max_retries: int, error: str) -> int:
     return max_retries
 
 
+def _api_key_location(locations: Sequence[Tuple[str, str]]) -> Optional[Tuple[str, str]]:
+    """The apiKey to send with a request: the first of its schemes carried in a header or cookie,
+    else the first carried in a query parameter. None when it has no apiKey scheme."""
+    for location in locations:
+        if location[0] in ("header", "cookie"):
+            return location
+    for location in locations:
+        if location[0] == "query":
+            return location
+    return None
+
+
 def _header_text(value: Any) -> str:
-    """The text sent for a header or cookie value. Booleans are sent as true or false."""
+    """The text sent for a header value: booleans as true or false, and a list comma-joined."""
+    if isinstance(value, (list, tuple)):
+        return ",".join(_header_text(item) for item in value)
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
 
 
+def _cookie_text(value: Any) -> str:
+    """The text sent for a cookie value: each item URL-encoded, and a list comma-joined."""
+    items = value if isinstance(value, (list, tuple)) else [value]
+    return ",".join(quote(_header_text(item), safe="") for item in items)
+
+
+def _set_header(values: Dict[str, str], name: str, text: str) -> None:
+    """Sets a header, replacing any value under the same name in any letter case, so that a name is
+    never sent twice."""
+    for existing in [key for key in values if key.lower() == name.lower()]:
+        del values[existing]
+    values[name] = text
+
+
 def _request_headers(
-    headers: Optional[Mapping[str, Any]], cookies: Optional[Mapping[str, Any]]
+    headers: Optional[Mapping[str, Any]],
+    cookies: Optional[Mapping[str, Any]],
+    auth_headers: Mapping[str, str],
+    auth_cookies: Mapping[str, str],
 ) -> Dict[str, str]:
-    """The header parameters, plus one Cookie header for the cookie parameters with their values
-    URL-encoded. Parameters left unset (None) are not sent."""
-    values = {
-        name: _header_text(value)
-        for name, value in (headers or {}).items()
-        if value is not None
-    }
-    pairs = [
-        f"{name}={quote(_header_text(value), safe='')}"
-        for name, value in (cookies or {}).items()
-        if value is not None
-    ]
-    if pairs:
-        values["Cookie"] = "; ".join(pairs)
+    """The headers of a request. The header parameters come first, and the credentials replace any
+    header of the same name. The cookie parameters and the cookie credential share one Cookie header.
+    Parameters left unset (None) are not sent."""
+    values: Dict[str, str] = {}
+    for name, value in (headers or {}).items():
+        if value is not None:
+            _set_header(values, name, _header_text(value))
+    for name, text in auth_headers.items():
+        _set_header(values, name, text)
+    jar: Dict[str, str] = {}
+    for name, cookie in (cookies or {}).items():
+        if cookie is not None:
+            jar[name] = _cookie_text(cookie)
+    for name, secret in auth_cookies.items():
+        jar[name] = _cookie_text(secret)
+    if jar:
+        _set_header(values, "Cookie", "; ".join(f"{name}={text}" for name, text in jar.items()))
     return values
 
 

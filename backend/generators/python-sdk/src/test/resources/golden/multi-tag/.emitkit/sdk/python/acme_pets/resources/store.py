@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..client import MultiTagClient, AsyncMultiTagClient
+    from ..client import MultiTagClient as _MultiTagClient, AsyncMultiTagClient as _AsyncMultiTagClient
 
 
 class StoreResource:
     """Operations tagged store."""
 
-    def __init__(self, client: MultiTagClient) -> None:
+    def __init__(self, client: _MultiTagClient) -> None:
         self._client = client
 
     def list_store_orders(self) -> None:
@@ -20,7 +20,7 @@ class StoreResource:
 class AsyncStoreResource:
     """Operations tagged store."""
 
-    def __init__(self, client: AsyncMultiTagClient) -> None:
+    def __init__(self, client: _AsyncMultiTagClient) -> None:
         self._client = client
 
     async def list_store_orders(self) -> None:

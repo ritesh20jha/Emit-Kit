@@ -9,7 +9,7 @@ from pydantic import TypeAdapter
 from ..models import Author, Book, ListAuthorsSort
 
 if TYPE_CHECKING:
-    from ..client import BookshelfApiClient, AsyncBookshelfApiClient
+    from ..client import BookshelfApiClient as _BookshelfApiClient, AsyncBookshelfApiClient as _AsyncBookshelfApiClient
 
 
 def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
@@ -19,14 +19,14 @@ def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
 class AuthorsResource:
     """Operations tagged authors."""
 
-    def __init__(self, client: BookshelfApiClient) -> None:
+    def __init__(self, client: _BookshelfApiClient) -> None:
         self._client = client
 
     def list_authors(self, *, sort: Optional[ListAuthorsSort] = None) -> list[Author]:
         """List authors
 
         Returns every author, sorted by name."""
-        response = self._client._request("GET", "/authors", query=_drop_none({"sort": TypeAdapter(Optional[ListAuthorsSort]).dump_python(sort, mode='json')}), security=[])
+        response = self._client._request("GET", "/authors", query=_drop_none({"sort": None if sort is None else TypeAdapter(ListAuthorsSort).dump_python(sort, mode='json')}), security=[])
         return TypeAdapter(list[Author]).validate_python(response.json())
 
     def list_author_books(self, *, author_id: int) -> list[Book]:
@@ -40,14 +40,14 @@ class AuthorsResource:
 class AsyncAuthorsResource:
     """Operations tagged authors."""
 
-    def __init__(self, client: AsyncBookshelfApiClient) -> None:
+    def __init__(self, client: _AsyncBookshelfApiClient) -> None:
         self._client = client
 
     async def list_authors(self, *, sort: Optional[ListAuthorsSort] = None) -> list[Author]:
         """List authors
 
         Returns every author, sorted by name."""
-        response = await self._client._request("GET", "/authors", query=_drop_none({"sort": TypeAdapter(Optional[ListAuthorsSort]).dump_python(sort, mode='json')}), security=[])
+        response = await self._client._request("GET", "/authors", query=_drop_none({"sort": None if sort is None else TypeAdapter(ListAuthorsSort).dump_python(sort, mode='json')}), security=[])
         return TypeAdapter(list[Author]).validate_python(response.json())
 
     async def list_author_books(self, *, author_id: int) -> list[Book]:

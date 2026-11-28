@@ -8,13 +8,13 @@ from pydantic import TypeAdapter
 from ..models import Deep, Grid, Node
 
 if TYPE_CHECKING:
-    from ..client import DeepNestingClient, AsyncDeepNestingClient
+    from ..client import DeepNestingClient as _DeepNestingClient, AsyncDeepNestingClient as _AsyncDeepNestingClient
 
 
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: DeepNestingClient) -> None:
+    def __init__(self, client: _DeepNestingClient) -> None:
         self._client = client
 
     def get_deep(self) -> Deep:
@@ -33,7 +33,7 @@ class DefaultResource:
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncDeepNestingClient) -> None:
+    def __init__(self, client: _AsyncDeepNestingClient) -> None:
         self._client = client
 
     async def get_deep(self) -> Deep:

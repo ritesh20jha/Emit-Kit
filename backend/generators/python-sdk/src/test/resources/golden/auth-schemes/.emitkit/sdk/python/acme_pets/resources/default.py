@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..client import AuthSchemesClient, AsyncAuthSchemesClient
+    from ..client import AuthSchemesClient as _AuthSchemesClient, AsyncAuthSchemesClient as _AsyncAuthSchemesClient
 
 
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AuthSchemesClient) -> None:
+    def __init__(self, client: _AuthSchemesClient) -> None:
         self._client = client
 
     def get_with_header_key(self) -> None:
@@ -35,7 +35,7 @@ class DefaultResource:
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncAuthSchemesClient) -> None:
+    def __init__(self, client: _AsyncAuthSchemesClient) -> None:
         self._client = client
 
     async def get_with_header_key(self) -> None:

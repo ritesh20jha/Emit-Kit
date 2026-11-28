@@ -24,6 +24,11 @@ import dev.emitkit.spec.model.Response;
 import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import dev.emitkit.spec.parse.ParseResult;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -119,8 +124,10 @@ class PythonSdkGeneratorTest {
   void enumQueryParameterIsSentAsItsValue() {
     assertThat(content("enums", "resources/default.py"))
         .contains(
-            "query=_drop_none({\"color\": TypeAdapter(Optional[Color]).dump_python(color, "
-                + "mode='json')})");
+            // The dump is of the bare enum type, which pydantic 2.8's stubs type; the None case
+            // is handled here rather than by an Optional adapter that mypy cannot type.
+            "query=_drop_none({\"color\": None if color is None else "
+                + "TypeAdapter(Color).dump_python(color, mode='json')})");
   }
 
   @Test
@@ -244,7 +251,7 @@ class PythonSdkGeneratorTest {
         new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
     assertThat(clientSource(Map.of("queryKey", queryKey)))
         .contains("\"queryKey\": (\"query\", \"api_key\"),")
-        .doesNotContain("(\"header\"");
+        .doesNotContain(": (\"header\"");
   }
 
   @Test
@@ -453,7 +460,7 @@ class PythonSdkGeneratorTest {
         .contains("def _retry_delay(")
         .contains("def _parse_retry_after(")
         .contains("return RETRY_BASE_DELAY_SECONDS * float(2**attempt)")
-        .contains("if not _may_retry(method, request_headers, response.status_code)")
+        .contains("not _may_retry(method, request_headers, response.status_code)")
         .contains("await asyncio.sleep(delay)");
   }
 
@@ -476,7 +483,105 @@ class PythonSdkGeneratorTest {
     assertThat(content("bookshelf", "client.py"))
         .contains("headers: Optional[Mapping[str, Any]] = None,")
         .contains("cookies: Optional[Mapping[str, Any]] = None,")
-        .contains("quote(_header_text(value), safe=''");
+        .contains("quote(_header_text(item), safe=\"\")");
+  }
+
+  /** The module-local spec {@code specs/apikeys.yaml}, parsed like a shared fixture. */
+  private static ApiModel localSpec(String name) {
+    try (var in = PythonSdkGeneratorTest.class.getResourceAsStream("/specs/" + name + ".yaml")) {
+      ParseResult result =
+          new SpecParser().parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+      if (result.model() == null || !result.errors().isEmpty()) {
+        throw new IllegalStateException(name + " did not parse: " + result.errors());
+      }
+      return result.model();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  @Test
+  void localSpecMatchesGolden() {
+    GoldenFiles.assertMatches("apikeys", generator.generate(localSpec("apikeys"), ctx()));
+  }
+
+  @Test
+  void apiKeyIsSentOnceFromTheFirstHeaderOrCookieSchemeNeverFromTheUrlThen() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains("security=[\"queryKey\", \"headerKey\"]")
+        .contains("security=[\"queryKey\", \"cookieKey\"]")
+        .contains("security=[\"queryKey\"]");
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py"))
+        .contains("\"headerKey\": (\"header\", \"X-Api-Key\"),")
+        .contains("\"cookieKey\": (\"cookie\", \"sid\"),")
+        .contains("\"queryKey\": (\"query\", \"api_key\"),")
+        .contains("def _api_key_location(");
+  }
+
+  @Test
+  void reservedHeaderParametersAreNotArguments() {
+    String resources = sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py");
+    assertThat(resources)
+        .doesNotContain("accept")
+        .doesNotContain("authorization")
+        .doesNotContain("content_type")
+        .doesNotContain("\"Accept\"")
+        .doesNotContain("\"Authorization\"")
+        .doesNotContain("\"Content-Type\"");
+  }
+
+  @Test
+  void collidingHeaderAndQueryParametersGetTheLocationPrefix() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains("*, limit: Optional[int] = None, header_limit: Optional[str] = None")
+        .contains("headers={\"limit\": header_limit}")
+        .contains("query=_drop_none({\"limit\": limit})");
+  }
+
+  @Test
+  void arrayHeadersAndCookiesAreSentAsLists() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains("x_tags: list[str]")
+        .contains("headers={\"X-Tags\": x_tags}")
+        .contains("cookies={\"prefs\": prefs}");
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py")).contains("\",\".join(");
+  }
+
+  @Test
+  void collidingModelNamesAreExportedUnderAnAlias() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/__init__.py"))
+        .contains("    ApiError as ApiErrorModel,")
+        .contains("    ApiKeysClient as ApiKeysClientModel,")
+        .contains("    \"ApiErrorModel\",")
+        .contains("    \"ApiKeysClientModel\",")
+        .contains("_custom_exports");
+  }
+
+  @Test
+  void credentialsWinOverAQueryParameterOfTheSameName() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py"))
+        .contains("params: Dict[str, Any] = {**(query or {}), **auth_params}")
+        .contains(
+            "request_headers = _request_headers(headers, cookies, auth_headers, auth_cookies)");
+  }
+
+  @Test
+  void requestBodyIsDumpedThroughAnAdapterTypedAsAny() {
+    // pydantic 2.8's stubs type an adapter for a union as Never, which rejects the body under
+    // mypy --strict. The body is only serialised, so the adapter is typed as Any.
+    assertThat(content("bookshelf", "resources/books.py"))
+        .contains("TypeAdapter[Any](BookInput).dump_python(body, mode=\"json\"")
+        .doesNotContain("TypeAdapter(BookInput).dump_python(body");
+  }
+
+  @Test
+  void resourceModuleImportsItsClientUnderAnAliasSoAModelCanShareItsName() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains(
+            "from ..client import ApiKeysClient as _ApiKeysClient, "
+                + "AsyncApiKeysClient as _AsyncApiKeysClient")
+        .contains("def __init__(self, client: _ApiKeysClient) -> None:")
+        .contains("-> ApiKeysClient:");
   }
 
   @Test

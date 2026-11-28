@@ -9,13 +9,13 @@ from pydantic import TypeAdapter
 from ..models import Object
 
 if TYPE_CHECKING:
-    from ..client import ReservedWordsClient, AsyncReservedWordsClient
+    from ..client import ReservedWordsClient as _ReservedWordsClient, AsyncReservedWordsClient as _AsyncReservedWordsClient
 
 
 class UserResource:
     """Operations tagged user."""
 
-    def __init__(self, client: ReservedWordsClient) -> None:
+    def __init__(self, client: _ReservedWordsClient) -> None:
         self._client = client
 
     def class_(self) -> None:
@@ -32,7 +32,7 @@ class UserResource:
 class AsyncUserResource:
     """Operations tagged user."""
 
-    def __init__(self, client: AsyncReservedWordsClient) -> None:
+    def __init__(self, client: _AsyncReservedWordsClient) -> None:
         self._client = client
 
     async def class_(self) -> None:

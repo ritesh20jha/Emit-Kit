@@ -54,7 +54,9 @@ such as cookie API keys, are not mapped. Set them on a custom `http_client`: an 
 `httpx.AsyncClient` for the async client.
 
 Each operation sends only the credentials of the security schemes it requires: its own `security`, or
-the API's when it declares none. An operation with an empty `security` sends no credentials.
+the API's when it declares none. An operation with an empty `security` sends no credentials. An
+operation sends one apiKey: the first of its header or cookie schemes, or else its first query scheme.
+A query apiKey is never sent while a header or cookie scheme applies.
 
 Header and cookie parameters are keyword arguments of the operation, like path and query parameters.
 Cookie values are URL-encoded.

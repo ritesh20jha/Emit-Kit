@@ -45,7 +45,10 @@ import java.util.regex.Pattern;
  * @param schemeLocations one entry of the client's table per scheme whose credential the client
  *     sends: the scheme name, then where the credential goes
  * @param resources one resource per module, attached to each client under its attribute
- * @param modelNames model, enum and alias names re-exported from the package
+ * @param modelNames the models the package re-exports, each with the text of its import and the
+ *     name it is exported under
+ * @param generatedNames every name the package defines at top level, sorted, which custom code must
+ *     not define too
  * @param hasExample whether there is an operation for the README example to call
  * @param exampleAttribute the client attribute of the example's resource, or {@code ""}
  * @param exampleMethod the example's method name, or {@code ""}
@@ -74,8 +77,9 @@ record PyClientView(
     boolean hasBasic,
     List<Literal> schemeLocations,
     List<Resource> resources,
-    List<Literal> modelNames,
+    List<Export> modelNames,
     boolean hasModelNames,
+    List<Literal> generatedNames,
     boolean hasExample,
     String exampleAttribute,
     String exampleMethod,
@@ -88,6 +92,9 @@ record PyClientView(
 
   /** A quoted name rendered verbatim into the template. */
   record Literal(String text) {}
+
+  /** A model re-exported from the package: its import text, and the name it is exported under. */
+  record Export(String importText, String exportName) {}
 
   /**
    * One resource module: {@code attribute} holds it on each client, and {@code module} is the
@@ -102,8 +109,8 @@ record PyClientView(
   record Example(String attribute, String method, String args) {}
 
   /**
-   * @param modelNames the names of the models module that the package re-exports; names that would
-   *     collide with the package's own exports are left out
+   * @param modelNames the names of the models module, which the package re-exports; a name that
+   *     collides with one of the package's own is exported under an alias
    */
   static PyClientView of(ApiModel model, GeneratorContext ctx, List<String> modelNames) {
     String pypiName = ctx.names().pypiName();
@@ -121,10 +128,21 @@ record PyClientView(
     boolean hasApiKey = schemes.stream().anyMatch(s -> apiKeyLocation(s) != null);
     List<Literal> locations = schemeLocations(model.securitySchemes());
     String asyncName = "Async" + className;
-    Set<String> ownNames = new HashSet<>(List.of(className, asyncName));
-    ownNames.addAll(ERROR_EXPORTS);
-    List<Literal> exports =
-        modelNames.stream().filter(n -> !ownNames.contains(n)).map(n -> new Literal(n)).toList();
+    // Every name the package defines at top level. A model that collides with one is exported
+    // under an alias, so that neither name is replaced silently.
+    Set<String> taken = new HashSet<>(List.of(className, asyncName));
+    taken.addAll(ERROR_EXPORTS);
+    List<Export> exports = new ArrayList<>();
+    for (String name : modelNames) {
+      if (taken.contains(name)) {
+        String alias = PyTypeRenderer.unique(name + "Model", taken);
+        exports.add(new Export(name + " as " + alias, alias));
+      } else {
+        taken.add(name);
+        exports.add(new Export(name, name));
+      }
+    }
+    List<Literal> generatedNames = taken.stream().sorted().map(n -> new Literal(n)).toList();
     List<Resource> resources = resources(model);
     Example example = example(model, names, resources);
     return new PyClientView(
@@ -153,6 +171,7 @@ record PyClientView(
         resources,
         exports,
         !exports.isEmpty(),
+        generatedNames,
         example != null,
         example == null ? "" : example.attribute(),
         example == null ? "" : example.method(),
@@ -335,7 +354,9 @@ record PyClientView(
     if (scheme.kind() != Kind.API_KEY || scheme.paramName() == null) {
       return null;
     }
-    if ("header".equals(scheme.in()) || "query".equals(scheme.in())) {
+    if ("header".equals(scheme.in())
+        || "cookie".equals(scheme.in())
+        || "query".equals(scheme.in())) {
       return "(" + quote(scheme.in()) + ", " + quote(scheme.paramName()) + ")";
     }
     return null;
