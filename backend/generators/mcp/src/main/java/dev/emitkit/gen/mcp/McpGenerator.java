@@ -64,16 +64,18 @@ public final class McpGenerator implements Generator {
     for (Operation op : model.operations()) {
       List<Parameter> parameters =
           op.parameters().stream().filter(p -> !isReservedHeader(p)).toList();
+      boolean hasBody = op.requestBody() != null;
+      List<String> args = argumentNames(parameters, hasBody);
       tools.add(
           new Tool(
               toolName(op.operationId(), taken),
               description(op),
               op.method(),
               op.path(),
-              params(parameters),
-              op.requestBody() != null,
+              params(parameters, args),
+              hasBody,
               op.security(),
-              inputSchema(parameters, op.requestBody(), renderer)));
+              inputSchema(parameters, args, op.requestBody(), renderer)));
     }
     return List.copyOf(tools);
   }
@@ -102,10 +104,11 @@ public final class McpGenerator implements Generator {
       Map<String, Object> inputSchema) {
 
     /**
-     * A parameter's name and location: {@code path}, {@code query}, {@code header} or {@code
-     * cookie}.
+     * A parameter's wire name, the argument name the tool takes its value under, and its location:
+     * {@code path}, {@code query}, {@code header} or {@code cookie}. The runtime reads {@code
+     * args[arg]} and sends the value under {@code name}.
      */
-    record Param(String name, String in) {}
+    record Param(String name, String arg, String in) {}
 
     String inputSchemaJson() {
       return Json.write(inputSchema);
@@ -124,6 +127,7 @@ public final class McpGenerator implements Generator {
               .map(p -> {
                 Map<String, Object> param = new LinkedHashMap<>();
                 param.put("name", p.name());
+                param.put("arg", p.arg());
                 param.put("in", p.in());
                 return param;
               })
@@ -183,30 +187,98 @@ public final class McpGenerator implements Generator {
         && RUNNER_HEADERS.contains(p.name().toLowerCase(Locale.ROOT));
   }
 
-  private static List<Tool.Param> params(List<Parameter> parameters) {
-    return parameters.stream()
-        .map(p -> new Tool.Param(p.name(), p.in().name().toLowerCase(Locale.ROOT)))
-        .toList();
+  /** The name the request body is passed under. It is reserved in every tool that has a body. */
+  private static final String BODY_ARG = "body";
+
+  /**
+   * One argument name per parameter, in order. A parameter keeps its own name while no earlier
+   * argument has it. Otherwise it takes its location and camelCase name, such as {@code headerId},
+   * and only then a numeric suffix, such as {@code headerId2}. {@code body} is reserved when the
+   * tool has a request body, so a parameter with that name is renamed too.
+   */
+  static List<String> argumentNames(List<Parameter> parameters, boolean hasBody) {
+    Set<String> taken = new HashSet<>();
+    if (hasBody) {
+      taken.add(BODY_ARG);
+    }
+    List<String> out = new ArrayList<>();
+    for (Parameter p : parameters) {
+      String arg = taken.contains(p.name()) ? firstFree(prefixedArg(p), taken) : p.name();
+      taken.add(arg);
+      out.add(arg);
+    }
+    return List.copyOf(out);
+  }
+
+  /** The location, then the name in camelCase: header {@code id} gives {@code headerId}. */
+  private static String prefixedArg(Parameter p) {
+    String location = p.in().name().toLowerCase(Locale.ROOT);
+    return location + capitalise(camelCase(p.name()));
+  }
+
+  /** The name's words joined in camelCase: {@code X-Trace-Id} gives {@code xTraceId}. */
+  private static String camelCase(String name) {
+    StringBuilder out = new StringBuilder();
+    for (String word : name.split("[^\\p{L}\\p{N}]+")) {
+      if (word.isEmpty()) {
+        continue;
+      }
+      out.append(out.isEmpty() ? lowercaseFirst(word) : capitalise(word));
+    }
+    return out.toString();
+  }
+
+  /** {@code name}, or the first {@code name2}, {@code name3}, ... that is not taken. */
+  private static String firstFree(String name, Set<String> taken) {
+    String candidate = name;
+    for (int n = 2; taken.contains(candidate); n++) {
+      candidate = name + n;
+    }
+    return candidate;
+  }
+
+  private static String capitalise(String word) {
+    return word.isEmpty()
+        ? word
+        : word.substring(0, 1).toUpperCase(Locale.ROOT) + word.substring(1);
+  }
+
+  private static String lowercaseFirst(String word) {
+    return word.substring(0, 1).toLowerCase(Locale.ROOT) + word.substring(1);
+  }
+
+  private static List<Tool.Param> params(List<Parameter> parameters, List<String> args) {
+    List<Tool.Param> out = new ArrayList<>();
+    for (int i = 0; i < parameters.size(); i++) {
+      Parameter p = parameters.get(i);
+      out.add(new Tool.Param(p.name(), args.get(i), p.in().name().toLowerCase(Locale.ROOT)));
+    }
+    return List.copyOf(out);
   }
 
   /**
-   * {@code {type: "object", properties: {<params>, body}, required: [...]}}. A parameter and the
-   * body share one namespace, so a parameter named {@code body} keeps its own property.
+   * {@code {type: "object", properties: {<args>, body}, required: [...]}}, keyed by argument name.
+   * Argument names are unique, and {@code body} is reserved, so no property is overwritten.
    */
   private static Map<String, Object> inputSchema(
-      List<Parameter> parameters, @Nullable RequestBody body, JsonSchemaRenderer renderer) {
+      List<Parameter> parameters,
+      List<String> args,
+      @Nullable RequestBody body,
+      JsonSchemaRenderer renderer) {
     Map<String, Object> properties = new LinkedHashMap<>();
     Set<String> required = new LinkedHashSet<>();
-    for (Parameter p : parameters) {
-      properties.putIfAbsent(p.name(), renderer.render(p.schema(), p.description()));
+    for (int i = 0; i < parameters.size(); i++) {
+      Parameter p = parameters.get(i);
+      String arg = args.get(i);
+      properties.put(arg, renderer.render(p.schema(), p.description()));
       if (p.required()) {
-        required.add(p.name());
+        required.add(arg);
       }
     }
     if (body != null) {
-      properties.putIfAbsent("body", renderer.render(body.schema(), null));
+      properties.put(BODY_ARG, renderer.render(body.schema(), null));
       if (body.required()) {
-        required.add("body");
+        required.add(BODY_ARG);
       }
     }
     Map<String, Object> schema = new LinkedHashMap<>();

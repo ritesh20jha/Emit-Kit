@@ -6,7 +6,8 @@ export interface ApiTool {
   description: string;
   method: string;
   path: string;
-  params: { name: string; in: "path" | "query" | "header" | "cookie" }[];
+  /** Each parameter's wire name, the args key its value is read from, and its location. */
+  params: { name: string; arg: string; in: "path" | "query" | "header" | "cookie" }[];
   hasBody: boolean;
   /** Scheme names of the tool's effective security requirement. Empty sends no credentials. */
   security: string[];
@@ -22,6 +23,7 @@ export const tools: ApiTool[] = [
     "params": [
       {
         "name": "limit",
+        "arg": "limit",
         "in": "query"
       }
     ],
@@ -82,6 +84,7 @@ export const tools: ApiTool[] = [
     "params": [
       {
         "name": "petId",
+        "arg": "petId",
         "in": "path"
       }
     ],

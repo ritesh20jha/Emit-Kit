@@ -1,6 +1,7 @@
 package dev.emitkit.gen.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.networknt.schema.InputFormat;
 import com.networknt.schema.JsonSchemaFactory;
@@ -20,6 +21,7 @@ import dev.emitkit.spec.model.ObjectSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
+import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
 import dev.emitkit.spec.model.RefSchema;
 import dev.emitkit.spec.model.RequestBody;
@@ -317,8 +319,106 @@ class McpGeneratorTest {
     assertThat(json.replaceAll("\\s", "")).contains("\"enum\":[1,2,null]");
   }
 
+  @Test
+  void collidingParameterNamesGetLocationPrefixedArgumentNames() {
+    var op =
+        withParameters(
+            operation("searchItems", "/items"),
+            param("id", ParamLocation.QUERY),
+            param("id", ParamLocation.HEADER));
+    var tool = McpGenerator.tools(model(List.of(op), Map.of())).getFirst();
+    assertThat(tool.params())
+        .extracting(
+            McpGenerator.Tool.Param::name,
+            McpGenerator.Tool.Param::arg,
+            McpGenerator.Tool.Param::in)
+        .containsExactly(tuple("id", "id", "query"), tuple("id", "headerId", "header"));
+    assertThat(tool.inputSchemaJson()).contains("\"id\": {").contains("\"headerId\": {");
+  }
+
+  @Test
+  void collidingArgumentNameFallsBackToANumericSuffixLast() {
+    var op =
+        withParameters(
+            operation("searchItems", "/items"),
+            param("id", ParamLocation.QUERY),
+            param("id", ParamLocation.HEADER),
+            param("id", ParamLocation.HEADER));
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().params())
+        .extracting(McpGenerator.Tool.Param::arg)
+        .containsExactly("id", "headerId", "headerId2");
+  }
+
+  @Test
+  void parameterNamedBodyIsRenamedWhenTheToolHasABody() {
+    var op =
+        withBody(
+            withParameters(
+                operation("updateItem", "/items/{id}"), param("body", ParamLocation.QUERY)),
+            new RequestBody(true, "application/json", stringSchema()));
+    var tool = McpGenerator.tools(model(List.of(op), Map.of())).getFirst();
+    assertThat(tool.params())
+        .extracting(McpGenerator.Tool.Param::name, McpGenerator.Tool.Param::arg)
+        .containsExactly(tuple("body", "queryBody"));
+    assertThat(tool.inputSchemaJson()).contains("\"body\": {").contains("\"queryBody\": {");
+    assertThat(tool.inputSchema().get("required")).isEqualTo(List.of("body"));
+  }
+
+  @Test
+  void parameterNamedBodyKeepsItsNameWhenTheToolHasNoBody() {
+    var op = withParameters(operation("listItems", "/items"), param("body", ParamLocation.QUERY));
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().params())
+        .extracting(McpGenerator.Tool.Param::arg)
+        .containsExactly("body");
+  }
+
+  @Test
+  void prefixedArgumentNamesAreCamelCaseOfTheParameterName() {
+    var op =
+        withParameters(
+            operation("listItems", "/items"),
+            param("X-Trace-Id", ParamLocation.QUERY),
+            param("X-Trace-Id", ParamLocation.HEADER),
+            param("page", ParamLocation.QUERY),
+            param("page", ParamLocation.COOKIE),
+            param("x", ParamLocation.PATH),
+            param("x", ParamLocation.QUERY));
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().params())
+        .extracting(McpGenerator.Tool.Param::arg)
+        .containsExactly("X-Trace-Id", "headerXTraceId", "page", "cookiePage", "x", "queryX");
+  }
+
+  @Test
+  void serverSendsEachArgumentUnderItsWireNameAndLocation() {
+    String server = source(generate("bookshelf"), "src/server.ts");
+    assertThat(server)
+        .contains("const value = args[param.arg];")
+        .doesNotContain("args[param.name]");
+  }
+
+  @Test
+  void serverFindsPathArgumentsByTheirPlaceholderName() {
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("tool.params.find((param) => param.in === \"path\" && param.name === name)");
+  }
+
+  @Test
+  void serverStartsWhenTheInvokedPathHasNoExtension() {
+    String server = source(generate("bookshelf"), "src/server.ts");
+    assertThat(server)
+        .contains("`${path}.js`")
+        .contains("basename(entry, extname(entry)) === basename(self, extname(self))")
+        .contains("import { basename, extname } from \"node:path\";");
+  }
+
   private List<GeneratedFile> generate(String fixture) {
     return generator.generate(FixtureSpecs.load(fixture), ctx());
+  }
+
+  @Test
+  void paramCollisionsSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "param-collisions", generator.generate(local("param-collisions"), ctx()));
   }
 
   /** Content of a file under {@code .emitkit/mcp/}, addressed relative to that root. */
@@ -370,10 +470,34 @@ class McpGeneratorTest {
         op.tag(),
         null,
         null,
-        List.of(),
+        op.parameters(),
         body,
         Map.of(),
         List.of(),
         false);
+  }
+
+  private static Operation withParameters(Operation op, Parameter... params) {
+    return new Operation(
+        op.operationId(),
+        false,
+        op.method(),
+        op.path(),
+        op.tag(),
+        null,
+        null,
+        List.of(params),
+        op.requestBody(),
+        Map.of(),
+        List.of(),
+        false);
+  }
+
+  private static Parameter param(String name, ParamLocation in) {
+    return new Parameter(name, in, false, stringSchema(), null);
+  }
+
+  private static PrimitiveSchema stringSchema() {
+    return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
   }
 }
