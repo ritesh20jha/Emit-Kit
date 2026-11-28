@@ -27,19 +27,27 @@ public final class PetsApi {
     if (options != null && options.limit() != null) {
       query.put("limit", String.valueOf(options.limit()));
     }
-    HttpResponse<String> response = client.request("GET", "/pets", query, null);
+    HttpResponse<String> response =
+        client.request("GET", "/pets", query, null, null, null, List.of());
     return read(response, new TypeReference<List<Pet>>() {});
   }
 
   /** POST /pets */
   public void createPet(Pet body) {
-    client.request("POST", "/pets", null, body);
+    client.request("POST", "/pets", null, null, null, body, List.of());
   }
 
   /** GET /pets/{petId} */
   public Pet getPetById(long petId) {
     HttpResponse<String> response =
-        client.request("GET", "/pets/" + segment(String.valueOf(petId)), null, null);
+        client.request(
+            "GET",
+            "/pets/" + segment(String.valueOf(petId)),
+            null,
+            null,
+            null,
+            null,
+            List.of());
     return read(response, new TypeReference<Pet>() {});
   }
 

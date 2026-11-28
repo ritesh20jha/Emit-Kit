@@ -9,7 +9,7 @@ from pydantic import TypeAdapter
 from ..models import Pet
 
 if TYPE_CHECKING:
-    from ..client import PetstoreClient, AsyncPetstoreClient
+    from ..client import PetstoreClient as _PetstoreClient, AsyncPetstoreClient as _AsyncPetstoreClient
 
 
 def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
@@ -19,34 +19,34 @@ def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
 class PetsResource:
     """Operations tagged pets."""
 
-    def __init__(self, client: PetstoreClient) -> None:
+    def __init__(self, client: _PetstoreClient) -> None:
         self._client = client
 
     def list_pets(self, *, limit: Optional[int] = None) -> list[Pet]:
-        response = self._client._request("GET", "/pets", query=_drop_none({"limit": limit}))
+        response = self._client._request("GET", "/pets", query=_drop_none({"limit": limit}), security=[])
         return TypeAdapter(list[Pet]).validate_python(response.json())
 
     def create_pet(self, *, body: Pet) -> None:
-        self._client._request("POST", "/pets", json_body=TypeAdapter(Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
+        self._client._request("POST", "/pets", json_body=TypeAdapter[Any](Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[])
 
     def get_pet_by_id(self, *, pet_id: int) -> Pet:
-        response = self._client._request("GET", f"/pets/{_quote(str(pet_id), safe='')}")
+        response = self._client._request("GET", f"/pets/{_quote(str(pet_id), safe='')}", security=[])
         return TypeAdapter(Pet).validate_python(response.json())
 
 
 class AsyncPetsResource:
     """Operations tagged pets."""
 
-    def __init__(self, client: AsyncPetstoreClient) -> None:
+    def __init__(self, client: _AsyncPetstoreClient) -> None:
         self._client = client
 
     async def list_pets(self, *, limit: Optional[int] = None) -> list[Pet]:
-        response = await self._client._request("GET", "/pets", query=_drop_none({"limit": limit}))
+        response = await self._client._request("GET", "/pets", query=_drop_none({"limit": limit}), security=[])
         return TypeAdapter(list[Pet]).validate_python(response.json())
 
     async def create_pet(self, *, body: Pet) -> None:
-        await self._client._request("POST", "/pets", json_body=TypeAdapter(Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True))
+        await self._client._request("POST", "/pets", json_body=TypeAdapter[Any](Pet).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[])
 
     async def get_pet_by_id(self, *, pet_id: int) -> Pet:
-        response = await self._client._request("GET", f"/pets/{_quote(str(pet_id), safe='')}")
+        response = await self._client._request("GET", f"/pets/{_quote(str(pet_id), safe='')}", security=[])
         return TypeAdapter(Pet).validate_python(response.json())

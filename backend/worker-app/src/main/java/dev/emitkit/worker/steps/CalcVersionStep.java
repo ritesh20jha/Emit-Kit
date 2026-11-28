@@ -3,6 +3,8 @@ package dev.emitkit.worker.steps;
 import dev.emitkit.domain.ChangeType;
 import dev.emitkit.domain.GenerationRun;
 import dev.emitkit.domain.GenerationRunRepository;
+import dev.emitkit.domain.OutputMode;
+import dev.emitkit.domain.Project;
 import dev.emitkit.domain.SdkVersion;
 import dev.emitkit.domain.SdkVersionRepository;
 import dev.emitkit.domain.SpecSnapshot;
@@ -15,6 +17,8 @@ import dev.emitkit.spec.version.VersionStrategy;
 import dev.emitkit.worker.pipeline.PipelineStep;
 import dev.emitkit.worker.pipeline.RunContext;
 import dev.emitkit.worker.pipeline.StepResult;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +32,11 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Chooses the version the run releases from the diff DIFF_SPEC stored and the project's latest
  * released version (spec v1 §5.1, step 5). The version and its change type are kept on the run.
+ *
+ * <p>A project with no released version here may still have releases in its output repo, for
+ * example when it was connected again. Under {@link VersionStrategy#EMITKIT_MANAGED} the step then
+ * continues from the highest {@code sdk/v} or {@code mcp/v} tag, so it never reuses a tagged
+ * version.
  */
 @Component
 @ConditionalOnProperty(prefix = "emitkit.worker.pipeline", name = "enabled", havingValue = "true")
@@ -35,6 +44,9 @@ public class CalcVersionStep implements PipelineStep {
 
   private static final VersionCalculator CALCULATOR = new VersionCalculator();
   private static final JsonMapper JSON = JsonMapper.builder().build();
+
+  /** The tag prefixes MergeTagHandler creates; the version follows the prefix. */
+  private static final List<String> TAG_PREFIXES = List.of("sdk/v", "mcp/v");
 
   /** What CALC_VERSION saves: the version, and whether it differs from the last one. */
   public record Output(String version, boolean changed) {}
@@ -73,7 +85,21 @@ public class CalcVersionStep implements PipelineStep {
             .findFirstByProjectIdOrderByCreatedAtDescIdDesc(run.getProjectId())
             .map(SdkVersion::getVersion);
     VersionStrategy strategy = VersionStrategy.valueOf(ctx.config().getVersionStrategy().name());
-    VersionResult result = CALCULATOR.next(strategy, last, diff, snapshot(run).getInfoVersion());
+    Optional<String> tagged =
+        last.isEmpty() && strategy == VersionStrategy.EMITKIT_MANAGED
+            ? highestTaggedVersion(ctx)
+            : Optional.empty();
+    VersionResult result;
+    if (tagged.isPresent()) {
+      result = CALCULATOR.continueAfter(tagged.get());
+      ctx.log()
+          .info(
+              "No release recorded for this project, but its repo has v"
+                  + tagged.get()
+                  + ": continuing from it with a breaking-change bump");
+    } else {
+      result = CALCULATOR.next(strategy, last, diff, snapshot(run).getInfoVersion());
+    }
     ChangeType changeType =
         result.changeType().map(change -> ChangeType.valueOf(change.name())).orElse(null);
     if (!save(run.getId(), result.version(), changeType)) {
@@ -98,6 +124,22 @@ public class CalcVersionStep implements PipelineStep {
                 })
                 .orElse(false));
     return Boolean.TRUE.equals(saved);
+  }
+
+  /** The highest version tagged in the output repo, under any of the release tag prefixes. */
+  private static Optional<String> highestTaggedVersion(RunContext ctx) {
+    Project project = ctx.project();
+    String repo =
+        project.getOutputMode() == OutputMode.SEPARATE
+            ? project.getOutputRepoFullName()
+            : project.getRepoFullName();
+    List<String> versions = new ArrayList<>();
+    for (String prefix : TAG_PREFIXES) {
+      for (String tag : ctx.vcs().listTags(repo, prefix)) {
+        versions.add(tag.substring(prefix.length()));
+      }
+    }
+    return VersionCalculator.highest(versions);
   }
 
   private SpecSnapshot snapshot(GenerationRun run) {

@@ -6,13 +6,13 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 const BASE =
-  "relative inline-flex shrink-0 items-center justify-center rounded-control font-medium select-none transition-colors duration-(--duration-fast) disabled:pointer-events-none disabled:opacity-50";
+  "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-control font-medium select-none transition-[color,background-color,border-color,translate] duration-(--duration-fast) active:translate-y-px disabled:pointer-events-none disabled:opacity-50";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-accent-fg hover:bg-accent/90",
-  secondary: "border border-border-strong bg-bg text-fg hover:bg-bg-muted",
+  primary: "bg-accent text-accent-fg shadow-raised hover:bg-accent/88",
+  secondary: "border border-border-strong bg-surface text-fg shadow-raised hover:border-border-control hover:bg-bg-subtle",
   ghost: "text-fg hover:bg-bg-muted",
-  danger: "bg-status-failed text-bg hover:bg-status-failed/90",
+  danger: "bg-status-failed text-bg shadow-raised hover:bg-status-failed/88",
 };
 
 const SIZE: Record<ButtonSize, string> = {

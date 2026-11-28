@@ -7,6 +7,9 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/emitkit}
     username: ${SPRING_DATASOURCE_USERNAME:emitkit}
     password: ${SPRING_DATASOURCE_PASSWORD:emitkit}
+    hikari:
+      # Hikari otherwise keeps the whole pool (10) open; connections above this close after 10 idle minutes.
+      minimum-idle: 2
   jpa:
     hibernate:
       ddl-auto: validate

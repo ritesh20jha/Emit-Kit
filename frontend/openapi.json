@@ -102,7 +102,11 @@
           "ENUM_VALUE_REMOVED",
           "ENUM_VALUE_ADDED",
           "TYPE_CHANGED",
-          "DESCRIPTION_CHANGED"
+          "DESCRIPTION_CHANGED",
+          "DISCRIMINATOR_CHANGED",
+          "MAPPING_KEY_REMOVED",
+          "MAPPING_TARGET_CHANGED",
+          "MAPPING_KEY_ADDED"
         ],
         "type": "string"
       },

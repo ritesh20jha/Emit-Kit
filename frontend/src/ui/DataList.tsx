@@ -14,7 +14,7 @@ export function DataList<T>({ label, rows, rowKey, renderCard }: DataListProps<T
   return (
     <ul aria-label={label} className="flex flex-col gap-2">
       {rows.map((row) => (
-        <li key={rowKey(row)} className="rounded-card border border-border bg-bg p-3">{renderCard(row)}</li>
+        <li key={rowKey(row)} className="rounded-card border border-border bg-surface p-3 shadow-raised">{renderCard(row)}</li>
       ))}
     </ul>
   );

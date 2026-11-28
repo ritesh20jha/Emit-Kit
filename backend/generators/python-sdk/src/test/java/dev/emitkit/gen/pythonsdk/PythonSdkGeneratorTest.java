@@ -10,8 +10,10 @@ import dev.emitkit.gen.core.PackageNames;
 import dev.emitkit.gen.core.fixtures.FixtureSpecs;
 import dev.emitkit.gen.core.golden.GoldenFiles;
 import dev.emitkit.spec.model.ApiModel;
+import dev.emitkit.spec.model.EnumSchema;
 import dev.emitkit.spec.model.Info;
 import dev.emitkit.spec.model.ObjectSchema;
+import dev.emitkit.spec.model.OneOfSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
@@ -22,6 +24,11 @@ import dev.emitkit.spec.model.Response;
 import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import dev.emitkit.spec.parse.ParseResult;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,7 +57,8 @@ class PythonSdkGeneratorTest {
         "no-operation-ids",
         "reserved-words",
         "deep-nesting",
-        "multi-tag"
+        "multi-tag",
+        "bookshelf"
       })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
@@ -66,7 +74,7 @@ class PythonSdkGeneratorTest {
   void reservedPropertyGetsAlias() {
     assertThat(content("reserved-words", "models.py"))
         .contains("from_: ")
-        .contains("alias=\"from\"");
+        .contains("validation_alias=\"from\", serialization_alias=\"from\"");
   }
 
   @Test
@@ -77,11 +85,49 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
+  void discriminatedOneOfIsAnnotatedAndItsDiscriminatorFieldsAreLiterals() {
+    assertThat(content("bookshelf", "models.py"))
+        .contains(
+            "BookFormat = Annotated[Union[PrintFormat, EbookFormat, AudioFormat], "
+                + "Field(discriminator=\"kind\")]")
+        .contains("    kind: Literal[\"print\"]")
+        .contains("    kind: Literal[\"ebook\"]")
+        .contains("    kind: Literal[\"audio\"]")
+        .doesNotContain("class PrintFormatKind");
+  }
+
+  @Test
+  void oneOfWhoseOptionsDoNotAllFixTheDiscriminatorStaysPlain() {
+    // Probe1 allows two kinds, so the discriminator cannot tell the options apart.
+    var twoKinds = new EnumSchema(PrimitiveType.STRING, List.of("a", "b"), false, null);
+    var oneKind = new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null);
+    var probe1 = new ObjectSchema(Map.of("kind", twoKinds), Set.of("kind"), null, false, null);
+    var probe2 = new ObjectSchema(Map.of("kind", oneKind), Set.of("kind"), null, false, null);
+    var probes =
+        new OneOfSchema(
+            List.of(new RefSchema("Probe1", false, null), new RefSchema("Probe2", false, null)),
+            "kind",
+            false,
+            null);
+    assertThat(
+            sdkFile(
+                extended(
+                    FixtureSpecs.load("bookshelf"),
+                    null,
+                    Map.of("Probe1", probe1, "Probe2", probe2, "Probes", probes)),
+                "acme_pets/models.py"))
+        .contains("Probes = Union[Probe1, Probe2]")
+        .doesNotContain("Probes = Annotated");
+  }
+
+  @Test
   void enumQueryParameterIsSentAsItsValue() {
     assertThat(content("enums", "resources/default.py"))
         .contains(
-            "query=_drop_none({\"color\": TypeAdapter(Optional[Color]).dump_python(color, "
-                + "mode='json')})");
+            // The dump is of the bare enum type, which pydantic 2.8's stubs type; the None case
+            // is handled here rather than by an Optional adapter that mypy cannot type.
+            "query=_drop_none({\"color\": None if color is None else "
+                + "TypeAdapter(Color).dump_python(color, mode='json')})");
   }
 
   @Test
@@ -121,9 +167,12 @@ class PythonSdkGeneratorTest {
             sdkFile(
                 extended(FixtureSpecs.load("reserved-words"), null, Map.of("Probe", probe)),
                 "acme_pets/models.py"))
-        .contains("schema_: Optional[str] = Field(default=None, alias=\"schema\")")
-        .contains("json_: Optional[str] = Field(default=None, alias=\"json\")")
-        .contains("field_model_name: Optional[str] = Field(default=None, alias=\"model_name\")");
+        .contains(
+            "schema_: Optional[str] = Field(default=None, validation_alias=\"schema\", serialization_alias=\"schema\")")
+        .contains(
+            "json_: Optional[str] = Field(default=None, validation_alias=\"json\", serialization_alias=\"json\")")
+        .contains(
+            "field_model_name: Optional[str] = Field(default=None, validation_alias=\"model_name\", serialization_alias=\"model_name\")");
   }
 
   /** The base document with one more operation (when given) and more component schemas. */
@@ -189,13 +238,11 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
-  void apiKeyIsSentInHeaderOnlyWhenAHeaderSchemeExists() {
+  void apiKeyIsSentAtItsDeclaredLocationForEachScheme() {
     // auth-schemes declares both a header and a query apiKey scheme.
-    String client =
-        content(generate("auth-schemes", ".emitkit/", names("acme-pets")), "acme_pets/client.py");
-    assertThat(client)
-        .contains("self._headers[\"X-API-Key\"] = api_key")
-        .doesNotContain("self._params[\"api_key\"] = api_key");
+    assertThat(content("auth-schemes", "client.py"))
+        .contains("\"headerKey\": (\"header\", \"X-API-Key\"),")
+        .contains("\"queryKey\": (\"query\", \"api_key\"),");
   }
 
   @Test
@@ -203,15 +250,40 @@ class PythonSdkGeneratorTest {
     var queryKey =
         new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
     assertThat(clientSource(Map.of("queryKey", queryKey)))
-        .contains("self._params[\"api_key\"] = api_key")
-        .doesNotContain("self._headers[\"");
+        .contains("\"queryKey\": (\"query\", \"api_key\"),")
+        .doesNotContain(": (\"header\"");
   }
 
   @Test
   void basicOptionIsAPlainTupleAndBearerWins() {
     assertThat(clientSource("auth-schemes"))
         .contains("basic: Optional[Tuple[str, str]] = None,")
-        .contains("if basic is not None and \"Authorization\" not in self._headers:");
+        .contains("headers.setdefault(\"Authorization\", _basic_credentials(*self._basic))")
+        .contains("\"basicAuth\": (\"basic\", \"\"),");
+  }
+
+  @Test
+  void operationSecurityDecidesWhichCredentialsAreSent() {
+    // auth-schemes: a global bearer scheme and operations that override or drop it.
+    assertThat(content("auth-schemes", "resources/default.py"))
+        .contains("security=[[\"headerKey\"]]")
+        .contains("security=[[\"queryKey\"]]")
+        .contains("security=[[\"basicAuth\"]]")
+        .contains("security=[[\"oauth\"]]")
+        .contains("security=[]")
+        .contains("security=[[\"bearerAuth\"]]");
+  }
+
+  @Test
+  void bookshelfOperationsSendTheSchemesOfTheirRequirement() {
+    assertThat(content("bookshelf", "resources/authors.py")).contains("security=[]");
+    assertThat(content("bookshelf", "resources/books.py")).contains("security=[[\"bearerAuth\"]]");
+    assertThat(content("bookshelf", "resources/loans.py"))
+        .contains("security=[[\"apiKeyAuth\"], [\"oauth2\"]]");
+    assertThat(content("bookshelf", "client.py"))
+        .contains("\"apiKeyAuth\": (\"header\", \"X-Api-Key\"),")
+        .contains("\"bearerAuth\": (\"bearer\", \"\"),")
+        .contains("\"oauth2\": (\"bearer\", \"\"),");
   }
 
   @Test
@@ -287,14 +359,15 @@ class PythonSdkGeneratorTest {
     var scheme = new SecurityScheme("bearer", kind, null, null, null);
     assertThat(clientSource(Map.of("bearer", scheme)))
         .contains("bearer_token: Optional[str] = None,")
-        .contains("self._headers[\"Authorization\"] = f\"Bearer {bearer_token}\"");
+        .contains("\"bearer\": (\"bearer\", \"\"),")
+        .contains("headers[\"Authorization\"] = f\"Bearer {self._bearer_token}\"");
   }
 
   @Test
   void basicOnlyImportsAreOmittedWithoutABasicScheme() {
     assertThat(clientSource("Petstore", List.of()))
         .doesNotContain("import base64")
-        .doesNotContain("Tuple");
+        .doesNotContain("basic: Optional");
   }
 
   @Test
@@ -318,6 +391,299 @@ class PythonSdkGeneratorTest {
   void quoteEscapesQuotesBackslashesControlCharactersAndSeparators() {
     assertThat(PyClientView.quote("a\"b\\c\nd\t\r\u0001\u007F\u2028"))
         .isEqualTo("\"a\\\"b\\\\c\\nd\\t\\r\\u0001\\u007F\\u2028\"");
+  }
+
+  @Test
+  void clientAttachesOneResourcePerTag() {
+    assertThat(content("bookshelf", "client.py"))
+        .contains("from .resources.authors import AsyncAuthorsResource, AuthorsResource")
+        .contains("from .resources.books import AsyncBooksResource, BooksResource")
+        .contains("from .resources.loans import AsyncLoansResource, LoansResource")
+        .contains("        self.books = BooksResource(self)")
+        .contains("        self.authors = AuthorsResource(self)")
+        .contains("        self.loans = LoansResource(self)")
+        .contains("        self.books = AsyncBooksResource(self)")
+        .contains("        self.authors = AsyncAuthorsResource(self)")
+        .contains("        self.loans = AsyncLoansResource(self)");
+  }
+
+  @Test
+  void readmeShowsACallThroughAResource() {
+    assertThat(sdkFile(FixtureSpecs.load("bookshelf"), "README.md"))
+        .contains("client.books.list_books()");
+  }
+
+  @Test
+  void packageIsMarkedAsTyped() {
+    assertThat(generate("petstore", ".emitkit/", names("acme-pets")))
+        .filteredOn(f -> f.path().equals(ROOT + "acme_pets/py.typed"))
+        .singleElement()
+        .satisfies(f -> assertThat(f.content()).isEmpty());
+  }
+
+  @Test
+  void modelsAndEnumsAreReExportedFromThePackage() {
+    assertThat(content("bookshelf", "__init__.py"))
+        .contains("from .models import (")
+        .contains("\n    Book,\n")
+        .contains("\n    BookFormat,\n")
+        .contains("\n    Genre,\n")
+        .contains("\n    \"Book\",\n")
+        .contains("\n    \"Genre\",\n");
+  }
+
+  @Test
+  void docstringKeepsTheDescriptionAfterTheSummaryWhenTheyDiffer() {
+    assertThat(PyResources.doc("List books", "Returns a page of books.\nOf many."))
+        .isEqualTo("List books\n\n        Returns a page of books.\n        Of many.");
+    assertThat(PyResources.doc("List books", "List  books ")).isEqualTo("List books");
+    assertThat(PyResources.doc("List books", null)).isEqualTo("List books");
+    assertThat(PyResources.doc(null, "Only a description.")).isEqualTo("Only a description.");
+    assertThat(PyResources.doc(null, null)).isEmpty();
+  }
+
+  @Test
+  void bookshelfMethodDocumentsSummaryAndDescription() {
+    assertThat(content("bookshelf", "resources/books.py"))
+        .contains(
+            "\"\"\"List books\n\n        Returns a page of books, optionally filtered by genre and "
+                + "availability.\"\"\"");
+  }
+
+  @Test
+  void retriesAreLimitedToRepeatableRequestsAndHonourRetryAfter() {
+    assertThat(clientSource("Petstore", List.of()))
+        .contains(
+            "_IDEMPOTENT_METHODS = frozenset({\"GET\", \"HEAD\", \"PUT\", \"DELETE\", \"OPTIONS\"})")
+        .contains("MAX_RETRY_AFTER_SECONDS = 30")
+        .contains("def _may_retry(")
+        .contains("def _retry_delay(")
+        .contains("def _parse_retry_after(")
+        .contains("return RETRY_BASE_DELAY_SECONDS * float(2**attempt)")
+        .contains("not _may_retry(method, request_headers, response.status_code)")
+        .contains("await asyncio.sleep(delay)");
+  }
+
+  @Test
+  void requiredHeaderIsAKeywordArgumentSentAsAHeader() {
+    assertThat(content("bookshelf", "resources/books.py"))
+        .contains("def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:")
+        .contains("headers={\"Idempotency-Key\": idempotency_key}");
+  }
+
+  @Test
+  void optionalCookieIsAKeywordArgumentSentAsACookie() {
+    assertThat(content("bookshelf", "resources/loans.py"))
+        .contains("session: Optional[str] = None")
+        .contains("cookies={\"session\": session}");
+  }
+
+  @Test
+  void clientSendsHeaderAndCookieParameters() {
+    assertThat(content("bookshelf", "client.py"))
+        .contains("headers: Optional[Mapping[str, Any]] = None,")
+        .contains("cookies: Optional[Mapping[str, Any]] = None,")
+        .contains("quote(_header_text(item), safe=\"\")");
+  }
+
+  /** The module-local spec {@code specs/apikeys.yaml}, parsed like a shared fixture. */
+  private static ApiModel localSpec(String name) {
+    try (var in = PythonSdkGeneratorTest.class.getResourceAsStream("/specs/" + name + ".yaml")) {
+      ParseResult result =
+          new SpecParser().parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+      if (result.model() == null || !result.errors().isEmpty()) {
+        throw new IllegalStateException(name + " did not parse: " + result.errors());
+      }
+      return result.model();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  @Test
+  void localSpecMatchesGolden() {
+    GoldenFiles.assertMatches("apikeys", generator.generate(localSpec("apikeys"), ctx()));
+  }
+
+  @Test
+  void apiKeyIsSentOnceFromTheFirstHeaderOrCookieSchemeNeverFromTheUrlThen() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains("security=[[\"queryKey\"], [\"headerKey\"]]")
+        .contains("security=[[\"queryKey\"], [\"cookieKey\"]]")
+        .contains("security=[[\"queryKey\"]]");
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py"))
+        .contains("\"headerKey\": (\"header\", \"X-Api-Key\"),")
+        .contains("\"cookieKey\": (\"cookie\", \"sid\"),")
+        .contains("\"queryKey\": (\"query\", \"api_key\"),")
+        .contains("def _api_key_location(")
+        .contains("def _choose_requirement(");
+  }
+
+  @Test
+  void reservedHeaderParametersAreNotArguments() {
+    String resources = sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py");
+    assertThat(resources)
+        .doesNotContain("accept")
+        .doesNotContain("authorization")
+        .doesNotContain("content_type")
+        .doesNotContain("\"Accept\"")
+        .doesNotContain("\"Authorization\"")
+        .doesNotContain("\"Content-Type\"");
+  }
+
+  @Test
+  void collidingHeaderAndQueryParametersGetTheLocationPrefix() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains("*, limit: Optional[int] = None, header_limit: Optional[str] = None")
+        .contains("headers={\"limit\": header_limit}")
+        .contains("query=_drop_none({\"limit\": limit})");
+  }
+
+  @Test
+  void arrayHeadersAndCookiesAreSentAsLists() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains("x_tags: list[str]")
+        .contains("headers={\"X-Tags\": x_tags}")
+        .contains("cookies={\"prefs\": prefs}");
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py")).contains("\",\".join(");
+  }
+
+  @Test
+  void collidingModelNamesAreExportedUnderAnAlias() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/__init__.py"))
+        .contains("    ApiError as ApiErrorModel,")
+        .contains("    ApiKeysClient as ApiKeysClientModel,")
+        .contains("    \"ApiErrorModel\",")
+        .contains("    \"ApiKeysClientModel\",")
+        .contains("_custom_exports");
+  }
+
+  @Test
+  void customClashIsOnlyAnObjectDifferentFromTheGeneratedOne() {
+    // custom/ re-exporting a generated model (from ..models import Book) is valid; only a
+    // different object bound under a generated name is a clash. The check reads the bound globals,
+    // so it must run after the imports that bind them.
+    assertThat(content("bookshelf", "__init__.py"))
+        .contains("if getattr(_custom, n) is not globals()[n]")
+        .doesNotContain("_clashes = sorted(_generated_names & _custom_exports)");
+  }
+
+  @Test
+  void credentialsWinOverAQueryParameterOfTheSameName() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py"))
+        .contains("params: Dict[str, Any] = {**(query or {}), **auth_params}")
+        .contains(
+            "request_headers = _request_headers(headers, cookies, auth_headers, auth_cookies)");
+  }
+
+  @Test
+  void requestBodyIsDumpedThroughAnAdapterTypedAsAny() {
+    // pydantic 2.8's stubs type an adapter for a union as Never, which rejects the body under
+    // mypy --strict. The body is only serialised, so the adapter is typed as Any.
+    assertThat(content("bookshelf", "resources/books.py"))
+        .contains("TypeAdapter[Any](BookInput).dump_python(body, mode=\"json\"")
+        .doesNotContain("TypeAdapter(BookInput).dump_python(body");
+  }
+
+  @Test
+  void resourceModuleImportsItsClientUnderAnAliasSoAModelCanShareItsName() {
+    assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
+        .contains(
+            "from ..client import ApiKeysClient as _ApiKeysClient, "
+                + "AsyncApiKeysClient as _AsyncApiKeysClient")
+        .contains("def __init__(self, client: _ApiKeysClient) -> None:")
+        .contains("-> ApiKeysClient:");
+  }
+
+  @Test
+  void aliasesAreValidationAndSerializationAliases() {
+    assertThat(content("reserved-words", "models.py"))
+        .contains("from_: ")
+        .contains("validation_alias=\"from\", serialization_alias=\"from\"")
+        .doesNotContain(" alias=\"from\"");
+  }
+
+  @Test
+  void discriminatorFieldsDefaultToTheirValueAndKeepItOnDump() {
+    assertThat(content("bookshelf", "models.py"))
+        .contains("    kind: Literal[\"print\"] = \"print\"")
+        .contains("@model_validator(mode=\"before\")")
+        .contains("data = {\"kind\": \"print\", **data}");
+  }
+
+  @Test
+  void literalStaysOnTheOptionsOfADiscriminatedUnion() {
+    // Stray is not an option of BookFormat, so its single-value kind keeps its enum class.
+    var kind = new EnumSchema(PrimitiveType.STRING, List.of("x"), false, null);
+    var stray = new ObjectSchema(Map.of("kind", kind), Set.of("kind"), null, false, null);
+    assertThat(
+            sdkFile(
+                extended(FixtureSpecs.load("bookshelf"), null, Map.of("Stray", stray)),
+                "acme_pets/models.py"))
+        .contains("class StrayKind(str, Enum):")
+        .contains("    kind: StrayKind")
+        .contains("    kind: Literal[\"print\"]");
+  }
+
+  @Test
+  void optionalDiscriminatorLeavesTheUnionPlain() {
+    var kind = new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null);
+    var probe1 = new ObjectSchema(Map.of("kind", kind), Set.of(), null, false, null);
+    var probe2 =
+        new ObjectSchema(
+            Map.of("kind", new EnumSchema(PrimitiveType.STRING, List.of("d"), false, null)),
+            Set.of("kind"),
+            null,
+            false,
+            null);
+    var probes =
+        new OneOfSchema(
+            List.of(new RefSchema("Probe1", false, null), new RefSchema("Probe2", false, null)),
+            "kind",
+            false,
+            null);
+    assertThat(
+            sdkFile(
+                extended(
+                    FixtureSpecs.load("bookshelf"),
+                    null,
+                    Map.of("Probe1", probe1, "Probe2", probe2, "Probes", probes)),
+                "acme_pets/models.py"))
+        .contains("Probes = Union[Probe1, Probe2]")
+        .doesNotContain("Probes = Annotated");
+  }
+
+  @Test
+  void duplicateDiscriminatorValuesLeaveTheUnionPlain() {
+    var probe1 =
+        new ObjectSchema(
+            Map.of("kind", new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null)),
+            Set.of("kind"),
+            null,
+            false,
+            null);
+    var probe2 =
+        new ObjectSchema(
+            Map.of("kind", new EnumSchema(PrimitiveType.STRING, List.of("c"), false, null)),
+            Set.of("kind"),
+            null,
+            false,
+            null);
+    var probes =
+        new OneOfSchema(
+            List.of(new RefSchema("Probe1", false, null), new RefSchema("Probe2", false, null)),
+            "kind",
+            false,
+            null);
+    assertThat(
+            sdkFile(
+                extended(
+                    FixtureSpecs.load("bookshelf"),
+                    null,
+                    Map.of("Probe1", probe1, "Probe2", probe2, "Probes", probes)),
+                "acme_pets/models.py"))
+        .contains("Probes = Union[Probe1, Probe2]")
+        .doesNotContain("Probes = Annotated");
   }
 
   /** A file of the {@code acme_pets} package generated from the named fixture. */

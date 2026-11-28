@@ -8,7 +8,7 @@ from pydantic import TypeAdapter
 from ..models import ListItemsResponse
 
 if TYPE_CHECKING:
-    from ..client import PaginationClient, AsyncPaginationClient
+    from ..client import PaginationClient as _PaginationClient, AsyncPaginationClient as _AsyncPaginationClient
 
 
 def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
@@ -18,20 +18,20 @@ def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: PaginationClient) -> None:
+    def __init__(self, client: _PaginationClient) -> None:
         self._client = client
 
     def list_items(self, *, cursor: Optional[str] = None, limit: Optional[int] = None) -> ListItemsResponse:
-        response = self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}))
+        response = self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}), security=[])
         return TypeAdapter(ListItemsResponse).validate_python(response.json())
 
 
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncPaginationClient) -> None:
+    def __init__(self, client: _AsyncPaginationClient) -> None:
         self._client = client
 
     async def list_items(self, *, cursor: Optional[str] = None, limit: Optional[int] = None) -> ListItemsResponse:
-        response = await self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}))
+        response = await self._client._request("GET", "/items", query=_drop_none({"cursor": cursor, "limit": limit}), security=[])
         return TypeAdapter(ListItemsResponse).validate_python(response.json())

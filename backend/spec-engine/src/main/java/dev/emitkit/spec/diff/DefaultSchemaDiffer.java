@@ -1,7 +1,11 @@
 package dev.emitkit.spec.diff;
 
+import static dev.emitkit.spec.diff.ChangeKind.DISCRIMINATOR_CHANGED;
 import static dev.emitkit.spec.diff.ChangeKind.ENUM_VALUE_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.ENUM_VALUE_REMOVED;
+import static dev.emitkit.spec.diff.ChangeKind.MAPPING_KEY_ADDED;
+import static dev.emitkit.spec.diff.ChangeKind.MAPPING_KEY_REMOVED;
+import static dev.emitkit.spec.diff.ChangeKind.MAPPING_TARGET_CHANGED;
 import static dev.emitkit.spec.diff.ChangeKind.REQUEST_PROPERTY_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.REQUEST_REQUIRED_PROPERTY_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.RESPONSE_PROPERTY_ADDED;
@@ -21,6 +25,7 @@ import dev.emitkit.spec.model.Schema;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
@@ -40,7 +45,9 @@ import org.jspecify.annotations.Nullable;
  * breaking; an optional property added is not. Removed request properties are not reported.
  * Response side: a property removed is breaking, an added one is not. Both sides: an enum value
  * removed is breaking, an added one is not, and a change of schema kind or primitive type is
- * breaking.
+ * breaking. A oneOf's discriminator property changed, added or removed is breaking when both sides
+ * have options. Its mapping is compared when the before side has one: a key removed, or a key that
+ * now names a different schema, is breaking; a key added is not.
  *
  * <p>Known limitations:
  *
@@ -131,7 +138,7 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
       } else if (b instanceof EnumSchema be && a instanceof EnumSchema ae) {
         compareEnums(be, ae, location);
       } else if (b instanceof OneOfSchema bo && a instanceof OneOfSchema ao) {
-        compareParts(bo.options(), ao.options(), location);
+        compareOneOf(bo, ao, location);
       } else if (b instanceof AllOfSchema bl && a instanceof AllOfSchema al) {
         compareParts(bl.parts(), al.parts(), location);
       }
@@ -176,6 +183,38 @@ public final class DefaultSchemaDiffer implements SchemaDiffer {
       }
       if (a.values().stream().anyMatch(v -> !b.values().contains(v))) {
         changes.add(new Change(ENUM_VALUE_ADDED, location, false));
+      }
+    }
+
+    /**
+     * The discriminator property is compared only when both sides have options. The mapping is
+     * compared only when the before side has one: a snapshot stored before the mapping existed
+     * reads back empty, and comparing against it would report every entry as new. Options are
+     * compared last, as for any oneOf.
+     */
+    private void compareOneOf(OneOfSchema b, OneOfSchema a, String location) {
+      if (!b.options().isEmpty()
+          && !a.options().isEmpty()
+          && !Objects.equals(b.discriminator(), a.discriminator())) {
+        changes.add(new Change(DISCRIMINATOR_CHANGED, location, true));
+      }
+      if (!b.mapping().isEmpty()) {
+        compareMappings(b.mapping(), a.mapping(), location);
+      }
+      compareParts(b.options(), a.options(), location);
+    }
+
+    /** One entry per kind per location, as for enums. The change carries no key or value. */
+    private void compareMappings(Map<String, String> b, Map<String, String> a, String location) {
+      if (b.keySet().stream().anyMatch(key -> !a.containsKey(key))) {
+        changes.add(new Change(MAPPING_KEY_REMOVED, location, true));
+      }
+      if (b.entrySet().stream()
+          .anyMatch(e -> a.containsKey(e.getKey()) && !e.getValue().equals(a.get(e.getKey())))) {
+        changes.add(new Change(MAPPING_TARGET_CHANGED, location, true));
+      }
+      if (a.keySet().stream().anyMatch(key -> !b.containsKey(key))) {
+        changes.add(new Change(MAPPING_KEY_ADDED, location, false));
       }
     }
 

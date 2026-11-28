@@ -1,0 +1,54 @@
+openapi: 3.0.3
+info:
+  title: Parameter Collisions
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+paths:
+  /items:
+    get:
+      operationId: searchItems
+      tags: [items]
+      summary: Search items
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Items
+  /items/{id}:
+    put:
+      operationId: updateItem
+      tags: [items]
+      summary: Update an item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: body
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Item

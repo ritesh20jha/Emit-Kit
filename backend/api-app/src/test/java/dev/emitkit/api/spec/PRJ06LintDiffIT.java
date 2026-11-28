@@ -317,7 +317,7 @@ class PRJ06LintDiffIT {
   private void insertRow(Project project, long n, String infoVersion, String apiModel) {
     jdbc.update(
         "insert into spec_snapshots (id, project_id, content_hash, raw_content, api_model,"
-            + " info_version, created_at) values (?, ?, ?, ?, cast(? as jsonb), ?, ?)",
+            + " info_version, created_at) values (?, ?, ?, ?, cast(? as json), ?, ?)",
         snapshotId(n),
         project.getId(),
         String.format("%064d", n),

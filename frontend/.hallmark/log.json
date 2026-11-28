@@ -1,0 +1,13 @@
+[
+  {
+    "date": "2026-11-28",
+    "verb": "redesign",
+    "scope": "app",
+    "genre": "modern-minimal",
+    "theme": "cobalt",
+    "macrostructure": "workbench",
+    "design_system": "design.md",
+    "fonts": ["Space Grotesk", "Inter", "JetBrains Mono"],
+    "critique": "P4 H4 E4 S4 R5 V4"
+  }
+]

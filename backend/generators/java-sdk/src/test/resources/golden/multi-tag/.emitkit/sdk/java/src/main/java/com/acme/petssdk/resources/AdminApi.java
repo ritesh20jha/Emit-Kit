@@ -2,6 +2,7 @@
 package com.acme.petssdk.resources;
 
 import com.acme.petssdk.MultiTagClient;
+import java.util.List;
 
 /** Operations tagged admin. */
 public final class AdminApi {
@@ -14,6 +15,6 @@ public final class AdminApi {
 
   /** POST /admin/reset */
   public void resetPets() {
-    client.request("POST", "/admin/reset", null, null);
+    client.request("POST", "/admin/reset", null, null, null, null, List.of());
   }
 }

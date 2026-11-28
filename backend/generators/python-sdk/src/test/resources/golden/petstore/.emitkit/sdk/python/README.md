@@ -31,6 +31,16 @@ async with AsyncPetstoreClient(base_url="https://api.example.com") as client:
     ...
 ```
 
+## Calling an operation
+
+Each tag is a resource on the client, and each operation is a method of its resource. Required
+arguments are keyword arguments:
+
+```python
+with PetstoreClient(base_url="https://api.example.com") as client:
+    client.pets.list_pets()
+```
+
 ## Base URL
 
 The API declares no absolute server URL. Pass the full base URL, e.g. https://api.example.com.
@@ -43,8 +53,14 @@ OpenID Connect schemes, and `basic` for HTTP basic, as a `(username, password)` 
 such as cookie API keys, are not mapped. Set them on a custom `http_client`: an `httpx.Client`, or an
 `httpx.AsyncClient` for the async client.
 
-Header and cookie parameters of an operation are not method arguments yet, so they are not sent. Set
-them on a custom `http_client`, for example `httpx.Client(headers={"X-Tenant": "acme"})`.
+Each operation sends only the credentials of the security schemes it requires: its own `security`, or
+the API's when it declares none. An operation with an empty `security` sends no credentials. When the
+requirement lists alternatives, the request sends one of them: the first whose credentials are all
+set, preferring one that does not put an apiKey in the URL. An operation sends one apiKey: the first of its header or cookie schemes, or else its first query scheme.
+A query apiKey is never sent while a header or cookie scheme applies.
+
+Header and cookie parameters are keyword arguments of the operation, like path and query parameters.
+Cookie values are URL-encoded.
 
 ## Errors
 
@@ -53,8 +69,9 @@ Non-2xx responses raise an `ApiError` subclass: `BadRequestError` (400), `Unauth
 `ServerError` (5xx). Other statuses raise a plain `ApiError`. Each error carries `status`, `body`
 and `headers`.
 
-429 and 5xx responses are retried with exponential backoff, twice by default. Set `max_retries` to
-change that.
+A 429 or 5xx response is retried up to `max_retries` times (twice by default), but only when the request
+may be repeated: a GET, HEAD, PUT, DELETE or OPTIONS request, or one that carries an `Idempotency-Key`
+header. A `Retry-After` header sets the wait, up to 30 seconds. Otherwise the wait grows exponentially.
 
 ## Build
 

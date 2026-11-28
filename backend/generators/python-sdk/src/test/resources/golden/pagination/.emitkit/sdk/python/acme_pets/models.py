@@ -8,4 +8,4 @@ class ListItemsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     items: list[str]
-    next_cursor: Optional[str] = Field(default=None, alias="nextCursor")
+    next_cursor: Optional[str] = Field(default=None, validation_alias="nextCursor", serialization_alias="nextCursor")

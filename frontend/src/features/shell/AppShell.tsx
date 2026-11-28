@@ -1,5 +1,5 @@
 import { useRouter, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AppError } from "@/lib/api/appError";
 import { useMe } from "@/lib/auth/session";
 import {
@@ -38,6 +38,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { data: me } = useMe();
   const routeOrgId = useRouteOrgId();
   const isMobile = useMediaQuery(MOBILE_QUERY);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const orgs = me?.orgs;
 
   // Visiting an org page makes it the one that `/` opens next time.
@@ -52,17 +53,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     <CommandRegistryProvider>
       <ShortcutsProvider>
         <AppCommands orgs={me.orgs} currentOrgId={nav.currentOrgId} />
-        <CommandPalette />
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
         <ShortcutsHelp />
         <div className="flex min-h-dvh">
           {!isMobile && (
-            <aside className="w-56 shrink-0 border-r border-border">
+            <aside className="sticky top-0 h-dvh w-60 shrink-0 overflow-y-auto border-r border-border bg-surface">
               <Sidebar {...nav} />
             </aside>
           )}
           <div className="flex min-w-0 flex-1 flex-col">
-            <TopBar user={me} menu={isMobile ? <MobileDrawer {...nav} /> : undefined} />
-            <main className="flex-1 p-4">{children}</main>
+            <TopBar user={me} menu={isMobile ? <MobileDrawer {...nav} /> : undefined} onSearch={() => setPaletteOpen(true)} />
+            <main className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
           </div>
         </div>
       </ShortcutsProvider>
@@ -75,13 +76,13 @@ export function ShellSkeleton() {
   return (
     <div aria-busy="true" className="flex min-h-dvh">
       <p role="status" className="sr-only">Loading EmitKit</p>
-      <div className="flex w-56 shrink-0 flex-col gap-3 border-r border-border p-3">
+      <div className="flex w-60 shrink-0 flex-col gap-3 border-r border-border bg-surface p-3">
         <Skeleton className="h-8" />
         <Skeleton className="h-8" />
         <Skeleton className="h-8" />
       </div>
       <div className="flex flex-1 flex-col gap-4 p-4">
-        <Skeleton className="h-12" />
+        <Skeleton className="h-10" />
         <Skeleton className="h-6 w-48" />
       </div>
     </div>

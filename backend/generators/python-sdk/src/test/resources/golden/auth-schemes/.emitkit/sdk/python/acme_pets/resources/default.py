@@ -4,54 +4,54 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..client import AuthSchemesClient, AsyncAuthSchemesClient
+    from ..client import AuthSchemesClient as _AuthSchemesClient, AsyncAuthSchemesClient as _AsyncAuthSchemesClient
 
 
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AuthSchemesClient) -> None:
+    def __init__(self, client: _AuthSchemesClient) -> None:
         self._client = client
 
     def get_with_header_key(self) -> None:
-        self._client._request("GET", "/header-key")
+        self._client._request("GET", "/header-key", security=[["headerKey"]])
 
     def get_with_query_key(self) -> None:
-        self._client._request("GET", "/query-key")
+        self._client._request("GET", "/query-key", security=[["queryKey"]])
 
     def get_with_basic(self) -> None:
-        self._client._request("GET", "/basic")
+        self._client._request("GET", "/basic", security=[["basicAuth"]])
 
     def get_with_o_auth(self) -> None:
-        self._client._request("GET", "/oauth")
+        self._client._request("GET", "/oauth", security=[["oauth"]])
 
     def get_public(self) -> None:
-        self._client._request("GET", "/public")
+        self._client._request("GET", "/public", security=[])
 
     def get_inherited(self) -> None:
-        self._client._request("GET", "/inherited")
+        self._client._request("GET", "/inherited", security=[["bearerAuth"]])
 
 
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncAuthSchemesClient) -> None:
+    def __init__(self, client: _AsyncAuthSchemesClient) -> None:
         self._client = client
 
     async def get_with_header_key(self) -> None:
-        await self._client._request("GET", "/header-key")
+        await self._client._request("GET", "/header-key", security=[["headerKey"]])
 
     async def get_with_query_key(self) -> None:
-        await self._client._request("GET", "/query-key")
+        await self._client._request("GET", "/query-key", security=[["queryKey"]])
 
     async def get_with_basic(self) -> None:
-        await self._client._request("GET", "/basic")
+        await self._client._request("GET", "/basic", security=[["basicAuth"]])
 
     async def get_with_o_auth(self) -> None:
-        await self._client._request("GET", "/oauth")
+        await self._client._request("GET", "/oauth", security=[["oauth"]])
 
     async def get_public(self) -> None:
-        await self._client._request("GET", "/public")
+        await self._client._request("GET", "/public", security=[])
 
     async def get_inherited(self) -> None:
-        await self._client._request("GET", "/inherited")
+        await self._client._request("GET", "/inherited", security=[["bearerAuth"]])

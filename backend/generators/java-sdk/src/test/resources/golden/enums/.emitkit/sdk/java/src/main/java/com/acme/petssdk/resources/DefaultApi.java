@@ -26,7 +26,8 @@ public final class DefaultApi {
     if (options != null && options.color() != null) {
       query.put("color", String.valueOf(options.color().value()));
     }
-    HttpResponse<String> response = client.request("GET", "/items", query, null);
+    HttpResponse<String> response =
+        client.request("GET", "/items", query, null, null, null, List.of());
     return read(response, new TypeReference<List<Item>>() {});
   }
 

@@ -1,12 +1,14 @@
 package dev.emitkit.gen.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.networknt.schema.InputFormat;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SchemaId;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SpecVersion;
+import dev.emitkit.gen.core.GeneratedFile;
 import dev.emitkit.gen.core.GeneratorContext;
 import dev.emitkit.gen.core.GeneratorId;
 import dev.emitkit.gen.core.PackageNames;
@@ -19,12 +21,20 @@ import dev.emitkit.spec.model.ObjectSchema;
 import dev.emitkit.spec.model.Operation;
 import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
+import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
 import dev.emitkit.spec.model.RefSchema;
 import dev.emitkit.spec.model.RequestBody;
 import dev.emitkit.spec.model.Schema;
+import dev.emitkit.spec.parse.ParseResult;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -36,7 +46,7 @@ class McpGeneratorTest {
   private final McpGenerator generator = new McpGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "polymorphism"})
+  @ValueSource(strings = {"petstore", "polymorphism", "bookshelf"})
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
@@ -96,6 +106,197 @@ class McpGeneratorTest {
   }
 
   @Test
+  void toolDescriptionIsTheSummaryThenTheDescription() {
+    var op =
+        new Operation(
+            "listBooks",
+            false,
+            "GET",
+            "/books",
+            "books",
+            "List books",
+            "Returns a page of books.\nNewest first.",
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().description())
+        .isEqualTo("List books\n\nReturns a page of books.\nNewest first.");
+  }
+
+  @Test
+  void toolDescriptionIsTheDescriptionAloneWithoutASummary() {
+    var op =
+        new Operation(
+            "listBooks",
+            false,
+            "GET",
+            "/books",
+            "books",
+            null,
+            "Returns a page of books.",
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().description())
+        .isEqualTo("Returns a page of books.");
+  }
+
+  @Test
+  void toolDescriptionIsTheSummaryWhenTheDescriptionRepeatsIt() {
+    var op =
+        new Operation(
+            "listBooks",
+            false,
+            "GET",
+            "/books",
+            "books",
+            "List books",
+            "List   books",
+            List.of(),
+            null,
+            Map.of(),
+            List.of(),
+            false);
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().description())
+        .isEqualTo("List books");
+  }
+
+  @Test
+  void serverDefaultsToTheFirstAbsoluteServerUrl() {
+    String server = source(generate("bookshelf"), "src/server.ts");
+    assertThat(server)
+        .contains("const DEFAULT_BASE_URL: string = \"https://api.bookshelf.example.com/v1\";")
+        .contains("const configured = process.env.API_BASE_URL ?? \"\";")
+        .contains("return { baseUrl: DEFAULT_BASE_URL.replace(/\\/+$/, \"\") };");
+  }
+
+  @Test
+  void serverWithNoUsableUrlExitsWithOneStderrLine() {
+    // No servers and no API_BASE_URL: write one line to stderr, then exit 1. Nothing connects.
+    var files =
+        generator.generate(model(List.of(operation("listThings", "/things")), Map.of()), ctx());
+    assertThat(source(files, "src/server.ts"))
+        .contains("const DEFAULT_BASE_URL: string = \"\";")
+        .contains("process.stderr.write(message, () => process.exit(1));")
+        .contains("API_BASE_URL is required")
+        .doesNotContain("throw new Error(\"API_BASE_URL");
+  }
+
+  @Test
+  void serverRejectsABaseUrlThatIsNotAbsoluteHttp() {
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("must be an absolute http(s) URL");
+  }
+
+  @Test
+  void serverDoesNotExitWhenImported() {
+    // The entry point runs only when this file is the process's entry; a plain import is inert.
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("export async function main")
+        .contains("process.argv[1]");
+  }
+
+  @Test
+  void readmeStatesThatOneAlternativeIsSent() {
+    assertThat(source(generate("bookshelf"), "README.md"))
+        .contains(
+            "security requirements, one of them is sent: the first whose credentials are all");
+  }
+
+  @Test
+  void serverSendsTheFirstAlternativeWhoseCredentialsAreSet() {
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("const credentials = chooseRequirement(tool.security).flatMap(")
+        .contains(
+            "return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];");
+  }
+
+  @Test
+  void reservedHeaderParametersAreNotToolInputs() {
+    var listItems =
+        McpGenerator.tools(local("apikey-precedence")).stream()
+            .filter(t -> t.name().equals("list_items"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(listItems.params())
+        .extracting(McpGenerator.Tool.Param::name)
+        .doesNotContain("Authorization", "Accept", "Content-Type")
+        .contains("X-Api-Key");
+    assertThat(listItems.inputSchemaJson())
+        .doesNotContain("\"Authorization\"")
+        .doesNotContain("\"Accept\"")
+        .doesNotContain("\"Content-Type\"");
+  }
+
+  @Test
+  void apiKeyPrecedenceSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "apikey-precedence", generator.generate(local("apikey-precedence"), ctx()));
+  }
+
+  /** A spec under this module's {@code src/test/resources/specs/}, parsed into the model. */
+  private static ApiModel local(String name) {
+    String text;
+    try {
+      text = Files.readString(Path.of("src", "test", "resources", "specs", name + ".yaml"));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    ParseResult result = new SpecParser().parse(text);
+    assertThat(result.errors()).isEmpty();
+    return Objects.requireNonNull(result.model());
+  }
+
+  @Test
+  void packageAndBinUseTheMcpSuffixSoTheyDoNotClashWithTheCliOrSdk() {
+    String json = source(generate("petstore"), "package.json");
+    assertThat(json)
+        .contains("\"name\": \"@acme/petstore-mcp\",")
+        .contains("\"petstore-mcp\": \"dist/server.js\"")
+        .doesNotContain("\"@acme/petstore\"");
+    // The server reports its name unchanged; only the package and bin carry the suffix.
+    assertThat(source(generate("petstore"), "src/server.ts"))
+        .contains("const SERVER_NAME = \"@acme/petstore\";");
+    var unscoped =
+        new GeneratorContext(
+            ".emitkit/",
+            "1.2.3",
+            new PackageNames(null, "petstore", null, null, null),
+            List.of(),
+            Optional.empty());
+    assertThat(source(generator.generate(FixtureSpecs.load("petstore"), unscoped), "package.json"))
+        .contains("\"name\": \"petstore-mcp\",")
+        .contains("\"petstore-mcp\": \"dist/server.js\"");
+  }
+
+  @Test
+  void eachToolCarriesItsEffectiveSecurityRequirement() {
+    String tools = source(generate("bookshelf"), "src/tools.ts");
+    // listAuthors declares security: [], so its tool sends no credentials.
+    assertThat(tools).contains("\"name\": \"list_authors\"").contains("\"security\": []");
+    // createLoan accepts an API key or an OAuth2 token, not the global bearer token.
+    assertThat(tools)
+        .contains(
+            "\"security\": [\n      [\n        \"apiKeyAuth\"\n      ],\n      [\n"
+                + "        \"oauth2\"\n      ]\n    ]");
+  }
+
+  @Test
+  void serverMapsSecuritySchemesToCredentials() {
+    // Json.write pretty-prints, so each pair spans lines; check the members of each entry.
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("\"bearerAuth\",")
+        .contains("\"apiKeyAuth\",")
+        .contains("\"kind\": \"apiKey\"")
+        .contains("\"in\": \"header\"")
+        .contains("\"name\": \"X-Api-Key\"");
+  }
+
+  @Test
   void recursiveRefRendersEmptySchemaAtTheSecondVisit() {
     var node =
         new ObjectSchema(
@@ -128,11 +329,123 @@ class McpGeneratorTest {
     assertThat(json.replaceAll("\\s", "")).contains("\"enum\":[1,2,null]");
   }
 
+  @Test
+  void collidingParameterNamesGetLocationPrefixedArgumentNames() {
+    var op =
+        withParameters(
+            operation("searchItems", "/items"),
+            param("id", ParamLocation.QUERY),
+            param("id", ParamLocation.HEADER));
+    var tool = McpGenerator.tools(model(List.of(op), Map.of())).getFirst();
+    assertThat(tool.params())
+        .extracting(
+            McpGenerator.Tool.Param::name,
+            McpGenerator.Tool.Param::arg,
+            McpGenerator.Tool.Param::in)
+        .containsExactly(tuple("id", "id", "query"), tuple("id", "headerId", "header"));
+    assertThat(tool.inputSchemaJson()).contains("\"id\": {").contains("\"headerId\": {");
+  }
+
+  @Test
+  void collidingArgumentNameFallsBackToANumericSuffixLast() {
+    var op =
+        withParameters(
+            operation("searchItems", "/items"),
+            param("id", ParamLocation.QUERY),
+            param("id", ParamLocation.HEADER),
+            param("id", ParamLocation.HEADER));
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().params())
+        .extracting(McpGenerator.Tool.Param::arg)
+        .containsExactly("id", "headerId", "headerId2");
+  }
+
+  @Test
+  void parameterNamedBodyIsRenamedWhenTheToolHasABody() {
+    var op =
+        withBody(
+            withParameters(
+                operation("updateItem", "/items/{id}"), param("body", ParamLocation.QUERY)),
+            new RequestBody(true, "application/json", stringSchema()));
+    var tool = McpGenerator.tools(model(List.of(op), Map.of())).getFirst();
+    assertThat(tool.params())
+        .extracting(McpGenerator.Tool.Param::name, McpGenerator.Tool.Param::arg)
+        .containsExactly(tuple("body", "queryBody"));
+    assertThat(tool.inputSchemaJson()).contains("\"body\": {").contains("\"queryBody\": {");
+    assertThat(tool.inputSchema().get("required")).isEqualTo(List.of("body"));
+  }
+
+  @Test
+  void parameterNamedBodyKeepsItsNameWhenTheToolHasNoBody() {
+    var op = withParameters(operation("listItems", "/items"), param("body", ParamLocation.QUERY));
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().params())
+        .extracting(McpGenerator.Tool.Param::arg)
+        .containsExactly("body");
+  }
+
+  @Test
+  void prefixedArgumentNamesAreCamelCaseOfTheParameterName() {
+    var op =
+        withParameters(
+            operation("listItems", "/items"),
+            param("X-Trace-Id", ParamLocation.QUERY),
+            param("X-Trace-Id", ParamLocation.HEADER),
+            param("page", ParamLocation.QUERY),
+            param("page", ParamLocation.COOKIE),
+            param("x", ParamLocation.PATH),
+            param("x", ParamLocation.QUERY));
+    assertThat(McpGenerator.tools(model(List.of(op), Map.of())).getFirst().params())
+        .extracting(McpGenerator.Tool.Param::arg)
+        .containsExactly("X-Trace-Id", "headerXTraceId", "page", "cookiePage", "x", "queryX");
+  }
+
+  @Test
+  void serverSendsEachArgumentUnderItsWireNameAndLocation() {
+    String server = source(generate("bookshelf"), "src/server.ts");
+    assertThat(server)
+        .contains("const value = args[param.arg];")
+        .doesNotContain("args[param.name]");
+  }
+
+  @Test
+  void serverFindsPathArgumentsByTheirPlaceholderName() {
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("tool.params.find((param) => param.in === \"path\" && param.name === name)");
+  }
+
+  @Test
+  void serverStartsWhenTheInvokedPathHasNoExtension() {
+    String server = source(generate("bookshelf"), "src/server.ts");
+    assertThat(server)
+        .contains("`${path}.js`")
+        .contains("basename(entry, extname(entry)) === basename(self, extname(self))")
+        .contains("import { basename, extname } from \"node:path\";");
+  }
+
+  private List<GeneratedFile> generate(String fixture) {
+    return generator.generate(FixtureSpecs.load(fixture), ctx());
+  }
+
+  @Test
+  void paramCollisionsSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "param-collisions", generator.generate(local("param-collisions"), ctx()));
+  }
+
+  /** Content of a file under {@code .emitkit/mcp/}, addressed relative to that root. */
+  private static String source(List<GeneratedFile> files, String relative) {
+    String path = ".emitkit/mcp/" + relative;
+    return files.stream()
+        .filter(f -> f.path().equals(path))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("no generated file " + path))
+        .content();
+  }
+
   private static GeneratorContext ctx() {
     return new GeneratorContext(
         ".emitkit/",
         "1.2.3",
-        new PackageNames("acme", "petstore-mcp", "petstore", "dev.acme", "petstore"),
+        new PackageNames("acme", "petstore", "petstore", "dev.acme", "petstore"),
         List.of(),
         Optional.empty());
   }
@@ -167,10 +480,34 @@ class McpGeneratorTest {
         op.tag(),
         null,
         null,
-        List.of(),
+        op.parameters(),
         body,
         Map.of(),
         List.of(),
         false);
+  }
+
+  private static Operation withParameters(Operation op, Parameter... params) {
+    return new Operation(
+        op.operationId(),
+        false,
+        op.method(),
+        op.path(),
+        op.tag(),
+        null,
+        null,
+        List.of(params),
+        op.requestBody(),
+        Map.of(),
+        List.of(),
+        false);
+  }
+
+  private static Parameter param(String name, ParamLocation in) {
+    return new Parameter(name, in, false, stringSchema(), null);
+  }
+
+  private static PrimitiveSchema stringSchema() {
+    return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
   }
 }

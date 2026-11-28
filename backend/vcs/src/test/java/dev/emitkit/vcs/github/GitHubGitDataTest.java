@@ -291,6 +291,28 @@ class GitHubGitDataTest {
   }
 
   @Test
+  void listTags_keepsOnlyTagsWithThePrefix() {
+    stubFor(
+        get(urlPathEqualTo(REFS + "/tags"))
+            .willReturn(
+                okJson(
+                    "[{\"ref\":\"refs/tags/sdk/v0.1.0\",\"object\":{\"sha\":\"a\"}},"
+                        + "{\"ref\":\"refs/tags/mcp/v0.1.0\",\"object\":{\"sha\":\"a\"}},"
+                        + "{\"ref\":\"refs/tags/sdk/v0.2.0\",\"object\":{\"sha\":\"b\"}}]")));
+
+    assertThat(client.listTags("acme/api", "sdk/v")).containsExactly("sdk/v0.1.0", "sdk/v0.2.0");
+  }
+
+  @Test
+  void listTags_repoWithoutTags_isEmpty() {
+    // GitHub answers 404, not an empty list, for the tags namespace of a repo that has no tags.
+    stubFor(
+        get(urlPathEqualTo(REFS + "/tags")).willReturn(json(404, "{\"message\":\"Not Found\"}")));
+
+    assertThat(client.listTags("acme/api", "sdk/v")).isEmpty();
+  }
+
+  @Test
   void deleteBranch_missing_isNoOp() {
     stubFor(
         get(urlPathEqualTo(REFS + "/heads/gone"))

@@ -5,24 +5,24 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote as _quote
 
 if TYPE_CHECKING:
-    from ..client import MultiTagClient, AsyncMultiTagClient
+    from ..client import MultiTagClient as _MultiTagClient, AsyncMultiTagClient as _AsyncMultiTagClient
 
 
 class PetsResource:
     """Operations tagged pets."""
 
-    def __init__(self, client: MultiTagClient) -> None:
+    def __init__(self, client: _MultiTagClient) -> None:
         self._client = client
 
     def get_pet_inventory(self, *, id: int) -> None:
-        self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory")
+        self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory", security=[])
 
 
 class AsyncPetsResource:
     """Operations tagged pets."""
 
-    def __init__(self, client: AsyncMultiTagClient) -> None:
+    def __init__(self, client: _AsyncMultiTagClient) -> None:
         self._client = client
 
     async def get_pet_inventory(self, *, id: int) -> None:
-        await self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory")
+        await self._client._request("GET", f"/pets/{_quote(str(id), safe='')}/inventory", security=[])

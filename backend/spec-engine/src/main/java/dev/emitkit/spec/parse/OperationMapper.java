@@ -99,11 +99,12 @@ final class OperationMapper {
         tag,
         op.getSummary(),
         op.getDescription(),
-        parameters(path, item, op),
+        parameters(api, path, item, op),
         requestBody(resolveBody(api, op.getRequestBody())),
         responses(api, op.getResponses()),
         securityNames(security),
-        Boolean.TRUE.equals(op.getDeprecated()));
+        Boolean.TRUE.equals(op.getDeprecated()),
+        securityRequirements(security));
   }
 
   /** {@code GET /users/{id}} becomes {@code getUsersById}. */
@@ -140,10 +141,10 @@ final class OperationMapper {
    * and the rest keep document order.
    */
   private static List<Parameter> parameters(
-      String path, PathItem item, io.swagger.v3.oas.models.Operation op) {
+      OpenAPI api, String path, PathItem item, io.swagger.v3.oas.models.Operation op) {
     var merged = new LinkedHashMap<String, Parameter>();
-    addParameters(merged, item.getParameters());
-    addParameters(merged, op.getParameters());
+    addParameters(api, merged, item.getParameters());
+    addParameters(api, merged, op.getParameters());
     var pathParams = new ArrayList<Parameter>();
     var others = new ArrayList<Parameter>();
     for (var p : merged.values()) {
@@ -161,12 +162,14 @@ final class OperationMapper {
   }
 
   private static void addParameters(
+      OpenAPI api,
       Map<String, Parameter> out,
       @Nullable List<io.swagger.v3.oas.models.parameters.Parameter> source) {
     if (source == null) {
       return;
     }
-    for (var p : source) {
+    for (var ref : source) {
+      var p = resolveParameter(api, ref);
       var in = location(p.getIn());
       if (in != null) {
         var param =
@@ -231,6 +234,17 @@ final class OperationMapper {
     return bodies == null ? body : bodies.getOrDefault(componentName(body.get$ref()), body);
   }
 
+  // swagger-parser inlines component parameter refs for OpenAPI 3.0 but leaves them as bare refs
+  // (no name or in) for 3.1, so they would otherwise be dropped.
+  private static io.swagger.v3.oas.models.parameters.Parameter resolveParameter(
+      OpenAPI api, io.swagger.v3.oas.models.parameters.Parameter param) {
+    if (param.get$ref() == null || api.getComponents() == null) {
+      return param;
+    }
+    var params = api.getComponents().getParameters();
+    return params == null ? param : params.getOrDefault(componentName(param.get$ref()), param);
+  }
+
   private static ApiResponse resolveResponse(OpenAPI api, ApiResponse response) {
     if (response.get$ref() == null || api.getComponents() == null) {
       return response;
@@ -272,6 +286,15 @@ final class OperationMapper {
   /** The first content type, preferring {@code application/json} when it is offered. */
   private static String preferredContentType(Content content) {
     return content.containsKey(JSON) ? JSON : content.keySet().iterator().next();
+  }
+
+  /** One list of scheme names per alternative, in document order; scopes are not kept. */
+  private static List<List<String>> securityRequirements(
+      @Nullable List<SecurityRequirement> requirements) {
+    if (requirements == null) {
+      return List.of();
+    }
+    return requirements.stream().map(r -> List.copyOf(r.keySet())).toList();
   }
 
   /** Scheme names only; scopes are not part of the model. */

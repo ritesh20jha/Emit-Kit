@@ -50,10 +50,12 @@ services:
     cap_drop: [ALL]
     deploy:
       replicas: 2
-      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in api.Dockerfile). See the runbook, "First install", step 1.
+      # The JVM sizes its heap to 60% of the memory limit (MaxRAMPercentage in api.Dockerfile), and its thread
+      # pools (Redis, RabbitMQ, fork-join, JIT) to the CPU limit. See the runbook, "First install", step 1.
       resources:
         limits:
           memory: ${API_MEMORY_LIMIT:-1g}
+          cpus: ${API_CPU_LIMIT:-2}
     environment:
       SPRING_PROFILES_ACTIVE: prod
       # Caddy terminates TLS, so the app must trust the X-Forwarded-* headers it sets.
@@ -108,10 +110,12 @@ services:
     cap_drop: [ALL]
     deploy:
       replicas: 2
-      # The JVM sizes its heap to 75% of this limit (MaxRAMPercentage in worker.Dockerfile). See the runbook, "First install", step 1.
+      # The JVM sizes its heap to 60% of the memory limit (MaxRAMPercentage in worker.Dockerfile), and its thread
+      # pools (Redis, RabbitMQ, fork-join, JIT) to the CPU limit. See the runbook, "First install", step 1.
       resources:
         limits:
           memory: ${WORKER_MEMORY_LIMIT:-1536m}
+          cpus: ${WORKER_CPU_LIMIT:-2}
     # Group of the host's sandbox socket, so the non-root worker may connect to it.
     group_add:
       - ${SANDBOX_GID:?set in .env.prod}
@@ -209,7 +213,9 @@ services:
 
   rabbitmq:
     <<: *common
-    image: rabbitmq:4.4.0-management-alpine
+    # No management plugin: nothing in production uses its UI or HTTP API, and its stats collection costs
+    # CPU and memory.
+    image: rabbitmq:4.4.0-alpine
     hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-emitkit}
@@ -217,7 +223,9 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      # RabbitMQ opens the AMQP port once the node has booted. rabbitmq-diagnostics would start an Erlang VM
+      # for each check, about 4 CPU-seconds every interval.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "5672"]
       interval: 10s
       timeout: 10s
       retries: 20

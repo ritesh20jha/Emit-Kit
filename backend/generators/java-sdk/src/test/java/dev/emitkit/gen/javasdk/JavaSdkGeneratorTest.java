@@ -42,7 +42,8 @@ class JavaSdkGeneratorTest {
         "no-operation-ids",
         "reserved-words",
         "deep-nesting",
-        "multi-tag"
+        "multi-tag",
+        "bookshelf"
       })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
@@ -80,6 +81,296 @@ class JavaSdkGeneratorTest {
         .contains("public record Cat(", "implements Pet");
     assertThat(content(files, SRC + "resources/DefaultApi.java"))
         .contains("public JsonNode listShapes()");
+  }
+
+  @Test
+  void discriminatorSubtypesAreNamedByTheMappingValue() {
+    assertThat(content("bookshelf", SRC + "model/BookFormat.java"))
+        .contains(
+            "@JsonSubTypes.Type(value = PrintFormat.class, name = \"print\")",
+            "@JsonSubTypes.Type(value = EbookFormat.class, name = \"ebook\")",
+            "@JsonSubTypes.Type(value = AudioFormat.class, name = \"audio\")");
+  }
+
+  @Test
+  void discriminatorSubtypeNameFallsBackToTheSingleEnumValueThenTheSchemaName() {
+    // Circle is named by the mapping, which beats its enum; Square has no mapping, so its
+    // single enum value names it; Triangle has neither, so the schema name does.
+    var shapes =
+        """
+        openapi: 3.0.3
+        info: {title: Shapes, version: 1.0.0}
+        paths: {}
+        components:
+          schemas:
+            Shape:
+              oneOf:
+                - $ref: '#/components/schemas/Circle'
+                - $ref: '#/components/schemas/Square'
+                - $ref: '#/components/schemas/Triangle'
+              discriminator:
+                propertyName: kind
+                mapping:
+                  round: '#/components/schemas/Circle'
+            Circle: {type: object, required: [kind], properties: {kind: {type: string, enum: [circle]}}}
+            Square: {type: object, required: [kind], properties: {kind: {type: string, enum: [square]}}}
+            Triangle: {type: object, properties: {kind: {type: string}}}
+        """;
+    assertThat(content(generateFrom(shapes), SRC + "model/Shape.java"))
+        .contains(
+            "@JsonSubTypes.Type(value = Circle.class, name = \"round\")",
+            "@JsonSubTypes.Type(value = Square.class, name = \"square\")",
+            "@JsonSubTypes.Type(value = Triangle.class, name = \"Triangle\")");
+  }
+
+  @Test
+  void headerAndCookieParametersAreSentAndRequiredOnesAreArguments() {
+    var files = generate("bookshelf", ".emitkit/", names("com.acme", "pets-sdk"));
+    assertThat(content(files, SRC + "resources/BooksApi.java"))
+        .contains(
+            "public Book createBook(String idempotencyKey, BookInput body) {",
+            "headers.put(\"Idempotency-Key\", idempotencyKey);");
+    assertThat(content(files, SRC + "resources/LoansApi.java"))
+        .contains(
+            "public Loan createLoan(LoanRequest body, CreateLoanOptions options) {",
+            "if (options != null && options.session() != null) {",
+            "cookies.put(\"session\", options.session());",
+            "List.of(List.of(\"apiKeyAuth\"), List.of(\"oauth2\"))");
+  }
+
+  @Test
+  void operationJavadocKeepsTheDescriptionAfterTheSummary() {
+    assertThat(content("bookshelf", SRC + "resources/BooksApi.java"))
+        .contains(
+            "   * List books\n"
+                + "   *\n"
+                + "   * <p>Returns a page of books, optionally filtered by genre and availability.\n"
+                + "   */");
+  }
+
+  @Test
+  void operationJavadocEscapesMarkupCommentClosersAndLeadingAt() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Docs, version: 1.0.0}
+        paths:
+          /items:
+            get:
+              operationId: listItems
+              summary: 'Find <b>items</b> & more */'
+              description: 'Rows > 5 and @deprecated text'
+              responses: {'200': {description: ok}}
+          /admin:
+            get:
+              operationId: getAdmin
+              summary: '@Admin only'
+              responses: {'200': {description: ok}}
+        """;
+    var files = generateFrom(spec);
+    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+        .contains(
+            "   * Find &lt;b&gt;items&lt;/b&gt; &amp; more *&#47;\n"
+                + "   *\n"
+                + "   * <p>Rows &gt; 5 and @deprecated text\n"
+                + "   */",
+            "  /** &#64;Admin only */");
+  }
+
+  @Test
+  void inlineEnumParameterIsAGeneratedEnumThatSendsItsWireValue() {
+    var files = generate("bookshelf", ".emitkit/", names("com.acme", "pets-sdk"));
+    assertThat(content(files, SRC + "resources/AuthorsApi.java"))
+        .contains(
+            "public enum ListAuthorsSort {",
+            "ASC(\"asc\"),",
+            "DESC(\"desc\");",
+            "ListAuthorsSort sort",
+            "query.put(\"sort\", String.valueOf(options.sort().value()));")
+        .doesNotContain("String sort");
+  }
+
+  // Review round: one API key per request, cookie apiKeys, credentials winning, basic with bearer.
+
+  private static final String KEY_SCHEMES =
+      """
+      openapi: 3.0.3
+      info: {title: Keys, version: 1.0.0}
+      paths:
+        /items:
+          get:
+            operationId: listItems
+            security:
+              - {headerKey: [], queryKey: [], cookieKey: []}
+            responses: {'200': {description: ok}}
+          post:
+            operationId: createItem
+            security:
+              - {queryKey: [], cookieKey: []}
+            responses: {'200': {description: ok}}
+      components:
+        securitySchemes:
+          headerKey: {type: apiKey, in: header, name: X-API-Key}
+          queryKey: {type: apiKey, in: query, name: api_key}
+          cookieKey: {type: apiKey, in: cookie, name: session_id}
+      """;
+
+  @Test
+  void anOperationSendsOneApiKeyPreferringAHeaderOrCookieScheme() {
+    var files = generateFrom(KEY_SCHEMES);
+    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+        .contains("List.of(\"headerKey\")")
+        .contains("List.of(\"cookieKey\")")
+        .doesNotContain("\"queryKey\"");
+  }
+
+  @Test
+  void aCookieApiKeyIsSentAsACookie() {
+    assertThat(
+            generateFrom(KEY_SCHEMES).stream()
+                .filter(f -> f.path().endsWith("Client.java"))
+                .findFirst()
+                .orElseThrow()
+                .content())
+        .contains(
+            "new ClientConfig.Credential(Map.of(), Map.of(), Map.of(\"session_id\", apiKey))");
+  }
+
+  @Test
+  void requestHeadersAreCaseInsensitiveAndCredentialsWinOverParameters() {
+    assertThat(clientSource(FixtureSpecs.load("auth-schemes")))
+        .contains("new TreeMap<>(String.CASE_INSENSITIVE_ORDER)")
+        .contains("allQuery.putAll(credQuery);")
+        .contains("allHeaders.putAll(credHeaders);");
+  }
+
+  @Test
+  void aBasicCredentialIsRegisteredEvenWhenABearerTokenIsSet() {
+    assertThat(clientSource(FixtureSpecs.load("auth-schemes")))
+        .contains("if (basicUsername != null) {")
+        .doesNotContain("bearerToken == null")
+        .contains("credHeaders::putIfAbsent")
+        .doesNotContain("basicUsername != null && ");
+  }
+
+  @Test
+  void aQueryAndAHeaderParameterWithTheSameNameGetDistinctJavaNames() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Clash, version: 1.0.0}
+        paths:
+          /items:
+            get:
+              operationId: listItems
+              parameters:
+                - {name: limit, in: query, schema: {type: integer}}
+                - {name: limit, in: header, schema: {type: integer}}
+                - {name: session, in: cookie, schema: {type: string}}
+                - {name: session, in: query, schema: {type: string}}
+              responses: {'200': {description: ok}}
+        """;
+    assertThat(content(generateFrom(spec), SRC + "resources/DefaultApi.java"))
+        .contains(
+            "Integer headerLimit",
+            "headers.put(\"limit\", String.valueOf(options.headerLimit()));",
+            "query.put(\"limit\", String.valueOf(options.limit()));",
+            "cookies.put(\"session\", options.session());",
+            "query.put(\"session\", options.querySession());");
+  }
+
+  @Test
+  void reservedHeaderParametersAreNeitherArgumentsNorOptions() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Reserved, version: 1.0.0}
+        paths:
+          /items:
+            get:
+              operationId: listItems
+              parameters:
+                - {name: Authorization, in: header, schema: {type: string}}
+                - {name: accept, in: header, schema: {type: string}}
+                - {name: Content-Type, in: header, schema: {type: string}}
+              responses: {'200': {description: ok}}
+        """;
+    assertThat(content(generateFrom(spec), SRC + "resources/DefaultApi.java"))
+        .doesNotContain("ListItemsOptions", "headers.put", "Authorization", "accept");
+  }
+
+  @Test
+  void anInlineEnumNamedLikeTheOptionsRecordIsSuffixedWithParam() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Clash, version: 1.0.0}
+        paths:
+          /items:
+            get:
+              operationId: listItems
+              parameters:
+                - {name: options, in: query, schema: {type: string, enum: [a, b]}}
+              responses: {'200': {description: ok}}
+        """;
+    assertThat(content(generateFrom(spec), SRC + "resources/DefaultApi.java"))
+        .contains("public enum ListItemsOptionsParam {", "ListItemsOptionsParam options_");
+  }
+
+  @Test
+  void anInlineEnumNamedLikeAModelIsSuffixedWithParam() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Clash, version: 1.0.0}
+        paths:
+          /items:
+            get:
+              operationId: listItems
+              parameters:
+                - {name: sort, in: query, schema: {type: string, enum: [asc, desc]}}
+              responses: {'200': {description: ok}}
+        components:
+          schemas:
+            ListItemsSort: {type: object, properties: {name: {type: string}}}
+        """;
+    var files = generateFrom(spec);
+    assertThat(content(files, SRC + "resources/DefaultApi.java"))
+        .contains("public enum ListItemsSortParam {", "ListItemsSortParam sort");
+    assertThat(content(files, SRC + "model/ListItemsSort.java"))
+        .contains("public record ListItemsSort(");
+  }
+
+  @Test
+  void severalMappingKeysForOneOptionAreAllNamed() {
+    var spec =
+        """
+        openapi: 3.0.3
+        info: {title: Shapes, version: 1.0.0}
+        paths: {}
+        components:
+          schemas:
+            Shape:
+              oneOf:
+                - $ref: '#/components/schemas/Circle'
+                - $ref: '#/components/schemas/Square'
+              discriminator:
+                propertyName: kind
+                mapping:
+                  round: '#/components/schemas/Circle'
+                  circ: '#/components/schemas/Circle'
+            Circle: {type: object, required: [kind], properties: {kind: {type: string}}}
+            Square: {type: object, required: [kind], properties: {kind: {type: string, enum: [square]}}}
+        """;
+    assertThat(content(generateFrom(spec), SRC + "model/Shape.java"))
+        .contains("@JsonSubTypes.Type(value = Circle.class, names = {\"round\", \"circ\"})")
+        .contains("@JsonSubTypes.Type(value = Square.class, name = \"square\")");
+  }
+
+  @Test
+  void javadocEscapesInlineTagStarts() {
+    assertThat(JavaClientView.docText("see {@code x} and {@link Y}"))
+        .isEqualTo("see &#123;@code x} and &#123;@link Y}");
   }
 
   @Test
@@ -146,20 +437,38 @@ class JavaSdkGeneratorTest {
   }
 
   @Test
-  void apiKeyIsSentInHeaderOnlyWhenAHeaderSchemeExists() {
+  void apiKeySchemesSendTheKeyInTheirOwnLocationAndName() {
     // auth-schemes declares both a header and a query apiKey scheme.
     assertThat(clientSource(FixtureSpecs.load("auth-schemes")))
-        .contains("headers.put(\"X-API-Key\", apiKey);")
-        .doesNotContain("\"api_key\"");
+        .contains("new ClientConfig.Credential(Map.of(\"X-API-Key\", apiKey), Map.of(), Map.of())")
+        .contains("new ClientConfig.Credential(Map.of(), Map.of(\"api_key\", apiKey), Map.of())");
   }
 
   @Test
-  void apiKeyFallsBackToTheQueryParameterWithoutAHeaderScheme() {
+  void apiKeyInTheQueryIsSentAsAQueryParameter() {
     var queryKey =
         new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
     assertThat(clientSource(Map.of("queryKey", queryKey)))
-        .contains("query.put(\"api_key\", apiKey);")
-        .doesNotContain("headers.put(\"");
+        .contains("new ClientConfig.Credential(Map.of(), Map.of(\"api_key\", apiKey), Map.of())")
+        .doesNotContain("X-API-Key");
+  }
+
+  @Test
+  void operationsSendOnlyTheCredentialsOfTheirSecurityRequirement() {
+    var files = generate("bookshelf", ".emitkit/", names("com.acme", "pets-sdk"));
+    // listAuthors declares "security: []", so it sends no credentials at all.
+    assertThat(content(files, SRC + "resources/AuthorsApi.java"))
+        .contains("\"/authors\", query, null, null, null, List.of());");
+    assertThat(content(files, SRC + "resources/LoansApi.java"))
+        .contains("List.of(List.of(\"apiKeyAuth\"), List.of(\"oauth2\"))");
+    assertThat(content(files, SRC + "resources/BooksApi.java"))
+        .contains("List.of(List.of(\"bearerAuth\"))");
+    assertThat(content(files, SRC + "BookshelfApiClient.java"))
+        .contains(
+            "for (String scheme : chooseRequirement(security)) {",
+            ".filter(a -> a.stream().allMatch(scheme -> held.get(scheme).query().isEmpty()))",
+            "config.credentials().get(scheme)",
+            "credential.headers().forEach(credHeaders::putIfAbsent)");
   }
 
   @ParameterizedTest
@@ -170,7 +479,23 @@ class JavaSdkGeneratorTest {
     var scheme = new SecurityScheme("auth", kind, null, null, null);
     assertThat(clientSource(Map.of("auth", scheme)))
         .contains("public Builder bearerToken(String bearerToken)")
-        .contains("headers.put(\"Authorization\", \"Bearer \" + bearerToken);");
+        .contains("Map.of(\"Authorization\", \"Bearer \" + bearerToken)");
+  }
+
+  @Test
+  void retriesOnlyIdempotentRequests() {
+    assertThat(clientSource(FixtureSpecs.load("petstore")))
+        .contains("Set.of(\"GET\", \"HEAD\", \"PUT\", \"DELETE\", \"OPTIONS\")")
+        .contains("request.headers().firstValue(\"Idempotency-Key\").isPresent()")
+        .contains("if (!retryable || !isRetryable(status)");
+  }
+
+  @Test
+  void retryAfterSetsTheWaitAndIsCappedAtThirtySeconds() {
+    assertThat(clientSource(FixtureSpecs.load("petstore")))
+        .contains("response.headers().firstValue(\"Retry-After\")")
+        .contains("DateTimeFormatter.RFC_1123_DATE_TIME")
+        .contains("Math.min(Math.max(millis, 0), MAX_DELAY_MILLIS)");
   }
 
   @Test
@@ -271,10 +596,8 @@ class JavaSdkGeneratorTest {
                 generate("auth-schemes", ".emitkit/", names("com.acme", "pets-sdk")),
                 SRC + "ClientConfig.java"))
         .contains("public String toString()")
-        .contains("authHeaders.keySet()")
-        .contains("authQuery.keySet()")
-        .doesNotContain("+ authHeaders +")
-        .doesNotContain("+ authQuery +");
+        .contains("credentials.keySet()")
+        .doesNotContain("+ credentials +");
   }
 
   @Test

@@ -15,6 +15,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "POST",
         path: "/admin/reset",
+        security: [],
       }),
     );
 }

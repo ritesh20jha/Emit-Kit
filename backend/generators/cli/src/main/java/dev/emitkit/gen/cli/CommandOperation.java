@@ -9,6 +9,7 @@ import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.RequestBody;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,6 +22,8 @@ record CommandOperation(
     String name,
     String nameLiteral,
     String descriptionLiteral,
+    boolean hasSummary,
+    String summaryLiteral,
     String methodLiteral,
     String pathExpr,
     List<Flag> flags,
@@ -31,7 +34,8 @@ record CommandOperation(
     boolean hasHeaders,
     boolean hasCookies,
     boolean hasBody,
-    String contentTypeLiteral) {
+    String contentTypeLiteral,
+    String securityLiteral) {
 
   /** Global options and the body flag. A parameter with one of these flags gets a suffix. */
   private static final Set<String> RESERVED_FLAGS =
@@ -59,10 +63,56 @@ record CommandOperation(
     return List.copyOf(out);
   }
 
+  /**
+   * Header names the runner sets itself: Authorization, Accept and Content-Type. A header parameter
+   * with one of these names, compared without case, gets no option.
+   */
+  private static final Set<String> RUNNER_HEADERS =
+      Set.of("authorization", "accept", "content-type");
+
+  private static boolean isReservedHeader(Parameter p) {
+    return p.in() == ParamLocation.HEADER
+        && RUNNER_HEADERS.contains(p.name().toLowerCase(Locale.ROOT));
+  }
+
+  /**
+   * One flag name per parameter, in order. A parameter whose flag is free keeps it. A parameter
+   * that collides with an earlier one takes its location prefix, such as {@code --header-id}, and
+   * only then a numeric suffix. A collision with a global option gets the suffix directly, as
+   * {@code --token-2}.
+   */
+  static List<String> flagNames(List<Parameter> params) {
+    Set<String> taken = new HashSet<>(RESERVED_FLAGS);
+    List<String> out = new ArrayList<>();
+    for (Parameter p : params) {
+      String base = flagBase(p.name());
+      String flag;
+      if (!taken.contains(base)) {
+        flag = base;
+      } else if (!RESERVED_FLAGS.contains(base)) {
+        String location = p.in().name().toLowerCase(Locale.ROOT);
+        flag = firstFree(location + "-" + Names.kebab(p.name()), taken);
+      } else {
+        flag = firstFree(base, taken);
+      }
+      taken.add(flag);
+      out.add(flag);
+    }
+    return List.copyOf(out);
+  }
+
+  /** {@code name}, or the first {@code name-2}, {@code name-3}, ... that is not taken. */
+  private static String firstFree(String name, Set<String> taken) {
+    String candidate = name;
+    for (int n = 2; taken.contains(candidate); n++) {
+      candidate = name + "-" + n;
+    }
+    return candidate;
+  }
+
   private static CommandOperation build(String name, Operation op) {
-    List<Parameter> params = op.parameters();
-    List<String> flags =
-        Names.unique(params.stream().map(p -> flagBase(p.name())).toList(), RESERVED_FLAGS);
+    List<Parameter> params = op.parameters().stream().filter(p -> !isReservedHeader(p)).toList();
+    List<String> flags = flagNames(params);
     List<Flag> flagList = new ArrayList<>();
     List<Entry> query = new ArrayList<>();
     List<Entry> headers = new ArrayList<>();
@@ -94,14 +144,13 @@ record CommandOperation(
               quote("--json <body|@file>"),
               quote("Request body as JSON text, or @path to read it from a file")));
     }
+    String summary = firstNonBlank(op.summary());
     return new CommandOperation(
         name,
         quote(name),
-        quote(
-            firstNonBlank(
-                op.summary(),
-                op.description(),
-                op.method().toUpperCase(Locale.ROOT) + " " + op.path())),
+        quote(helpDescription(op)),
+        !summary.isEmpty(),
+        quote(summary),
         quote(op.method().toUpperCase(Locale.ROOT)),
         pathExpr(op.path(), pathKeys),
         List.copyOf(flagList),
@@ -112,7 +161,43 @@ record CommandOperation(
         !headers.isEmpty(),
         !cookies.isEmpty(),
         body != null,
-        body == null ? quote("") : quote(body.contentType()));
+        body == null ? quote("") : quote(body.contentType()),
+        securityLiteral(op.securityRequirements()));
+  }
+
+  /**
+   * The command's {@code --help} text, with the same rule as an MCP tool description: the summary,
+   * a blank line, then the description. The description alone stands in when there is no summary,
+   * and the summary alone when the description repeats it. With neither, the command is described
+   * as {@code METHOD path}.
+   */
+  static String helpDescription(Operation op) {
+    String summary = firstNonBlank(op.summary());
+    String description = op.description() == null ? "" : op.description().strip();
+    if (summary.isEmpty()) {
+      return description.isEmpty()
+          ? op.method().toUpperCase(Locale.ROOT) + " " + op.path()
+          : description;
+    }
+    if (description.isEmpty() || oneLine(description).equals(summary)) {
+      return summary;
+    }
+    return summary + "\n\n" + description;
+  }
+
+  /**
+   * The operation's effective security requirement as an array of alternatives, each an array of
+   * scheme names, such as {@code [["a"], ["b"]]}.
+   */
+  static String securityLiteral(List<List<String>> requirements) {
+    return "["
+        + String.join(
+            ", ",
+            requirements.stream()
+                .map(names ->
+                    "[" + String.join(", ", names.stream().map(TsLiterals::quote).toList()) + "]")
+                .toList())
+        + "]";
   }
 
   /**

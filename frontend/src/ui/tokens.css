@@ -1,55 +1,70 @@
+/* Hallmark · genre: modern-minimal · macrostructure: workbench · design-system: design.md · designed-as-app */
 /*
- * Design tokens (spec ov §4.3). Light values live on :root, dark values on :root[data-theme="dark"].
- * Both sets use the same names, so components never branch on theme. app.css maps these into Tailwind.
- * Keep this file unlayered: never wrap its @import in @layer. The @theme inline self-references in
+ * Design tokens (spec ov §4.3, refined by frontend/design.md). Light values live on :root, dark values on
+ * :root[data-theme="dark"]. Both sets use the same names, so components never branch on theme. app.css maps these
+ * into Tailwind. Keep this file unlayered: never wrap its @import in @layer. The @theme inline self-references in
  * app.css rely on these unlayered declarations winning the cascade.
+ *
+ * Contrast floor (WCAG 2.2 AA, checked by the Storybook axe run in both themes): fg, fg-muted, fg-subtle, accent and
+ * every status colour reach 4.5:1 on bg-muted, the darkest surface text sits on; border-control reaches 3:1 on it.
  */
 :root {
   color-scheme: light;
 
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f6f7f9;
-  --color-bg-muted: #eceef2;
-  --color-fg: #15181d;
-  --color-fg-muted: #4b5563;
-  --color-fg-subtle: #5f6672;
-  --color-border: #d9dde3;
-  --color-border-strong: #b8bfc9;
+  /* Cool engineered paper, never pure white. The page sits on bg; panels, tables and controls on surface. */
+  --color-bg: oklch(98.3% 0.004 250);
+  --color-surface: oklch(99.7% 0.002 250);
+  --color-bg-subtle: oklch(96.5% 0.006 252);
+  --color-bg-muted: oklch(93.8% 0.009 253);
+  --color-fg: oklch(23% 0.02 258);
+  --color-fg-muted: oklch(43% 0.02 257);
+  --color-fg-subtle: oklch(49% 0.018 257);
+  --color-border: oklch(91% 0.009 255);
+  --color-border-strong: oklch(83% 0.013 256);
   /* Borders that carry state: input edges, checkbox and switch outlines. WCAG 1.4.11 needs 3:1 on bg and bg-muted. */
-  --color-border-control: #7c8490;
-  --color-accent: #3451d1;
-  --color-accent-fg: #ffffff;
-  --color-focus: #3451d1;
-  --color-status-success: #166534;
-  --color-status-running: #0e7490;
-  --color-status-failed: #b42318;
-  --color-status-awaiting: #b45309;
-  --color-status-neutral: #5f6672;
+  --color-border-control: oklch(59% 0.018 257);
+  /* The one signal: primary action, current nav item, focus, links. Kept under ~5% of any screen. */
+  --color-accent: oklch(50% 0.2 263);
+  --color-accent-fg: oklch(99% 0.003 250);
+  --color-focus: oklch(55% 0.21 263);
+  --color-status-success: oklch(47% 0.12 152);
+  --color-status-running: oklch(49% 0.1 225);
+  --color-status-failed: oklch(50% 0.18 27);
+  --color-status-awaiting: oklch(50% 0.12 62);
+  --color-status-neutral: oklch(49% 0.018 257);
   /* Backdrop behind modal overlays. Dark gets a near-black scrim: a light one would wash the page out. */
-  --color-scrim: rgb(21 24 29 / 0.4);
+  --color-scrim: oklch(23% 0.02 258 / 0.4);
+
+  --shadow-raised: 0 1px 2px oklch(23% 0.02 258 / 0.05);
+  --shadow-overlay: 0 8px 24px oklch(23% 0.02 258 / 0.12), 0 1px 3px oklch(23% 0.02 258 / 0.08);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-bg: #0d1014;
-  --color-bg-subtle: #14181e;
-  --color-bg-muted: #1c222a;
-  --color-fg: #e6e9ee;
-  --color-fg-muted: #a3acb9;
-  --color-fg-subtle: #8b94a3;
-  --color-border: #2a313b;
-  --color-border-strong: #3d4653;
-  --color-border-control: #6b7483;
-  --color-accent: #8ea2ff;
-  --color-accent-fg: #0d1014;
-  --color-focus: #8ea2ff;
-  --color-status-success: #4ade80;
-  --color-status-running: #38bdf8;
-  --color-status-failed: #f87171;
-  --color-status-awaiting: #fbbf24;
-  --color-status-neutral: #8b94a3;
-  --color-scrim: rgb(0 0 0 / 0.6);
+  /* Graphite, not black: the same cool hue at low lightness. */
+  --color-bg: oklch(17.5% 0.012 260);
+  --color-surface: oklch(20.5% 0.014 260);
+  --color-bg-subtle: oklch(22.5% 0.015 260);
+  --color-bg-muted: oklch(26.5% 0.017 260);
+  --color-fg: oklch(94% 0.008 255);
+  --color-fg-muted: oklch(76% 0.016 255);
+  --color-fg-subtle: oklch(68% 0.018 255);
+  --color-border: oklch(29.5% 0.016 260);
+  --color-border-strong: oklch(38% 0.018 260);
+  --color-border-control: oklch(56% 0.02 258);
+  --color-accent: oklch(72% 0.15 263);
+  --color-accent-fg: oklch(17.5% 0.012 260);
+  --color-focus: oklch(72% 0.15 263);
+  --color-status-success: oklch(78% 0.15 152);
+  --color-status-running: oklch(77% 0.11 225);
+  --color-status-failed: oklch(72% 0.16 25);
+  --color-status-awaiting: oklch(80% 0.13 75);
+  --color-status-neutral: oklch(68% 0.018 255);
+  --color-scrim: oklch(8% 0.01 260 / 0.65);
+
+  --shadow-raised: 0 1px 2px oklch(0% 0 0 / 0.3);
+  --shadow-overlay: 0 12px 32px oklch(0% 0 0 / 0.5), 0 1px 3px oklch(0% 0 0 / 0.4);
 }
 
 :root {
@@ -63,12 +78,17 @@
   --space-7: 28px;
   --space-8: 32px;
 
+  /* Drawn with a ruler: tight on controls, a little softer on cards. */
   --radius-control: 6px;
-  --radius-card: 8px;
+  --radius-card: 10px;
 
+  --font-display: "Space Grotesk Variable", "Space Grotesk", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
+  /* 2xs is the mono UPPERCASE label voice (eyebrows, table heads, meta). */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
   --text-xs: 12px;
   --text-xs--line-height: 16px;
   --text-sm: 14px;
@@ -79,8 +99,14 @@
   --text-lg--line-height: 28px;
   --text-2xl: 24px;
   --text-2xl--line-height: 32px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
 
   --duration-fast: 150ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Widest the content column grows on large screens; editors and diffs opt out with max-w-none. */
+  --width-content: 1200px;
 }
 
 @media (prefers-reduced-motion: reduce) {

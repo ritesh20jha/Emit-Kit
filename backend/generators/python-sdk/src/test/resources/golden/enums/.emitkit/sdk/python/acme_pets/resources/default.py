@@ -8,7 +8,7 @@ from pydantic import TypeAdapter
 from ..models import Color, Item
 
 if TYPE_CHECKING:
-    from ..client import EnumsClient, AsyncEnumsClient
+    from ..client import EnumsClient as _EnumsClient, AsyncEnumsClient as _AsyncEnumsClient
 
 
 def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
@@ -18,20 +18,20 @@ def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: EnumsClient) -> None:
+    def __init__(self, client: _EnumsClient) -> None:
         self._client = client
 
     def list_items(self, *, color: Optional[Color] = None) -> list[Item]:
-        response = self._client._request("GET", "/items", query=_drop_none({"color": TypeAdapter(Optional[Color]).dump_python(color, mode='json')}))
+        response = self._client._request("GET", "/items", query=_drop_none({"color": None if color is None else TypeAdapter(Color).dump_python(color, mode='json')}), security=[])
         return TypeAdapter(list[Item]).validate_python(response.json())
 
 
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncEnumsClient) -> None:
+    def __init__(self, client: _AsyncEnumsClient) -> None:
         self._client = client
 
     async def list_items(self, *, color: Optional[Color] = None) -> list[Item]:
-        response = await self._client._request("GET", "/items", query=_drop_none({"color": TypeAdapter(Optional[Color]).dump_python(color, mode='json')}))
+        response = await self._client._request("GET", "/items", query=_drop_none({"color": None if color is None else TypeAdapter(Color).dump_python(color, mode='json')}), security=[])
         return TypeAdapter(list[Item]).validate_python(response.json())

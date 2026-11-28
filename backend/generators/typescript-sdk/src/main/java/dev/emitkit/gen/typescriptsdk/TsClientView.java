@@ -8,6 +8,7 @@ import dev.emitkit.spec.model.SecurityScheme.Kind;
 import dev.emitkit.spec.model.Server;
 import dev.emitkit.spec.naming.Language;
 import dev.emitkit.spec.naming.NameStrategy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -28,9 +29,8 @@ import java.util.regex.Pattern;
  * @param hasApiKey whether the API declares a header or query apiKey scheme
  * @param hasBearer whether the API declares an HTTP bearer, OAuth2 or OpenID Connect scheme
  * @param hasBasic whether the API declares an HTTP basic scheme
- * @param apiKeyHeaders header names that receive the API key
- * @param apiKeyQueries query parameter names that receive the API key, empty when a header apiKey
- *     scheme exists so the key never appears in a URL
+ * @param securitySchemes one object literal per declared scheme the SDK can authenticate with,
+ *     keyed by the scheme name that operations use
  * @param resources one resource per file, each exposed as a client property
  */
 record TsClientView(
@@ -47,8 +47,7 @@ record TsClientView(
     boolean hasApiKey,
     boolean hasBearer,
     boolean hasBasic,
-    List<Literal> apiKeyHeaders,
-    List<Literal> apiKeyQueries,
+    List<Literal> securitySchemes,
     List<TsResources.Group> resources) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
@@ -65,8 +64,6 @@ record TsClientView(
     List<SecurityScheme> schemes = List.copyOf(model.securitySchemes().values());
     String defaultUrl = defaultBaseUrl(model.servers());
     String advice = baseUrlAdvice(model.servers());
-    List<Literal> headers = apiKeyNames(schemes, "header");
-    List<Literal> queries = headers.isEmpty() ? apiKeyNames(schemes, "query") : List.of();
     return new TsClientView(
         className,
         docText(model.info().title()),
@@ -78,18 +75,55 @@ record TsClientView(
         !defaultUrl.isEmpty(),
         advice,
         quote(className + ": baseUrl is required. " + advice),
-        !headers.isEmpty() || !queries.isEmpty(),
+        schemes.stream().anyMatch(TsClientView::isApiKeyScheme),
         schemes.stream().anyMatch(TsClientView::isBearerScheme),
         schemes.stream()
             .anyMatch(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme())),
-        headers,
-        queries,
+        authSchemes(schemes),
         TsResources.groups(model));
   }
 
   /** The client class name for {@code model}, from its title. */
   static String className(ApiModel model) {
     return clientName(NameStrategy.forLanguage(Language.TYPESCRIPT).type(model.info().title()));
+  }
+
+  /**
+   * An apiKey scheme the SDK can send: its key goes in a header, a cookie or a query parameter,
+   * under the name the scheme declares.
+   */
+  private static boolean isApiKeyScheme(SecurityScheme scheme) {
+    return scheme.kind() == Kind.API_KEY
+        && scheme.paramName() != null
+        && ("header".equals(scheme.in())
+            || "cookie".equals(scheme.in())
+            || "query".equals(scheme.in()));
+  }
+
+  /**
+   * How each declared scheme the SDK can authenticate with sends its credential, as TypeScript
+   * object literals keyed by scheme name. Operations name these schemes in their security
+   * requirement, and the client sends only those.
+   */
+  static List<Literal> authSchemes(List<SecurityScheme> schemes) {
+    List<Literal> out = new ArrayList<>();
+    for (SecurityScheme scheme : schemes) {
+      if (isApiKeyScheme(scheme)) {
+        out.add(
+            new Literal(
+                quote(scheme.name())
+                    + ": { kind: \"apiKey\", location: \""
+                    + scheme.in()
+                    + "\", name: "
+                    + quote(scheme.paramName())
+                    + " }"));
+      } else if (isBearerScheme(scheme)) {
+        out.add(new Literal(quote(scheme.name()) + ": { kind: \"bearer\" }"));
+      } else if (scheme.kind() == Kind.HTTP && "basic".equalsIgnoreCase(scheme.scheme())) {
+        out.add(new Literal(quote(scheme.name()) + ": { kind: \"basic\" }"));
+      }
+    }
+    return List.copyOf(out);
   }
 
   /** HTTP bearer, OAuth2 and OpenID Connect schemes all carry an access token as a bearer. */
@@ -171,12 +205,5 @@ record TsClientView(
       }
     }
     return out.append('"').toString();
-  }
-
-  private static List<Literal> apiKeyNames(List<SecurityScheme> schemes, String location) {
-    return schemes.stream()
-        .filter(s -> s.kind() == Kind.API_KEY && location.equals(s.in()) && s.paramName() != null)
-        .map(s -> new Literal(quote(s.paramName())))
-        .toList();
   }
 }

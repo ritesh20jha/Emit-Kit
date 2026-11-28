@@ -24,7 +24,10 @@ import dev.emitkit.domain.StepName;
 import dev.emitkit.domain.User;
 import dev.emitkit.domain.UserRepository;
 import dev.emitkit.domain.VersionStrategy;
+import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.ApiModelJson;
+import dev.emitkit.spec.model.ObjectSchema;
+import dev.emitkit.spec.parse.ParseResult;
 import dev.emitkit.spec.parse.SpecParser;
 import dev.emitkit.vcs.CommitFile;
 import dev.emitkit.vcs.VcsClient;
@@ -69,6 +72,7 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -106,6 +110,70 @@ class WRK03FetchParseTest {
               '200':
                 description: ok
       """;
+
+  /** Object schema whose property names are neither alphabetical nor sorted by length. */
+  private static final String BOOKS =
+      """
+      openapi: 3.1.0
+      info:
+        title: Bookshelf
+        version: 2.0.0
+      paths:
+        /books:
+          get:
+            operationId: listBooks
+            responses:
+              '200':
+                description: ok
+      components:
+        schemas:
+          Book:
+            type: object
+            properties:
+              title:
+                type: string
+              subtitle:
+                type: string
+              authorIds:
+                type: array
+                items:
+                  type: string
+              genre:
+                type: string
+              isbn:
+                type: string
+              pageCount:
+                type: integer
+              price:
+                type: number
+              keywords:
+                type: array
+                items:
+                  type: string
+              class:
+                type: string
+              default:
+                type: string
+              import:
+                type: string
+              format:
+                type: string
+      """;
+
+  private static final List<String> BOOK_PROPERTIES =
+      List.of(
+          "title",
+          "subtitle",
+          "authorIds",
+          "genre",
+          "isbn",
+          "pageCount",
+          "price",
+          "keywords",
+          "class",
+          "default",
+          "import",
+          "format");
   private static final AtomicLong SEQUENCE = new AtomicLong();
 
   @Container @ServiceConnection
@@ -118,6 +186,7 @@ class WRK03FetchParseTest {
   @Autowired private GenerationRunRepository runs;
   @Autowired private SpecSnapshotRepository snapshots;
   @Autowired private PlatformTransactionManager transactions;
+  @Autowired private JdbcTemplate jdbc;
 
   private final InMemoryVcsClient vcs = new InMemoryVcsClient();
   private User creator;
@@ -213,7 +282,7 @@ class WRK03FetchParseTest {
     queueRun(repo, SPEC_PATH);
     commit(SPEC_PATH, SPEC);
     String hash = new SpecParser().parse(SPEC).contentHash();
-    // A stored snapshot with the same hash. Its other columns are marked so a rewrite would show.
+    // A stored snapshot with the same hash. Its parsed columns are marked, so the repair shows.
     SpecSnapshot stored =
         snapshots.saveAndFlush(
             new SpecSnapshot(null, projectId, hash, SPEC, "{}", "stored-marker"));
@@ -223,8 +292,12 @@ class WRK03FetchParseTest {
     GenerationRun run = reload();
     assertThat(run.getSpecSnapshotId()).isEqualTo(stored.getId());
     assertThat(snapshots.findByProjectIdOrderByCreatedAtDesc(projectId)).hasSize(1);
-    assertThat(snapshots.findById(stored.getId()).orElseThrow().getInfoVersion())
-        .isEqualTo("stored-marker");
+    // The row is reused and repaired from this run's parse of the same content.
+    SpecSnapshot repaired = snapshots.findById(stored.getId()).orElseThrow();
+    assertThat(repaired.getInfoVersion()).isEqualTo("1.0.0");
+    assertThat(repaired.getApiModel())
+        .isEqualTo(ApiModelJson.toJson(new SpecParser().parse(SPEC).model()));
+    assertThat(repaired.getRawContent()).isEqualTo(SPEC);
     assertThat(StepOutputs.read(run.getStepOutputs(), PARSE_SPEC, Map.class))
         .hasValue(Map.of("snapshotId", stored.getId()));
   }
@@ -267,6 +340,40 @@ class WRK03FetchParseTest {
     // A failed run is never resumed, so the spec text is not kept in its step outputs.
     assertThat(StepOutputs.read(run.getStepOutputs(), FETCH_SPEC, Map.class))
         .hasValue(Map.of("commitSha", head));
+  }
+
+  @Test
+  void storedSnapshotWithScrambledKeyOrder_isRepairedByNextRun() {
+    queueRun(repo, SPEC_PATH);
+    commit(SPEC_PATH, BOOKS);
+    ParseResult parsed = new SpecParser().parse(BOOKS);
+    String fresh = ApiModelJson.toJson(parsed.model());
+    SpecSnapshot stored =
+        snapshots.saveAndFlush(
+            new SpecSnapshot(null, projectId, parsed.contentHash(), BOOKS, fresh, "stored-marker"));
+    // Rows written while the column was jsonb hold the keys in jsonb's order. Reproduce that.
+    jdbc.update(
+        "update spec_snapshots set api_model = cast(cast(? as jsonb) as json) where id = ?",
+        fresh,
+        stored.getId());
+    assertThat(bookProperties(snapshots.findById(stored.getId()).orElseThrow().getApiModel()))
+        .isNotEqualTo(BOOK_PROPERTIES);
+
+    runner().run(runId);
+
+    GenerationRun run = reload();
+    assertThat(run.getCurrentStep()).isEqualTo(StepName.FINALIZE);
+    assertThat(run.getSpecSnapshotId()).isEqualTo(stored.getId());
+    assertThat(snapshots.findByProjectIdOrderByCreatedAtDesc(projectId)).hasSize(1);
+    SpecSnapshot after = snapshots.findById(stored.getId()).orElseThrow();
+    assertThat(after.getApiModel()).isEqualTo(fresh);
+    assertThat(bookProperties(after.getApiModel())).isEqualTo(BOOK_PROPERTIES);
+    // The model the diff step reads back is the one a fresh parse gives.
+    ApiModel repairedModel = ApiModelJson.fromJson(after.getApiModel());
+    assertThat(repairedModel).isEqualTo(parsed.model());
+    assertThat(after.getInfoVersion()).isEqualTo("2.0.0");
+    assertThat(after.getRawContent()).isEqualTo(BOOKS);
+    assertThat(after.getContentHash()).isEqualTo(parsed.contentHash());
   }
 
   @Test
@@ -357,6 +464,12 @@ class WRK03FetchParseTest {
     assertThat(StepOutputs.read(run.getStepOutputs(), PARSE_SPEC, Map.class))
         .hasValue(Map.of("snapshotId", snapshot.getId()));
     assertThat(run.getCurrentStep()).isEqualTo(StepName.FINALIZE);
+  }
+
+  /** The property names of the Book schema, in the order the stored document lists them. */
+  private static List<String> bookProperties(String apiModel) {
+    return ((ObjectSchema) ApiModelJson.fromJson(apiModel).schemas().get("Book"))
+        .properties().keySet().stream().toList();
   }
 
   /** Creates a project on {@code repoFullName} and a queued run for it. */

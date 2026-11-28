@@ -9,38 +9,38 @@ from pydantic import TypeAdapter
 from ..models import Object
 
 if TYPE_CHECKING:
-    from ..client import ReservedWordsClient, AsyncReservedWordsClient
+    from ..client import ReservedWordsClient as _ReservedWordsClient, AsyncReservedWordsClient as _AsyncReservedWordsClient
 
 
 class UserResource:
     """Operations tagged user."""
 
-    def __init__(self, client: ReservedWordsClient) -> None:
+    def __init__(self, client: _ReservedWordsClient) -> None:
         self._client = client
 
     def class_(self) -> None:
-        self._client._request("GET", "/class")
+        self._client._request("GET", "/class", security=[])
 
     def import_(self) -> None:
-        self._client._request("GET", "/import")
+        self._client._request("GET", "/import", security=[])
 
     def get_item_in(self, *, in_: str) -> Object:
-        response = self._client._request("GET", f"/items/{_quote(str(in_), safe='')}")
+        response = self._client._request("GET", f"/items/{_quote(str(in_), safe='')}", security=[])
         return TypeAdapter(Object).validate_python(response.json())
 
 
 class AsyncUserResource:
     """Operations tagged user."""
 
-    def __init__(self, client: AsyncReservedWordsClient) -> None:
+    def __init__(self, client: _AsyncReservedWordsClient) -> None:
         self._client = client
 
     async def class_(self) -> None:
-        await self._client._request("GET", "/class")
+        await self._client._request("GET", "/class", security=[])
 
     async def import_(self) -> None:
-        await self._client._request("GET", "/import")
+        await self._client._request("GET", "/import", security=[])
 
     async def get_item_in(self, *, in_: str) -> Object:
-        response = await self._client._request("GET", f"/items/{_quote(str(in_), safe='')}")
+        response = await self._client._request("GET", f"/items/{_quote(str(in_), safe='')}", security=[])
         return TypeAdapter(Object).validate_python(response.json())

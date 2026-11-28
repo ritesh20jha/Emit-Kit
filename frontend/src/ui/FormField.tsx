@@ -42,7 +42,8 @@ export function FormField<T extends FieldValues>({ name, label, description, chi
 
   return (
     <FormControlContext.Provider value={state}>
-      <div className="flex flex-col gap-1.5">
+      {/* Capped at a readable measure: a full-width field on a wide screen hides where the value ends. */}
+      <div className="flex w-full max-w-lg flex-col gap-1.5">
         <Label htmlFor={id}>{label}</Label>
         {children}
         {description && (

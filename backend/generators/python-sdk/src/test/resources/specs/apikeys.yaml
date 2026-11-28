@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: API Keys
+  version: 1.0.0
+servers:
+  - url: https://api.keys.example.com/v1
+components:
+  securitySchemes:
+    headerKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    queryKey:
+      type: apiKey
+      in: query
+      name: api_key
+    cookieKey:
+      type: apiKey
+      in: cookie
+      name: sid
+  schemas:
+    ApiError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    ApiKeysClient:
+      type: object
+      properties:
+        name:
+          type: string
+paths:
+  /both:
+    get:
+      operationId: headerBeatsQuery
+      tags: [keys]
+      # The query scheme is listed first; the header scheme must still be the one sent.
+      security:
+        - queryKey: []
+        - headerKey: []
+      responses:
+        '200': {description: ok}
+  /cookie:
+    get:
+      operationId: cookieBeatsQuery
+      tags: [keys]
+      security:
+        - queryKey: []
+        - cookieKey: []
+      parameters:
+        - name: session
+          in: cookie
+          schema: {type: string}
+      responses:
+        '200': {description: ok}
+  /query-only:
+    get:
+      operationId: queryOnly
+      tags: [keys]
+      security:
+        - queryKey: []
+      responses:
+        '200': {description: ok}
+  /none:
+    get:
+      operationId: noCredentials
+      tags: [keys]
+      security: []
+      responses:
+        '200': {description: ok}
+  /collide:
+    get:
+      operationId: collidingParams
+      tags: [keys]
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer}
+        - name: limit
+          in: header
+          schema: {type: string}
+        - name: Accept
+          in: header
+          schema: {type: string}
+        - name: Authorization
+          in: header
+          schema: {type: string}
+        - name: Content-Type
+          in: header
+          schema: {type: string}
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeysClient'
+        '500':
+          description: failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /query-collide:
+    get:
+      operationId: queryNameCollision
+      tags: [keys]
+      security:
+        - queryKey: []
+      parameters:
+        - name: api_key
+          in: query
+          schema: {type: string}
+      responses:
+        '200': {description: ok}
+  /items:
+    post:
+      operationId: createItem
+      tags: [keys]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: {type: string}
+      responses:
+        '200': {description: ok}
+  /arrays:
+    get:
+      operationId: arrayParams
+      tags: [keys]
+      parameters:
+        - name: X-Tags
+          in: header
+          required: true
+          schema:
+            type: array
+            items: {type: string}
+        - name: prefs
+          in: cookie
+          schema:
+            type: array
+            items: {type: string}
+      responses:
+        '200': {description: ok}

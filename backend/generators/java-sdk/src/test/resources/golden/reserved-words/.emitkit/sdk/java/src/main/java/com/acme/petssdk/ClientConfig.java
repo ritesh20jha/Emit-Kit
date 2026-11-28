@@ -14,21 +14,36 @@ record ClientConfig(
     int maxRetries,
     HttpClient httpClient,
     Duration timeout,
-    Map<String, String> authHeaders,
-    Map<String, String> authQuery) {
+    Map<String, Credential> credentials) {
+
+  /** The headers, query parameters and cookies that one security scheme sends. */
+  record Credential(
+      Map<String, String> headers, Map<String, String> query, Map<String, String> cookies) {
+
+    Credential {
+      headers = Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+      query = Collections.unmodifiableMap(new LinkedHashMap<>(query));
+      cookies = Collections.unmodifiableMap(new LinkedHashMap<>(cookies));
+    }
+
+    // Credential values are never printed, only the names they send.
+    @Override
+    public String toString() {
+      return "Credential[headers=" + headers.keySet() + ", query=" + query.keySet()
+          + ", cookies=" + cookies.keySet() + "]";
+    }
+  }
 
   ClientConfig {
     baseUrl = Objects.requireNonNull(baseUrl, "baseUrl").replaceAll("/+$", "");
     httpClient = Objects.requireNonNull(httpClient, "httpClient");
-    authHeaders = Collections.unmodifiableMap(new LinkedHashMap<>(authHeaders));
-    authQuery = Collections.unmodifiableMap(new LinkedHashMap<>(authQuery));
+    credentials = Collections.unmodifiableMap(new LinkedHashMap<>(credentials));
   }
 
-  // Credential values are never printed, only the names of the auth headers and query parameters.
+  // Credential values are never printed, only the names of the security schemes.
   @Override
   public String toString() {
     return "ClientConfig[baseUrl=" + baseUrl + ", maxRetries=" + maxRetries
-        + ", timeout=" + timeout + ", authHeaders=" + authHeaders.keySet()
-        + ", authQuery=" + authQuery.keySet() + "]";
+        + ", timeout=" + timeout + ", credentials=" + credentials.keySet() + "]";
   }
 }

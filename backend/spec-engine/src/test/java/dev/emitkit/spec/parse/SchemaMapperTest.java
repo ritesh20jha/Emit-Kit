@@ -70,6 +70,39 @@ class SchemaMapperTest {
   }
 
   @Test
+  void discriminatorMappingKeepsEachValueAndItsSchemaName() {
+    var yaml =
+        """
+        openapi: 3.0.3
+        info: {title: Mapped, version: 1.0.0}
+        paths: {}
+        components:
+          schemas:
+            Format:
+              oneOf:
+                - $ref: '#/components/schemas/Print'
+                - $ref: '#/components/schemas/Ebook'
+              discriminator:
+                propertyName: kind
+                mapping:
+                  print: '#/components/schemas/Print'
+                  ebook: Ebook
+            Print: {type: object, properties: {kind: {type: string}}}
+            Ebook: {type: object, properties: {kind: {type: string}}}
+        """;
+    var r = PARSER.parse(yaml);
+    assertThat(r.ok()).as("errors: %s", r.errors()).isTrue();
+    var s = (OneOfSchema) r.model().schemas().get("Format");
+    assertThat(s.discriminator()).isEqualTo("kind");
+    assertThat(s.mapping()).isEqualTo(Map.of("print", "Print", "ebook", "Ebook"));
+  }
+
+  @Test
+  void oneOfWithoutMappingHasNoMapping() {
+    assertThat(((OneOfSchema) map("Shape")).mapping()).isEmpty();
+  }
+
+  @Test
   void allOfParts() {
     assertThat(((AllOfSchema) map("Dog")).parts()).hasSize(2);
   }

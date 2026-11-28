@@ -29,10 +29,10 @@ public final class PythonSdkGenerator implements Generator {
 
   @Override
   public List<GeneratedFile> generate(ApiModel model, GeneratorContext ctx) {
-    PyClientView view = PyClientView.of(model, ctx);
+    PyTypeRenderer types = new PyTypeRenderer(model);
+    PyClientView view = PyClientView.of(model, ctx, types.exportedNames());
     String root = sdkRoot(ctx.outputDir());
     String pkg = root + view.packageDir() + "/";
-    PyTypeRenderer types = new PyTypeRenderer(model);
     List<GeneratedFile> files = new ArrayList<>();
     files.add(generated(root + "pyproject.toml", "pyproject.toml", view));
     files.add(generated(root + "README.md", "README.md", view));
@@ -40,6 +40,8 @@ public final class PythonSdkGenerator implements Generator {
     files.add(generated(pkg + "client.py", "client.py", view));
     files.add(generated(pkg + "errors.py", "errors.py", view));
     files.add(generated(pkg + "models.py", "models.py", types.modelsModule()));
+    // PEP 561 marker: type checkers use the package's inline annotations once it is installed.
+    files.add(new GeneratedFile(pkg + "py.typed", "", FileKind.GENERATED));
     files.add(
         new GeneratedFile(
             pkg + "custom/__init__.py",

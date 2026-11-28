@@ -10,13 +10,32 @@ services:
       - ./vault/policies:/policies:ro
       - ./local-secrets:/secrets
 
+  # One api and one worker, and no WAL archive or off-host backup: production's redundancy and backups are not needed
+  # on a dev machine. wal-init and backup sit in an unused profile, so `up` skips them and does not build the image.
+  postgres:
+    # The image's default command: plain postgres, without production's WAL archiving.
+    command: !reset null
+    volumes: !override
+      - postgres-data:/var/lib/postgresql
+    depends_on: !reset {}
+
+  wal-init:
+    profiles: [backup]
+
+  backup:
+    profiles: [backup]
+
   api:
+    deploy:
+      replicas: 1
     environment:
       # Where GitHub sends webhooks. https://localhost cannot be reached by GitHub; set LOCAL_PUBLIC_URL to a tunnel
       # URL for push-triggered runs (manual runs work without it).
       EMITKIT_PUBLIC_URL: ${LOCAL_PUBLIC_URL:-https://localhost}
 
   worker:
+    deploy:
+      replicas: 1
     environment:
       EMITKIT_WORKER_PIPELINE_ENABLED: "true"
       EMITKIT_SANDBOX_IMAGE: ${LOCAL_TOOLCHAIN_IMAGE:-emitkit/toolchain:test}

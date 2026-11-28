@@ -62,6 +62,12 @@ public interface VcsClient {
   /** Creates {@code tag} at {@code sha}. Returns false if the tag already existed. */
   boolean createTag(String repo, String tag, String sha);
 
+  /**
+   * Names of the tags in {@code repo} that start with {@code prefix}, such as {@code sdk/v},
+   * without the {@code refs/tags/} part. Empty when the repo has none.
+   */
+  List<String> listTags(String repo, String prefix);
+
   /** Registers a webhook for the given events. */
   Webhook registerWebhook(String repo, String url, String secret, Set<String> events);
 

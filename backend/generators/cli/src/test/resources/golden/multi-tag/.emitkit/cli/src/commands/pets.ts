@@ -16,6 +16,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/pets/" + encodeURIComponent(String(opts["id"])) + "/inventory",
+        security: [],
       }),
     );
 }

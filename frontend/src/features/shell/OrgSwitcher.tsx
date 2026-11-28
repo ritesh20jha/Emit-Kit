@@ -33,8 +33,11 @@ export function OrgSwitcher({ orgs, currentOrgId, onNavigate }: { orgs: OrgMembe
       onOpenChange={setOpen}
       title="Switch organization"
       trigger={
-        <Button variant="ghost" className="w-full justify-start px-2">
-          <span className="truncate">{current?.name ?? "Choose organization"}</span>
+        <Button variant="secondary" className="h-9 w-full justify-start px-2 shadow-none [&>span]:w-full [&>span]:min-w-0">
+          <span aria-hidden="true" className="inline-flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-bg-muted font-mono text-2xs font-semibold text-fg-muted uppercase">
+            {(current?.name ?? "?").slice(0, 1)}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left">{current?.name ?? "Choose organization"}</span>
           <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-fg-subtle" />
         </Button>
       }

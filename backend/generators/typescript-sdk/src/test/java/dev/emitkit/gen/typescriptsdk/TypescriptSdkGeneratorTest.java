@@ -22,6 +22,10 @@ import dev.emitkit.spec.model.Response;
 import dev.emitkit.spec.model.Schema;
 import dev.emitkit.spec.model.SecurityScheme;
 import dev.emitkit.spec.model.Server;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,10 +50,17 @@ class TypescriptSdkGeneratorTest {
         "no-operation-ids",
         "reserved-words",
         "deep-nesting",
-        "multi-tag"
+        "multi-tag",
+        "bookshelf"
       })
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
+  }
+
+  @Test
+  void securityAlternativesMatchGolden() {
+    GoldenFiles.assertMatches(
+        "security-alternatives", generator.generate(localSpec("security-alternatives"), ctx()));
   }
 
   @Test
@@ -99,7 +110,154 @@ class TypescriptSdkGeneratorTest {
                 + "\"/pets/\" + encodeURIComponent(String(params.petId)));\n"
                 + "    return response.json();\n")
         .contains("async listPets(params: { limit?: number } = {}): Promise<Pet[]> {")
-        .contains("async createPet(body?: Pet): Promise<void> {");
+        .contains("async createPet(body: Pet): Promise<void> {");
+  }
+
+  @Test
+  void headerAndCookieParametersAreReadFromParamsAndSent() {
+    assertThat(method("bookshelf", "src/resources/books.ts", "createBook"))
+        .contains("params: { idempotencyKey: string }, body: BookInput")
+        .contains("headers: { \"Idempotency-Key\": params.idempotencyKey },");
+    assertThat(method("bookshelf", "src/resources/loans.ts", "createLoan"))
+        .contains("params: { session?: string }, body: LoanRequest")
+        .contains("cookies: { session: params.session },");
+  }
+
+  @Test
+  void requiredRequestBodiesAreNotOptional() {
+    assertThat(method("bookshelf", "src/resources/books.ts", "createBook"))
+        .contains("body: BookInput)");
+    assertThat(method("bookshelf", "src/resources/books.ts", "updateBook"))
+        .contains("body: BookPatch)");
+    assertThat(method("bookshelf", "src/resources/loans.ts", "createLoan"))
+        .doesNotContain("body?:");
+    assertThat(method("petstore", "src/resources/pets.ts", "createPet"))
+        .contains("createPet(body: Pet)");
+  }
+
+  @Test
+  void eachOperationNamesOnlyItsEffectiveSecuritySchemes() {
+    assertThat(method("bookshelf", "src/resources/books.ts", "listBooks"))
+        .contains("security: [[\"bearerAuth\"]],");
+    assertThat(method("bookshelf", "src/resources/authors.ts", "listAuthors"))
+        .doesNotContain("security:");
+    assertThat(method("bookshelf", "src/resources/loans.ts", "createLoan"))
+        .contains("security: [[\"apiKeyAuth\"], [\"oauth2\"]],");
+  }
+
+  @Test
+  void oneSecurityAlternativeIsSentTheFirstWhoseCredentialsAreAllHeld() {
+    assertThat(content("bookshelf", "src/client.ts"))
+        .contains("this.authFor(this.chooseRequirement(options.security ?? []))")
+        .contains(
+            "return held.find((names) => !names.some(isQueryApiKey)) ?? held[0] ?? named[0] ?? [];");
+  }
+
+  @Test
+  void onlyReplaySafeRequestsAreRetriedAndRetryAfterIsHonoured() {
+    assertThat(content("petstore", "src/client.ts"))
+        .contains(
+            "const REPLAY_SAFE_METHODS = new Set([\"GET\", \"HEAD\", \"PUT\", \"DELETE\", "
+                + "\"OPTIONS\"]);")
+        .contains("headers.has(\"Idempotency-Key\")")
+        .contains("const MAX_RETRY_AFTER_MS = 30_000;")
+        .contains("response.headers.get(\"Retry-After\")");
+  }
+
+  @Test
+  void summaryAndDescriptionAreSeparatedByABlankLine() {
+    assertThat(method("bookshelf", "src/resources/books.ts", "listBooks"))
+        .startsWith(
+            "  /**\n"
+                + "   * List books\n"
+                + "   *\n"
+                + "   * Returns a page of books, optionally filtered by genre and availability.\n"
+                + "   */\n"
+                + "  async listBooks(");
+  }
+
+  @Test
+  void identicalSummaryAndDescriptionAreWrittenOnce() {
+    var model =
+        withListPets(op ->
+            new Operation(
+                op.operationId(),
+                op.operationIdSynthesized(),
+                op.method(),
+                op.path(),
+                op.tag(),
+                "Lists pets",
+                "Lists pets",
+                op.parameters(),
+                op.requestBody(),
+                op.responses(),
+                op.security(),
+                false));
+    assertThat(sdkFile(model, "src/resources/pets.ts"))
+        .contains("  /** Lists pets */\n  async listPets(");
+  }
+
+  @Test
+  void scopedPackageNameKeepsTheDerivedNameAsItsBase() {
+    assertThat(packageJson(names("bookshelf", "emitkit-playground")))
+        .contains("\"name\": \"@bookshelf/emitkit-playground\",");
+    assertThat(packageJson(names(null, "emitkit-playground")))
+        .contains("\"name\": \"emitkit-playground\",");
+  }
+
+  @Test
+  void oneApiKeyIsSentPerRequestPreferringAHeaderOrCookieScheme() {
+    // listItems lists headerKey then queryKey: only the header key is sent, never the query.
+    assertThat(content("security-alternatives", "src/resources/items.ts"))
+        .contains("security: [[\"headerKey\"], [\"queryKey\"]],");
+    assertThat(content("security-alternatives", "src/client.ts"))
+        .contains("\"headerKey\": { kind: \"apiKey\", location: \"header\", name: \"X-Api-Key\" },")
+        .contains("\"queryKey\": { kind: \"apiKey\", location: \"query\", name: \"api_key\" },")
+        .contains("\"cookieKey\": { kind: \"apiKey\", location: \"cookie\", name: \"sid\" },");
+  }
+
+  @Test
+  void sameNamedParametersInDifferentLocationsGetDistinctKeys() {
+    // The query limit keeps its key; the later header limit is renamed, and both wire names stay.
+    assertThat(method("security-alternatives", "src/resources/items.ts", "listItems"))
+        .contains("params: { limit?: number; headerLimit?: number } = {}")
+        .contains("query: { limit: params.limit },")
+        .contains("headers: { limit: params.headerLimit },");
+    // The path xId is declared first, so the header X-Id is the one renamed.
+    assertThat(method("security-alternatives", "src/resources/items.ts", "getThing"))
+        .contains("params: { xId: string; headerXId?: string; session?: string }")
+        .contains("encodeURIComponent(String(params.xId))")
+        .contains("headers: { \"X-Id\": params.headerXId },")
+        .contains("cookies: { session: params.session },");
+  }
+
+  @Test
+  void reservedHeadersAreIgnored() {
+    assertThat(method("security-alternatives", "src/resources/items.ts", "listItems"))
+        .doesNotContain("Authorization")
+        .doesNotContain("authorization")
+        .doesNotContain("Accept")
+        .doesNotContain("content-type")
+        .doesNotContain("Content-Type");
+  }
+
+  @Test
+  void retryAfterAcceptsOnlyDelaySecondsOrADate() {
+    assertThat(content("petstore", "src/client.ts"))
+        .contains("if (/^\\d+$/.test(trimmed)) {")
+        .contains("if (!/[A-Za-z]/.test(trimmed)) {");
+  }
+
+  @Test
+  void credentialsAreAppliedAfterParametersSoTheyWin() {
+    var client = content("petstore", "src/client.ts");
+    assertThat(client.indexOf("Object.entries(auth.query)"))
+        .isGreaterThan(client.indexOf("Object.entries(options.query ?? {})"));
+    assertThat(client.indexOf("Object.entries(auth.headers)"))
+        .isGreaterThan(client.indexOf("Object.entries(options.headers ?? {})"));
+    assertThat(client.indexOf("Object.entries(auth.cookies)"))
+        .isGreaterThan(client.indexOf("Object.entries(options.cookies ?? {})"));
+    assertThat(client).contains("const cookies = new Map<string, string>();");
   }
 
   @Test
@@ -174,23 +332,24 @@ class TypescriptSdkGeneratorTest {
   }
 
   @Test
-  void apiKeyIsSentInHeaderOnlyWhenAHeaderSchemeExists() {
-    // auth-schemes declares both a header and a query apiKey scheme.
+  void apiKeySchemesMapToTheirDeclaredLocationAndName() {
+    // auth-schemes declares a header apiKey scheme and a query apiKey scheme.
     String client =
         content(
             generate("auth-schemes", ".emitkit/", names(null, "petstore-sdk")), "src/client.ts");
     assertThat(client)
-        .contains("this.authHeaders[\"X-API-Key\"] = opts.apiKey;")
-        .doesNotContain("api_key");
+        .contains("\"headerKey\": { kind: \"apiKey\", location: \"header\", name: \"X-API-Key\" },")
+        .contains("\"queryKey\": { kind: \"apiKey\", location: \"query\", name: \"api_key\" },")
+        .contains("this.credentials.apiKey = opts.apiKey;");
   }
 
   @Test
-  void apiKeyFallsBackToTheQueryParameterWithoutAHeaderScheme() {
+  void apiKeyOnlyApiMapsTheQueryScheme() {
     var queryKey =
         new SecurityScheme("queryKey", SecurityScheme.Kind.API_KEY, "query", "api_key", null);
     assertThat(clientSource(Map.of("queryKey", queryKey)))
-        .contains("this.authQuery[\"api_key\"] = opts.apiKey;")
-        .doesNotContain("this.authHeaders[\"");
+        .contains("\"queryKey\": { kind: \"apiKey\", location: \"query\", name: \"api_key\" },")
+        .doesNotContain("kind: \"apiKey\", location: \"header\"");
   }
 
   @Test
@@ -198,7 +357,8 @@ class TypescriptSdkGeneratorTest {
     var oauth = new SecurityScheme("oauth", SecurityScheme.Kind.OAUTH2, null, null, null);
     assertThat(clientSource(Map.of("oauth", oauth)))
         .contains("  bearerToken?: string;")
-        .contains("this.authHeaders[\"Authorization\"] = `Bearer ${opts.bearerToken}`;");
+        .contains("this.credentials.bearer = `Bearer ${opts.bearerToken}`;")
+        .contains("\"oauth\": { kind: \"bearer\" },");
   }
 
   @Test
@@ -206,7 +366,7 @@ class TypescriptSdkGeneratorTest {
     var oidc = new SecurityScheme("oidc", SecurityScheme.Kind.OPENID_CONNECT, null, null, null);
     assertThat(clientSource(Map.of("oidc", oidc)))
         .contains("  bearerToken?: string;")
-        .contains("this.authHeaders[\"Authorization\"] = `Bearer ${opts.bearerToken}`;");
+        .contains("this.credentials.bearer = `Bearer ${opts.bearerToken}`;");
   }
 
   @Test
@@ -312,7 +472,7 @@ class TypescriptSdkGeneratorTest {
                 true));
     assertThat(sdkFile(model, "src/resources/pets.ts"))
         .contains(
-            "  /**\n   * Lists *\\/ pets All of them.\n   * @deprecated\n   */\n  async listPets(");
+            "  /**\n   * Lists *\\/ pets\n   *\n   * All of them.\n   * @deprecated\n   */\n  async listPets(");
   }
 
   @Test
@@ -433,6 +593,15 @@ class TypescriptSdkGeneratorTest {
     assertThat(sdkFile(model, "src/types.ts")).doesNotContain("PropertiesId");
   }
 
+  /** One resource method with its doc comment, as written in the file. */
+  private String method(String fixture, String file, String name) {
+    String source = content(fixture, file);
+    int at = source.indexOf("  async " + name + "(");
+    int start = source.lastIndexOf("\n\n", at) + 2;
+    int end = source.indexOf("\n  }\n", at) + "\n  }\n".length();
+    return source.substring(start, end);
+  }
+
   /** A string-valued schema, so the exported declaration is one short line. */
   private static Schema text() {
     return new PrimitiveSchema(PrimitiveType.STRING, null, false, null);
@@ -499,6 +668,29 @@ class TypescriptSdkGeneratorTest {
         base.schemas());
   }
 
+  /** A fixture kept in this module, or else a shared one. */
+  private static ApiModel load(String fixture) {
+    return fixture.equals("security-alternatives")
+        ? localSpec(fixture)
+        : FixtureSpecs.load(fixture);
+  }
+
+  /** A spec under this module's {@code specs/} resources, parsed as the shared fixtures are. */
+  private static ApiModel localSpec(String name) {
+    String raw;
+    try (var in =
+        TypescriptSdkGeneratorTest.class.getResourceAsStream("/specs/" + name + ".yaml")) {
+      raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    ApiModel model = new SpecParser().parse(raw).model();
+    if (model == null) {
+      throw new IllegalStateException(name + " did not parse");
+    }
+    return model;
+  }
+
   private static ApiModel model(
       String title, List<Server> servers, Map<String, SecurityScheme> schemes) {
     ApiModel base = FixtureSpecs.load("petstore");
@@ -534,7 +726,7 @@ class TypescriptSdkGeneratorTest {
   }
 
   private List<GeneratedFile> generate(String fixture, String outputDir, PackageNames names) {
-    return generate(FixtureSpecs.load(fixture), outputDir, names);
+    return generate(load(fixture), outputDir, names);
   }
 
   private List<GeneratedFile> generate(ApiModel model, String outputDir, PackageNames names) {

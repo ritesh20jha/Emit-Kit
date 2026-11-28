@@ -7,16 +7,18 @@ interface StatusMeta {
   label: string;
   icon: LucideIcon;
   tone: string;
+  /** Tinted fill and hairline in the status colour. The label stays fg, so contrast never rests on the tint. */
+  chip: string;
   spin?: boolean;
 }
 
 const STATUS: Record<RunStatus, StatusMeta> = {
-  QUEUED: { label: "Queued", icon: Clock, tone: "text-status-neutral" },
-  RUNNING: { label: "Running", icon: LoaderCircle, tone: "text-status-running", spin: true },
-  AWAITING_APPROVAL: { label: "Awaiting approval", icon: CirclePause, tone: "text-status-awaiting" },
-  SUCCESS: { label: "Succeeded", icon: CircleCheck, tone: "text-status-success" },
-  FAILED: { label: "Failed", icon: CircleX, tone: "text-status-failed" },
-  CANCELLED: { label: "Cancelled", icon: CircleSlash, tone: "text-status-neutral" },
+  QUEUED: { label: "Queued", icon: Clock, tone: "text-status-neutral", chip: "border-status-neutral/30 bg-status-neutral/8" },
+  RUNNING: { label: "Running", icon: LoaderCircle, tone: "text-status-running", chip: "border-status-running/35 bg-status-running/10", spin: true },
+  AWAITING_APPROVAL: { label: "Awaiting approval", icon: CirclePause, tone: "text-status-awaiting", chip: "border-status-awaiting/35 bg-status-awaiting/10" },
+  SUCCESS: { label: "Succeeded", icon: CircleCheck, tone: "text-status-success", chip: "border-status-success/35 bg-status-success/10" },
+  FAILED: { label: "Failed", icon: CircleX, tone: "text-status-failed", chip: "border-status-failed/35 bg-status-failed/10" },
+  CANCELLED: { label: "Cancelled", icon: CircleSlash, tone: "text-status-neutral", chip: "border-status-neutral/30 bg-status-neutral/8" },
 };
 
 /** Run status as icon + text. Colour is supplementary, so the label carries the meaning on its own. */
@@ -27,10 +29,12 @@ export function StatusPill({ status, className }: { status: RunStatus; className
   const Icon = known?.icon ?? Circle;
   const tone = known?.tone ?? "text-status-neutral";
   const spin = known?.spin;
+  const chip = known?.chip ?? "border-border bg-bg-subtle";
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-control border border-border bg-bg-subtle px-2 text-xs font-medium text-fg",
+        "inline-flex h-6 items-center gap-1.5 rounded-full border pr-2.5 pl-2 text-xs font-medium whitespace-nowrap text-fg",
+        chip,
         className,
       )}
     >

@@ -5,60 +5,60 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote as _quote
 
 if TYPE_CHECKING:
-    from ..client import NoOperationIdsClient, AsyncNoOperationIdsClient
+    from ..client import NoOperationIdsClient as _NoOperationIdsClient, AsyncNoOperationIdsClient as _AsyncNoOperationIdsClient
 
 
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: NoOperationIdsClient) -> None:
+    def __init__(self, client: _NoOperationIdsClient) -> None:
         self._client = client
 
     def get_users(self) -> None:
-        self._client._request("GET", "/users")
+        self._client._request("GET", "/users", security=[])
 
     def post_users(self) -> None:
-        self._client._request("POST", "/users")
+        self._client._request("POST", "/users", security=[])
 
     def get_users_by_id(self, *, id: int) -> None:
-        self._client._request("GET", f"/users/{_quote(str(id), safe='')}")
+        self._client._request("GET", f"/users/{_quote(str(id), safe='')}", security=[])
 
     def delete_users_by_id(self, *, id: int) -> None:
-        self._client._request("DELETE", f"/users/{_quote(str(id), safe='')}")
+        self._client._request("DELETE", f"/users/{_quote(str(id), safe='')}", security=[])
 
     def get_users_by_id_posts_by_post_id(self, *, id: int, post_id: str) -> None:
-        self._client._request("GET", f"/users/{_quote(str(id), safe='')}/posts/{_quote(str(post_id), safe='')}")
+        self._client._request("GET", f"/users/{_quote(str(id), safe='')}/posts/{_quote(str(post_id), safe='')}", security=[])
 
     def get_ab(self) -> None:
-        self._client._request("GET", "/a-b")
+        self._client._request("GET", "/a-b", security=[])
 
     def get_ab2(self) -> None:
-        self._client._request("GET", "/a/b")
+        self._client._request("GET", "/a/b", security=[])
 
 
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncNoOperationIdsClient) -> None:
+    def __init__(self, client: _AsyncNoOperationIdsClient) -> None:
         self._client = client
 
     async def get_users(self) -> None:
-        await self._client._request("GET", "/users")
+        await self._client._request("GET", "/users", security=[])
 
     async def post_users(self) -> None:
-        await self._client._request("POST", "/users")
+        await self._client._request("POST", "/users", security=[])
 
     async def get_users_by_id(self, *, id: int) -> None:
-        await self._client._request("GET", f"/users/{_quote(str(id), safe='')}")
+        await self._client._request("GET", f"/users/{_quote(str(id), safe='')}", security=[])
 
     async def delete_users_by_id(self, *, id: int) -> None:
-        await self._client._request("DELETE", f"/users/{_quote(str(id), safe='')}")
+        await self._client._request("DELETE", f"/users/{_quote(str(id), safe='')}", security=[])
 
     async def get_users_by_id_posts_by_post_id(self, *, id: int, post_id: str) -> None:
-        await self._client._request("GET", f"/users/{_quote(str(id), safe='')}/posts/{_quote(str(post_id), safe='')}")
+        await self._client._request("GET", f"/users/{_quote(str(id), safe='')}/posts/{_quote(str(post_id), safe='')}", security=[])
 
     async def get_ab(self) -> None:
-        await self._client._request("GET", "/a-b")
+        await self._client._request("GET", "/a-b", security=[])
 
     async def get_ab2(self) -> None:
-        await self._client._request("GET", "/a/b")
+        await self._client._request("GET", "/a/b", security=[])

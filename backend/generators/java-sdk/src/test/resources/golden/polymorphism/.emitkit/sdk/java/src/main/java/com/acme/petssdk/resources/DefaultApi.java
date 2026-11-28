@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.http.HttpResponse;
+import java.util.List;
 
 /** Operations tagged default. */
 public final class DefaultApi {
@@ -21,24 +22,27 @@ public final class DefaultApi {
 
   /** POST /pets */
   public void createPet(Pet body) {
-    client.request("POST", "/pets", null, body);
+    client.request("POST", "/pets", null, null, null, body, List.of());
   }
 
   /** GET /shapes */
   public JsonNode listShapes() {
-    HttpResponse<String> response = client.request("GET", "/shapes", null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/shapes", null, null, null, null, List.of());
     return read(response, new TypeReference<JsonNode>() {});
   }
 
   /** GET /kittens */
   public Kitten getKitten() {
-    HttpResponse<String> response = client.request("GET", "/kittens", null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/kittens", null, null, null, null, List.of());
     return read(response, new TypeReference<Kitten>() {});
   }
 
   /** GET /owners */
   public Owner getOwner() {
-    HttpResponse<String> response = client.request("GET", "/owners", null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/owners", null, null, null, null, List.of());
     return read(response, new TypeReference<Owner>() {});
   }
 

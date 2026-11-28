@@ -22,7 +22,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -85,22 +84,21 @@ public class ParseSpecStep implements PipelineStep {
     String content = fetched.content();
     String hash = sha256Hex(content);
     String projectId = run.getProjectId();
-    SpecSnapshot fresh = null;
-    if (snapshots.findByProjectIdAndContentHash(projectId, hash).isEmpty()) {
-      ParseResult parsed = PARSER.parse(content);
-      if (!parsed.ok()) {
-        trimFetchOutput(run.getId(), fetched.commitSha());
-        return new StepResult.Fail(ErrorCode.SPEC_INVALID, firstErrors(parsed.errors()));
-      }
-      fresh =
-          new SpecSnapshot(
-              null,
-              projectId,
-              hash,
-              content,
-              ApiModelJson.toJson(parsed.model()),
-              parsed.infoVersion());
+    // Parsed on every run, even when the hash is already stored. A stored row may predate a parser
+    // or serialisation fix, and storeAndPoint repairs it from this parse.
+    ParseResult parsed = PARSER.parse(content);
+    if (!parsed.ok()) {
+      trimFetchOutput(run.getId(), fetched.commitSha());
+      return new StepResult.Fail(ErrorCode.SPEC_INVALID, firstErrors(parsed.errors()));
     }
+    SpecSnapshot fresh =
+        new SpecSnapshot(
+            null,
+            projectId,
+            hash,
+            content,
+            ApiModelJson.toJson(parsed.model()),
+            parsed.infoVersion());
     String snapshotId = save(run.getId(), projectId, hash, fresh, fetched.commitSha());
     if (snapshotId == null) {
       return new StepResult.Park();
@@ -114,7 +112,7 @@ public class ParseSpecStep implements PipelineStep {
    * winner's has committed, so one retry finds the winner's row. A second failure propagates.
    */
   private @Nullable String save(
-      String runId, String projectId, String hash, @Nullable SpecSnapshot fresh, String commitSha) {
+      String runId, String projectId, String hash, SpecSnapshot fresh, String commitSha) {
     try {
       return storeAndPoint(runId, projectId, hash, fresh, commitSha);
     } catch (DataIntegrityViolationException e) {
@@ -123,12 +121,12 @@ public class ParseSpecStep implements PipelineStep {
   }
 
   /**
-   * In one transaction: stores {@code fresh} unless the hash is already stored, points the run at
-   * the snapshot, and replaces the FETCH_SPEC output with its commit alone. Returns null, and
-   * writes nothing, if the run has become terminal.
+   * In one transaction: stores {@code fresh} unless the hash is already stored, in which case the
+   * stored row is repaired to match it. Points the run at the snapshot, and replaces the FETCH_SPEC
+   * output with its commit alone. Returns null, and writes nothing, if the run has become terminal.
    */
   private @Nullable String storeAndPoint(
-      String runId, String projectId, String hash, @Nullable SpecSnapshot fresh, String commitSha) {
+      String runId, String projectId, String hash, SpecSnapshot fresh, String commitSha) {
     return transactions.execute(tx ->
         runs.findByIdForUpdate(runId)
             .filter(run -> !run.getStatus().isTerminal())
@@ -137,8 +135,8 @@ public class ParseSpecStep implements PipelineStep {
               String id =
                   snapshots
                       .findByProjectIdAndContentHash(projectId, hash)
-                      .orElseGet(() ->
-                          snapshots.saveAndFlush(Objects.requireNonNull(fresh, "fresh snapshot")))
+                      .map(stored -> repair(stored, fresh))
+                      .orElseGet(() -> snapshots.saveAndFlush(fresh))
                       .getId();
               run.setSpecSnapshotId(id);
               run.setStepOutputs(
@@ -147,6 +145,19 @@ public class ParseSpecStep implements PipelineStep {
               return id;
             })
             .orElse(null));
+  }
+
+  /**
+   * Brings a stored snapshot up to a fresh parse of the same content. Only the parsed columns are
+   * written, and only when they differ, so a repaired row is written once and then left alone.
+   */
+  private SpecSnapshot repair(SpecSnapshot stored, SpecSnapshot fresh) {
+    if (stored.getApiModel().equals(fresh.getApiModel())
+        && stored.getInfoVersion().equals(fresh.getInfoVersion())) {
+      return stored;
+    }
+    stored.replaceParsedFields(fresh.getApiModel(), fresh.getInfoVersion());
+    return snapshots.saveAndFlush(stored);
   }
 
   /**

@@ -29,10 +29,16 @@ Credentials are set on the builder. Each method exists only when the API declare
 scheme: `apiKey` for API key schemes, `bearerToken` for HTTP bearer, OAuth2 and OpenID Connect
 schemes, and `basic` for HTTP basic. Other schemes, such as cookie API keys, are not mapped.
 
+Each operation sends only the credentials of the security schemes in its own requirement, or the
+API's global one when it declares none. An operation with an empty requirement sends no
+credentials. When the requirement lists alternatives, the request sends one of them: the first whose
+credentials are all set, preferring one that does not put an API key in the URL.
+
 ## Parameters
 
-Header and cookie parameters are not sent yet, so an operation that needs one cannot be called
-through this SDK until support is added.
+Required parameters are method arguments and optional ones are fields of the operation's
+`...Options` record. Header parameters are sent as headers. Cookie parameters are sent in a
+`Cookie` header, with each value percent-encoded.
 
 ## Errors
 
@@ -41,3 +47,7 @@ and 403), `NotFoundException` (404), `ConflictException` (409), `RateLimitExcept
 `ServerException` (5xx). Other statuses throw a plain `ApiException`. A failed connection throws
 `UncheckedIOException`. 429 and 5xx responses are retried twice by default, and requests time out
 after 60 seconds. Set `maxRetries` or `timeout` on the builder to change these.
+
+Only idempotent requests are retried: GET, HEAD, PUT, DELETE and OPTIONS, and any request that
+sends an `Idempotency-Key` header. A `Retry-After` header on the response sets the wait, as seconds
+or an HTTP date, capped at 30 seconds. Without one, the wait doubles from 500 milliseconds.

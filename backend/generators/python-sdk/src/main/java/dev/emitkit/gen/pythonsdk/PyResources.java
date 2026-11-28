@@ -25,20 +25,28 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * The resource modules, {@code {pkg}/resources/{tag}.py}: one module per tag, each with a sync
  * {@code {Tag}Resource} and an {@code Async{Tag}Resource} holding one method per operation. Path
- * and query parameters and the request body are keyword-only arguments; headers and cookies are not
- * sent.
+ * path, query, header and cookie parameters and the request body are keyword-only arguments.
  */
 final class PyResources {
 
   /** Argument names the method body needs: a parameter of one of these would shadow them. */
   private static final Set<String> ARG_SHADOWS = Set.of("list", "response", "self", "str");
 
+  /**
+   * Lower-case header names the SDK sets itself: the credentials and the request's media types. An
+   * operation's parameter of one of these names is not an argument.
+   */
+  private static final Set<String> RESERVED_HEADERS =
+      Set.of("accept", "authorization", "content-type");
+
   private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^{}]*)}");
-  private static final Set<String> TYPING = Set.of("Any", "Optional", "Union");
+  private static final Set<String> TYPING =
+      Set.of("Annotated", "Any", "Literal", "Optional", "Union");
   private static final Set<String> PYDANTIC = Set.of("Field", "TypeAdapter");
 
   private PyResources() {}
@@ -109,8 +117,8 @@ final class PyResources {
         PyClientView.docText(tag),
         className,
         "Async" + className,
-        view.className(),
-        view.asyncClassName(),
+        "_" + view.className(),
+        "_" + view.asyncClassName(),
         imports(scope, view),
         imports.contains("_drop_none"),
         plans.stream().map(p -> method(p, false)).toList(),
@@ -127,22 +135,45 @@ final class PyResources {
     List<String> args = new ArrayList<>();
     Map<String, String> pathNames = new HashMap<>();
     List<String> query = new ArrayList<>();
+    List<String> headers = new ArrayList<>();
+    List<String> cookies = new ArrayList<>();
+    // The location of the first parameter that took each argument name, so that a later parameter
+    // from another location with the same name can take a location-prefixed one.
+    Map<String, ParamLocation> firstLocation = new HashMap<>();
     for (Parameter p : op.parameters()) {
-      if (p.in() != ParamLocation.PATH && p.in() != ParamLocation.QUERY) {
+      if (p.in() == ParamLocation.HEADER && RESERVED_HEADERS.contains(lower(p.name()))) {
         continue;
       }
-      String py = PyTypeRenderer.unique(names.member(p.name()), argNames);
+      String base = names.member(p.name());
+      ParamLocation first = firstLocation.putIfAbsent(base, p.in());
+      String py =
+          first != null && first != p.in()
+              ? PyTypeRenderer.unique(lower(p.in().name()) + "_" + base, argNames)
+              : PyTypeRenderer.unique(base, argNames);
       String type = types.typeOf(p.schema(), PyTypeRenderer.hint(op, p.name()), scope);
       boolean path = p.in() == ParamLocation.PATH;
       boolean required = path || p.required();
       String annotated = annotated(type, required, p.schema(), scope);
-      String value = sentValue(p.schema(), annotated, py, scope);
-      if (path) {
-        pathNames.put(p.name(), value);
-        args.add(py + ": " + annotated);
-      } else {
-        query.add(PyClientView.quote(p.name()) + ": " + value);
-        args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+      boolean optional = !path && (!p.required() || p.schema().nullable());
+      String value = sentValue(p.schema(), type, optional, py, scope);
+      String entry = PyClientView.quote(p.name()) + ": " + value;
+      switch (p.in()) {
+        case PATH -> {
+          pathNames.put(p.name(), value);
+          args.add(py + ": " + annotated);
+        }
+        case QUERY -> {
+          query.add(entry);
+          args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+        }
+        case HEADER -> {
+          headers.add(entry);
+          args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+        }
+        case COOKIE -> {
+          cookies.add(entry);
+          args.add(keywordArg(py, type, p.required(), p.schema(), scope));
+        }
       }
     }
     List<String> request = new ArrayList<>();
@@ -152,30 +183,82 @@ final class PyResources {
       scope.use("Any");
       request.add("query=" + scope.use("_drop_none") + "({" + String.join(", ", query) + "})");
     }
+    if (!headers.isEmpty()) {
+      request.add("headers={" + String.join(", ", headers) + "}");
+    }
+    if (!cookies.isEmpty()) {
+      request.add("cookies={" + String.join(", ", cookies) + "}");
+    }
     if (op.requestBody() != null) {
       String py = PyTypeRenderer.unique("body", argNames);
       Schema schema = op.requestBody().schema();
       String type = types.typeOf(schema, PyTypeRenderer.hint(op, "request"), scope);
       boolean required = op.requestBody().required();
       args.add(keywordArg(py, type, required, schema, scope));
+      // Typed as Any: the body is only serialised, and pydantic 2.8's stubs type a union's adapter
+      // as Never, which mypy --strict would reject.
       String dump =
           scope.use("TypeAdapter")
-              + "("
+              + "["
+              + scope.use("Any")
+              + "]("
               + type
               + ").dump_python("
               + py
               + ", mode=\"json\", by_alias=True, exclude_unset=True)";
       request.add("json_body=" + (required ? dump : "None if " + py + " is None else " + dump));
     }
+    // The effective requirement: the operation's own, or the document's when it has none.
+    // One list per alternative; the client sends the first whose credentials it holds.
+    String security =
+        op.securityRequirements().stream()
+            .map(alternative ->
+                "["
+                    + String.join(", ", alternative.stream().map(PyClientView::quote).toList())
+                    + "]")
+            .collect(Collectors.joining(", ", "[", "]"));
+    request.add("security=" + security);
     Schema response = PyTypeRenderer.successSchema(op);
     String returnType =
         response == null
             ? "None"
             : types.typeOf(response, PyTypeRenderer.hint(op, "response"), scope);
     String adapter = response == null ? null : scope.use("TypeAdapter") + "(" + returnType + ")";
-    String doc = op.summary() == null ? "" : PyClientView.docText(op.summary());
+    String doc = doc(op.summary(), op.description());
     String name = PyTypeRenderer.unique(names.member(op.operationId()), methodNames);
     return new Plan(name, args, returnType, adapter, doc, request);
+  }
+
+  /**
+   * The docstring text of an operation: its summary, then its description after a blank line when
+   * both exist and differ. A description that repeats the summary adds nothing. The text is not
+   * wrapped in quotes; lines after the first are indented to the method body.
+   */
+  static String doc(String summary, String description) {
+    String title = summary == null ? "" : PyClientView.plainText(summary);
+    String body = description == null ? "" : PyClientView.plainText(description);
+    if (body.isEmpty() || body.equals(title)) {
+      return PyClientView.docText(title);
+    }
+    String text = docLines(description);
+    return title.isEmpty() ? text : PyClientView.docText(title) + "\n\n        " + text;
+  }
+
+  /** The lines of a description, escaped and indented to the method body, without blank edges. */
+  private static String docLines(String description) {
+    StringBuilder out = new StringBuilder();
+    for (String line : description.strip().split("\\R", -1)) {
+      String text = PyClientView.docText(line);
+      if (out.length() > 0) {
+        out.append(text.isEmpty() ? "\n" : "\n        ");
+      }
+      out.append(text);
+    }
+    return out.toString();
+  }
+
+  private static String lower(String text) {
+    return text.toLowerCase(Locale.ROOT);
   }
 
   /** A keyword-only argument: required, or defaulting to None with an Optional type. */
@@ -197,11 +280,15 @@ final class PyResources {
    * The expression that sends a path or query value. Primitives are sent as they are. Any other
    * type, such as an enum, is dumped in JSON mode so the wire form is its value.
    */
-  private static String sentValue(Schema schema, String annotated, String py, Scope scope) {
+  private static String sentValue(
+      Schema schema, String type, boolean optional, String py, Scope scope) {
     if (isPrimitive(schema)) {
       return py;
     }
-    return scope.use("TypeAdapter") + "(" + annotated + ").dump_python(" + py + ", mode='json')";
+    // The adapter is built for the bare type, which pydantic 2.8's stubs can type under mypy
+    // --strict; an optional value is dumped only when it is set.
+    String dump = scope.use("TypeAdapter") + "(" + type + ").dump_python(" + py + ", mode='json')";
+    return optional ? "None if " + py + " is None else " + dump : dump;
   }
 
   private static boolean isPrimitive(Schema schema) {
@@ -290,10 +377,15 @@ final class PyResources {
     if (!scope.names.isEmpty()) {
       groups.add("from ..models import " + String.join(", ", new TreeSet<>(scope.names)));
     }
+    // Aliased, so that a model of the same name as a client class is not shadowed.
     groups.add(
         "if TYPE_CHECKING:\n    from ..client import "
             + view.className()
+            + " as _"
+            + view.className()
             + ", "
+            + view.asyncClassName()
+            + " as _"
             + view.asyncClassName());
     return String.join("\n\n", groups);
   }

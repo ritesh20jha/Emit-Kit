@@ -119,7 +119,16 @@ final class SchemaMapper {
     }
     String discriminator =
         schema.getDiscriminator() == null ? null : schema.getDiscriminator().getPropertyName();
-    return new OneOfSchema(mapped, discriminator, isNullable, description);
+    return new OneOfSchema(mapped, discriminator, isNullable, description, mapping(schema));
+  }
+
+  /** The discriminator mapping as value to schema name, with {@code $ref}s reduced to names. */
+  private static Map<String, String> mapping(io.swagger.v3.oas.models.media.Schema<?> schema) {
+    var out = new LinkedHashMap<String, String>();
+    if (schema.getDiscriminator() != null && schema.getDiscriminator().getMapping() != null) {
+      schema.getDiscriminator().getMapping().forEach((value, ref) -> out.put(value, refName(ref)));
+    }
+    return out;
   }
 
   private static EnumSchema enumeration(

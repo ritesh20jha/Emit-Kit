@@ -80,6 +80,11 @@ final class TsNames {
     return NAMES.member(tag);
   }
 
+  /** The params key of a header or cookie parameter: its name in camel case, like other members. */
+  static String headerOrCookieKey(String raw) {
+    return NAMES.member(raw);
+  }
+
   /** A method name for an operation, escaped so it cannot clash with the resource class. */
   static String methodName(String operationId) {
     String name = NAMES.member(operationId);

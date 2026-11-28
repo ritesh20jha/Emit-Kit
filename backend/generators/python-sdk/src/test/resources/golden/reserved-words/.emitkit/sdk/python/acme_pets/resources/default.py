@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from ..client import ReservedWordsClient, AsyncReservedWordsClient
+    from ..client import ReservedWordsClient as _ReservedWordsClient, AsyncReservedWordsClient as _AsyncReservedWordsClient
 
 
 def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
@@ -14,24 +14,24 @@ def _drop_none(values: dict[str, Any]) -> dict[str, Any]:
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: ReservedWordsClient) -> None:
+    def __init__(self, client: _ReservedWordsClient) -> None:
         self._client = client
 
     def delete(self) -> None:
-        self._client._request("POST", "/delete")
+        self._client._request("POST", "/delete", security=[])
 
     def default(self, *, default: Optional[str] = None) -> None:
-        self._client._request("GET", "/default", query=_drop_none({"default": default}))
+        self._client._request("GET", "/default", query=_drop_none({"default": default}), security=[])
 
 
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncReservedWordsClient) -> None:
+    def __init__(self, client: _AsyncReservedWordsClient) -> None:
         self._client = client
 
     async def delete(self) -> None:
-        await self._client._request("POST", "/delete")
+        await self._client._request("POST", "/delete", security=[])
 
     async def default(self, *, default: Optional[str] = None) -> None:
-        await self._client._request("GET", "/default", query=_drop_none({"default": default}))
+        await self._client._request("GET", "/default", query=_drop_none({"default": default}), security=[])

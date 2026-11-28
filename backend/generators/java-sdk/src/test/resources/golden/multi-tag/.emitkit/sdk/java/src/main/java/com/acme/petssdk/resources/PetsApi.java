@@ -4,6 +4,7 @@ package com.acme.petssdk.resources;
 import com.acme.petssdk.MultiTagClient;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /** Operations tagged pets. */
 public final class PetsApi {
@@ -16,7 +17,14 @@ public final class PetsApi {
 
   /** GET /pets/{id}/inventory */
   public void getPetInventory(int id) {
-    client.request("GET", "/pets/" + segment(String.valueOf(id)) + "/inventory", null, null);
+    client.request(
+        "GET",
+        "/pets/" + segment(String.valueOf(id)) + "/inventory",
+        null,
+        null,
+        null,
+        null,
+        List.of());
   }
 
   /** Percent-encodes one path segment. URLEncoder writes spaces as '+', so use %20. */

@@ -278,6 +278,12 @@ public final class InMemoryVcsClient implements VcsClient {
   }
 
   @Override
+  public synchronized List<String> listTags(String repo, String prefix) {
+    recordCall("listTags", repo);
+    return repo(repo).tags.keySet().stream().filter(tag -> tag.startsWith(prefix)).toList();
+  }
+
+  @Override
   public synchronized Webhook registerWebhook(
       String repo, String url, String secret, Set<String> events) {
     recordCall("registerWebhook", repo);

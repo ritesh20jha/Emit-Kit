@@ -9,6 +9,11 @@ export interface Invocation {
   method: string;
   /** Path below the base URL, with path parameters already URL-encoded. */
   path: string;
+  /**
+   * The operation's effective security requirement: its alternatives, each the names of the schemes
+   * sent together. One alternative is sent. Empty sends no credentials.
+   */
+  security: string[][];
   query?: Record<string, string | undefined>;
   headers?: Record<string, string | undefined>;
   cookies?: Record<string, string | undefined>;
@@ -28,10 +33,49 @@ type GlobalOptions = {
 
 /** Base URL used when --base-url is not passed. Empty when no server is an absolute http(s) URL. */
 const DEFAULT_BASE_URL = "";
-/** Headers that receive the --api-key value. */
-const API_KEY_HEADERS: string[] = ["X-API-Key"];
-/** Query parameters that receive the --api-key value, used only when no header scheme exists. */
-const API_KEY_QUERIES: string[] = [];
+
+/** Where a security scheme's credential goes: the bearer token, or the API key in a location. */
+type Credential =
+  | { kind: "bearer" }
+  | { kind: "apiKey"; in: "header" | "query" | "cookie"; name: string };
+
+type ApiKeyCredential = Extract<Credential, { kind: "apiKey" }>;
+
+/** Prefix that marks a string as a large integer's digits. Private-use, so it cannot be typed by accident. */
+const LARGE_INTEGER_MARK = "";
+
+/** Characters that separate JSON tokens, outside strings. */
+const DELIMITER = /[\s",:{}[\]]/;
+
+/** Credential for each security scheme the spec declares, keyed by scheme name. */
+const SECURITY_SCHEMES = new Map<string, Credential>([
+  ["headerKey", { kind: "apiKey", in: "header", name: "X-API-Key" }],
+  ["queryKey", { kind: "apiKey", in: "query", name: "api_key" }],
+  ["bearerAuth", { kind: "bearer" }],
+  ["oauth", { kind: "bearer" }],
+]);
+
+/**
+ * The alternative of a security requirement to send. Of the alternatives whose credentials are set,
+ * the first that puts no API key in the URL, else the first of them. When none is set, the first
+ * alternative, which sends what it can. Empty alternatives are skipped.
+ */
+function chooseRequirement(alternatives: string[][], globals: GlobalOptions): string[] {
+  const holds = (name: string): boolean => {
+    const credential = SECURITY_SCHEMES.get(name);
+    if (credential?.kind === "bearer") {
+      return globals.token !== undefined;
+    }
+    return credential?.kind === "apiKey" && globals.apiKey !== undefined;
+  };
+  const inQuery = (name: string): boolean => {
+    const credential = SECURITY_SCHEMES.get(name);
+    return credential?.kind === "apiKey" && credential.in === "query";
+  };
+  const named = alternatives.filter((names) => names.length > 0);
+  const held = named.filter((names) => names.every(holds));
+  return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];
+}
 
 const program = new Command()
   .name("petstore")
@@ -39,8 +83,8 @@ const program = new Command()
   .version("1.2.3")
   .configureHelp({ showGlobalOptions: true })
   .option("--base-url <url>", "Base URL of the API")
-  .option("--token <token>", "Bearer token, sent as Authorization: Bearer <token>")
-  .option("--api-key <key>", "API key, sent in the header or query parameter the API declares")
+  .option("--token <token>", "Bearer token, sent as Authorization: Bearer <token> where the operation accepts it")
+  .option("--api-key <key>", "API key, sent where the operation accepts it, in the location the API declares")
   .addOption(new Option("--output <format>", "Output format").choices(["json", "table"]).default("json"));
 
 const run: Runner = async (call) => {
@@ -51,18 +95,7 @@ const run: Runner = async (call) => {
   }
   const url = new URL(baseUrl.replace(/\/+$/, "") + call.path);
   const headers = new Headers({ Accept: "application/json" });
-  if (globals.token !== undefined) {
-    headers.set("Authorization", `Bearer ${globals.token}`);
-  }
-  const apiKey = globals.apiKey;
-  if (apiKey !== undefined) {
-    for (const name of API_KEY_HEADERS) {
-      headers.set(name, apiKey);
-    }
-    for (const name of API_KEY_QUERIES) {
-      url.searchParams.set(name, apiKey);
-    }
-  }
+  // Parameters go first, so that a credential applied below replaces a parameter of the same name.
   for (const [name, value] of Object.entries(call.query ?? {})) {
     if (value !== undefined) {
       url.searchParams.set(name, value);
@@ -73,11 +106,38 @@ const run: Runner = async (call) => {
       headers.set(name, value);
     }
   }
-  const cookies = Object.entries(call.cookies ?? {}).flatMap(([name, value]) =>
-    value === undefined ? [] : [`${name}=${encodeURIComponent(value)}`],
-  );
-  if (cookies.length > 0) {
-    headers.set("Cookie", cookies.join("; "));
+  const cookies = new Map<string, string>();
+  for (const [name, value] of Object.entries(call.cookies ?? {})) {
+    if (value !== undefined) {
+      cookies.set(name, value);
+    }
+  }
+  // Only the schemes of one alternative of this operation's security requirement are considered.
+  const credentials = chooseRequirement(call.security, globals).flatMap((name) => {
+    const credential = SECURITY_SCHEMES.get(name);
+    return credential === undefined ? [] : [credential];
+  });
+  if (globals.token !== undefined && credentials.some((credential) => credential.kind === "bearer")) {
+    headers.set("Authorization", `Bearer ${globals.token}`);
+  }
+  if (globals.apiKey !== undefined) {
+    // One API key per request: the first header or cookie scheme in the operation's order, and a
+    // query scheme only when no header or cookie scheme applies.
+    const keys = credentials.filter((credential): credential is ApiKeyCredential => credential.kind === "apiKey");
+    const key: ApiKeyCredential | undefined = keys.find((credential) => credential.in !== "query") ?? keys[0];
+    if (key?.in === "header") {
+      headers.set(key.name, globals.apiKey);
+    } else if (key?.in === "query") {
+      url.searchParams.set(key.name, globals.apiKey);
+    } else if (key !== undefined) {
+      cookies.set(key.name, globals.apiKey);
+    }
+  }
+  if (cookies.size > 0) {
+    headers.set(
+      "Cookie",
+      [...cookies].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join("; "),
+    );
   }
   let body: string | undefined;
   if (call.body !== undefined) {
@@ -105,13 +165,128 @@ function printOutput(text: string, format: GlobalOptions["output"]): void {
   }
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(markLargeIntegers(text));
   } catch {
+    // Not JSON: print the body as received.
     process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
     return;
   }
-  const table = format === "table" ? renderTable(value) : undefined;
-  process.stdout.write(table ?? `${JSON.stringify(value, null, 2)}\n`);
+  if (format === "table") {
+    const table = renderTable(value);
+    process.stdout.write(table ?? (text.endsWith("\n") ? text : `${text}\n`));
+    return;
+  }
+  process.stdout.write(`${prettyJson(text)}\n`);
+}
+
+/**
+ * Re-indents JSON text by its tokens, so no number is ever read as a number and every digit is
+ * written as received. Strings are copied verbatim, escapes included. Empty objects and arrays stay
+ * on one line.
+ */
+function prettyJson(text: string): string {
+  let out = "";
+  let depth = 0;
+  let i = 0;
+  const newline = (level: number) => `\n${"  ".repeat(level)}`;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      const end = endOfString(text, i);
+      out += text.slice(i, end);
+      i = end;
+    } else if (c === "{" || c === "[") {
+      const close = c === "{" ? "}" : "]";
+      const next = skipSpace(text, i + 1);
+      if (text[next] === close) {
+        out += c + close;
+        i = next + 1;
+      } else {
+        depth += 1;
+        out += c + newline(depth);
+        i += 1;
+      }
+    } else if (c === "}" || c === "]") {
+      depth -= 1;
+      out += newline(depth) + c;
+      i += 1;
+    } else if (c === ",") {
+      out += "," + newline(depth);
+      i += 1;
+    } else if (c === ":") {
+      out += ": ";
+      i += 1;
+    } else if (isSpace(c)) {
+      i += 1;
+    } else {
+      const end = endOfToken(text, i);
+      out += text.slice(i, end);
+      i = end;
+    }
+  }
+  return out;
+}
+
+/** Marks each integer outside the safe range as a string, so that JSON.parse keeps its digits. */
+function markLargeIntegers(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      const end = endOfString(text, i);
+      out += text.slice(i, end);
+      i = end;
+    } else if (DELIMITER.test(c)) {
+      out += c;
+      i += 1;
+    } else {
+      const end = endOfToken(text, i);
+      const token = text.slice(i, end);
+      out += isLargeInteger(token) ? `"${LARGE_INTEGER_MARK}${token}"` : token;
+      i = end;
+    }
+  }
+  return out;
+}
+
+function isSpace(c: string): boolean {
+  return c === " " || c === "\n" || c === "\r" || c === "\t";
+}
+
+function skipSpace(text: string, from: number): number {
+  let i = from;
+  while (i < text.length && isSpace(text[i])) {
+    i += 1;
+  }
+  return i;
+}
+
+/** Index just past the closing quote of the string that opens at {@code start}. */
+function endOfString(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length && text[i] !== '"') {
+    i += text[i] === "\\" ? 2 : 1;
+  }
+  return Math.min(i + 1, text.length);
+}
+
+/** Index just past a run of non-delimiter characters, which is a number, true, false or null. */
+function endOfToken(text: string, start: number): number {
+  let i = start;
+  while (i < text.length && !DELIMITER.test(text[i])) {
+    i += 1;
+  }
+  return i === start ? start + 1 : i;
+}
+
+function isLargeInteger(token: string): boolean {
+  return /^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token));
+}
+
+/** The digits of a large integer marked by markLargeIntegers, or undefined for any other value. */
+function largeInteger(value: unknown): string | undefined {
+  return typeof value === "string" && value.startsWith(LARGE_INTEGER_MARK) ? value.slice(1) : undefined;
 }
 
 /** Renders an object, or an array of objects, as an aligned table. Other shapes return undefined. */
@@ -124,11 +299,34 @@ function renderTable(value: unknown): string | undefined {
   if (columns.length === 0) {
     return undefined;
   }
-  const cell = (v: unknown) => (typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? ""));
   const rows = items.map((item) => columns.map((column) => cell(item[column])));
   const widths = columns.map((column, i) => Math.max(column.length, ...rows.map((row) => row[i].length)));
   const line = (cells: string[]) => cells.map((text, i) => text.padEnd(widths[i])).join("  ").trimEnd();
   return `${[line(columns), ...rows.map(line)].join("\n")}\n`;
+}
+
+/** Text for one table cell. Nested values are written as compact JSON. */
+function cell(value: unknown): string {
+  const digits = largeInteger(value);
+  if (digits !== undefined) {
+    return digits;
+  }
+  return typeof value === "object" && value !== null ? compactJson(value) : String(value ?? "");
+}
+
+function compactJson(value: unknown): string {
+  const digits = largeInteger(value);
+  if (digits !== undefined) {
+    return digits;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(compactJson).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const members = Object.entries(value).map(([key, item]) => `${JSON.stringify(key)}:${compactJson(item)}`);
+    return `{${members.join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -61,6 +61,22 @@ class ApiModelJsonTest {
   }
 
   @Test
+  void discriminatorMappingSurvivesTheJsonRoundTrip() {
+    var model = handMadeModel();
+    var json = ApiModelJson.toJson(model);
+    assertThat(json).contains("\"mapping\":{\"ref\":\"Ref\"}");
+    var one = (OneOfSchema) ApiModelJson.fromJson(json).schemas().get("One");
+    assertThat(one.mapping()).isEqualTo(Map.of("ref", "Ref"));
+  }
+
+  @Test
+  void snapshotWithoutMappingStillReadsAsEmptyMapping() {
+    var json = ApiModelJson.toJson(handMadeModel()).replace(",\"mapping\":{\"ref\":\"Ref\"}", "");
+    var one = (OneOfSchema) ApiModelJson.fromJson(json).schemas().get("One");
+    assertThat(one.mapping()).isEmpty();
+  }
+
+  @Test
   void invalidJsonIsRejected() {
     assertThatThrownBy(() -> ApiModelJson.fromJson("{not json"))
         .isInstanceOf(IllegalArgumentException.class);
@@ -77,7 +93,8 @@ class ApiModelJsonTest {
     schemas.put("Arr", new ArraySchema(prim, true, null));
     schemas.put("Enm", new EnumSchema(PrimitiveType.STRING, List.of("a", "b"), false, null));
     schemas.put("Ref", ref);
-    schemas.put("One", new OneOfSchema(List.of(ref, prim), "kind", false, null));
+    schemas.put(
+        "One", new OneOfSchema(List.of(ref, prim), "kind", false, null, Map.of("ref", "Ref")));
     schemas.put("All", new AllOfSchema(List.of(ref), false, null));
     schemas.put(
         "Obj",

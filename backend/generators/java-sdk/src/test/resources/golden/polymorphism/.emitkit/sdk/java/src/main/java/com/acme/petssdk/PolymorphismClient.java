@@ -14,10 +14,18 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.StringJoiner;
+import java.util.TreeMap;
 
 /** Client for the Polymorphism API. */
 public final class PolymorphismClient {
@@ -27,7 +35,11 @@ public final class PolymorphismClient {
   private static final int DEFAULT_MAX_RETRIES = 2;
   private static final long RETRY_BASE_DELAY_MILLIS = 500;
   private static final int MAX_BACKOFF_SHIFT = 10;
+  /** Cap on any wait before a retry, including one that Retry-After asks for. */
   private static final long MAX_DELAY_MILLIS = 30_000;
+  /** Methods that are safe to repeat. Other requests are retried only with an Idempotency-Key. */
+  private static final Set<String> SAFE_METHODS =
+      Set.of("GET", "HEAD", "PUT", "DELETE", "OPTIONS");
   /** Shared by requests and the resource classes. Unknown response fields are ignored. */
   private static final ObjectMapper MAPPER =
       new ObjectMapper()
@@ -56,44 +68,81 @@ public final class PolymorphismClient {
   }
 
   /**
-   * Sends a request with the configured credentials, retrying 429 and 5xx responses with backoff.
-   * Other non-2xx statuses throw an {@link ApiException}.
+   * Sends a request with the credentials of one alternative of {@code security}, the operation's
+   * security requirement, and no others. Each alternative lists the schemes sent together. Of the
+   * alternatives whose credentials the client holds, the first that puts no API key in the URL is
+   * sent, else the first of them; when it holds none, the first alternative is sent with what it
+   * has. An empty list sends no credentials. Retries 429 and 5xx responses with backoff, but only for GET, HEAD,
+   * PUT, DELETE and OPTIONS requests and requests with an Idempotency-Key header. Other non-2xx
+   * statuses throw an {@link ApiException}.
    *
-   * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
-   * encoded here, and entries with a null name or value are skipped. A null query is empty, and a
-   * null body sends none.
+   * <p>{@code path} starts with {@code /} and is already percent-encoded. Query, header and cookie
+   * names and values are passed as given, and entries with a null name or value are skipped. A
+   * credential overrides a parameter of the same name. Cookies, the parameters and the credentials,
+   * share one Cookie header with URL-encoded values. A null map is empty, and a null body sends none.
    */
   public HttpResponse<String> request(
-      String method, String path, Map<String, String> query, Object body) {
-    HttpRequest request = buildRequest(method, path, query, body);
+      String method,
+      String path,
+      Map<String, String> query,
+      Map<String, String> headers,
+      Map<String, String> cookies,
+      Object body,
+      List<List<String>> security) {
+    HttpRequest request = buildRequest(method, path, query, headers, cookies, body, security);
+    // A retry could repeat a side effect, so only idempotent requests are retried.
+    boolean retryable =
+        SAFE_METHODS.contains(request.method())
+            || request.headers().firstValue("Idempotency-Key").isPresent();
     for (int attempt = 0; ; attempt++) {
       HttpResponse<String> response = send(request);
       int status = response.statusCode();
       if (status >= 200 && status < 300) {
         return response;
       }
-      if (!isRetryable(status) || attempt >= config.maxRetries()) {
+      if (!retryable || !isRetryable(status) || attempt >= config.maxRetries()) {
         throw toApiException(status, response.body());
       }
-      long delay = RETRY_BASE_DELAY_MILLIS << Math.min(attempt, MAX_BACKOFF_SHIFT);
-      sleep(Math.min(delay, MAX_DELAY_MILLIS));
+      sleep(retryDelayMillis(response, attempt));
     }
   }
 
   private HttpRequest buildRequest(
-      String method, String path, Map<String, String> query, Object body) {
-    Map<String, String> allQuery = new LinkedHashMap<>(config.authQuery());
-    if (query != null) {
-      query.forEach(
-          (name, value) -> {
-            if (name != null && value != null) {
-              allQuery.put(name, value);
-            }
-          });
+      String method,
+      String path,
+      Map<String, String> query,
+      Map<String, String> headers,
+      Map<String, String> cookies,
+      Object body,
+      List<List<String>> security) {
+    // Parameters first. Then the credentials of the operation's schemes, which win over a
+    // parameter of the same name, and where two schemes set a name the first one listed wins.
+    Map<String, String> allHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    Map<String, String> allQuery = new LinkedHashMap<>();
+    Map<String, String> allCookies = new LinkedHashMap<>();
+    addPresent(query, allQuery);
+    addPresent(headers, allHeaders);
+    addPresent(cookies, allCookies);
+    Map<String, String> credHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    Map<String, String> credQuery = new LinkedHashMap<>();
+    Map<String, String> credCookies = new LinkedHashMap<>();
+    for (String scheme : chooseRequirement(security)) {
+      ClientConfig.Credential credential = config.credentials().get(scheme);
+      if (credential != null) {
+        credential.headers().forEach(credHeaders::putIfAbsent);
+        credential.query().forEach(credQuery::putIfAbsent);
+        credential.cookies().forEach(credCookies::putIfAbsent);
+      }
+    }
+    allHeaders.putAll(credHeaders);
+    allQuery.putAll(credQuery);
+    allCookies.putAll(credCookies);
+    if (!allCookies.isEmpty()) {
+      allHeaders.put("Cookie", cookieHeader(allCookies));
     }
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
-    config.authHeaders().forEach(builder::header);
+    allHeaders.forEach(builder::header);
     builder.timeout(config.timeout());
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());
@@ -103,6 +152,41 @@ public final class PolymorphismClient {
           .method(method, HttpRequest.BodyPublishers.ofString(toJson(body)));
     }
     return builder.build();
+  }
+
+  /** The alternative of a security requirement to send; see {@link #request}. */
+  private List<String> chooseRequirement(List<List<String>> alternatives) {
+    Map<String, ClientConfig.Credential> held = config.credentials();
+    List<List<String>> named = alternatives.stream().filter(a -> !a.isEmpty()).toList();
+    List<List<String>> usable = named.stream().filter(a -> held.keySet().containsAll(a)).toList();
+    return usable.stream()
+        .filter(a -> a.stream().allMatch(scheme -> held.get(scheme).query().isEmpty()))
+        .findFirst()
+        .orElse(usable.isEmpty() ? (named.isEmpty() ? List.of() : named.get(0)) : usable.get(0));
+  }
+
+  /** Copies the entries that have a name and a value. */
+  private static void addPresent(Map<String, String> from, Map<String, String> to) {
+    if (from != null) {
+      from.forEach(
+          (name, value) -> {
+            if (name != null && value != null) {
+              to.put(name, value);
+            }
+          });
+    }
+  }
+
+  /** The Cookie header value: each name with its value percent-encoded, joined by semicolons. */
+  private static String cookieHeader(Map<String, String> cookies) {
+    StringJoiner joiner = new StringJoiner("; ");
+    cookies.forEach(
+        (name, value) ->
+            joiner.add(
+                name
+                    + "="
+                    + URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")));
+    return joiner.toString();
   }
 
   private HttpResponse<String> send(HttpRequest request) {
@@ -140,6 +224,37 @@ public final class PolymorphismClient {
 
   private static boolean isRetryable(int status) {
     return status == 429 || status >= 500;
+  }
+
+  /** The wait before a retry: Retry-After when the response has one, else exponential backoff. */
+  private static long retryDelayMillis(HttpResponse<String> response, int attempt) {
+    Optional<Long> retryAfter = retryAfterMillis(response);
+    if (retryAfter.isPresent()) {
+      return retryAfter.get();
+    }
+    long delay = RETRY_BASE_DELAY_MILLIS << Math.min(attempt, MAX_BACKOFF_SHIFT);
+    return Math.min(delay, MAX_DELAY_MILLIS);
+  }
+
+  /**
+   * The Retry-After wait in milliseconds, capped at 30 seconds. It is either a number of seconds or
+   * an HTTP date. Empty when the header is absent or is neither form.
+   */
+  private static Optional<Long> retryAfterMillis(HttpResponse<String> response) {
+    String value = response.headers().firstValue("Retry-After").orElse("").strip();
+    if (value.matches("\\d{1,9}")) {
+      return Optional.of(Math.min(Long.parseLong(value) * 1000, MAX_DELAY_MILLIS));
+    }
+    if (value.matches("\\d+")) {
+      return Optional.of(MAX_DELAY_MILLIS);
+    }
+    try {
+      Instant date = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+      long millis = Duration.between(Instant.now(), date).toMillis();
+      return Optional.of(Math.min(Math.max(millis, 0), MAX_DELAY_MILLIS));
+    } catch (DateTimeParseException e) {
+      return Optional.empty();
+    }
   }
 
   private static ApiException toApiException(int status, String body) {
@@ -209,13 +324,14 @@ public final class PolymorphismClient {
         throw new IllegalArgumentException(
             "PolymorphismClient: maxRetries must be a non-negative integer");
       }
-      Map<String, String> headers = new LinkedHashMap<>();
-      Map<String, String> query = new LinkedHashMap<>();
+      // Credentials are keyed by security scheme. An operation sends only one alternative of its
+      // security requirement.
+      Map<String, ClientConfig.Credential> credentials = new LinkedHashMap<>();
       // Redirects are intentionally not followed, so credentials never leave the configured host.
       java.net.http.HttpClient client =
           httpClient == null ? java.net.http.HttpClient.newHttpClient() : httpClient;
       return new PolymorphismClient(
-          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, headers, query));
+          new ClientConfig(resolvedBaseUrl, maxRetries, client, timeout, credentials));
     }
   }
 }

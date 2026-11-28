@@ -20,6 +20,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SpecLinterTest {
 
@@ -283,5 +284,30 @@ class SpecLinterTest {
   void explicitDefaultTagPasses() {
     var raw = fixture("operation-tags-pass.yaml").replace("tags: [pets]", "tags: [default]");
     assertThat(lint(raw)).extracting(LintIssue::ruleId).doesNotContain("operation-tags");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"3.0.3", "3.1.0"})
+  void componentRefPathParam_countsAsDeclared(String openapi) {
+    var issues =
+        lint(
+            """
+            openapi: %s
+            info: {title: Refs, version: "1"}
+            paths:
+              /pets/{petId}:
+                parameters:
+                  - $ref: '#/components/parameters/PetId'
+                get:
+                  operationId: getPet
+                  responses:
+                    '200': {description: ok}
+            components:
+              parameters:
+                PetId: {name: petId, in: path, required: true, schema: {type: string}}
+            """
+                .formatted(openapi));
+
+    assertThat(ofRule(issues, "path-params-defined")).isEmpty();
   }
 }

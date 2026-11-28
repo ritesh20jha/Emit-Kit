@@ -4,7 +4,7 @@ import { useTheme } from "./theme/useTheme";
 
 // Sonner paints each toast from these variables, so they carry the design tokens and follow the theme.
 const TOKENS = {
-  "--normal-bg": "var(--color-bg)",
+  "--normal-bg": "var(--color-surface)",
   "--normal-text": "var(--color-fg)",
   "--normal-border": "var(--color-border-control)",
   "--border-radius": "var(--radius-card)",

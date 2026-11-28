@@ -15,8 +15,15 @@ import dev.emitkit.spec.model.ParamLocation;
 import dev.emitkit.spec.model.Parameter;
 import dev.emitkit.spec.model.PrimitiveSchema;
 import dev.emitkit.spec.model.PrimitiveType;
+import dev.emitkit.spec.parse.ParseResult;
+import dev.emitkit.spec.parse.SpecParser;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,7 +38,7 @@ class CliGeneratorTest {
   private final CliGenerator generator = new CliGenerator();
 
   @ParameterizedTest
-  @ValueSource(strings = {"petstore", "multi-tag", "reserved-words", "auth-schemes"})
+  @ValueSource(strings = {"petstore", "multi-tag", "reserved-words", "auth-schemes", "bookshelf"})
   void matchesGolden(String fixture) {
     GoldenFiles.assertMatches(fixture, generator.generate(FixtureSpecs.load(fixture), ctx()));
   }
@@ -84,6 +91,70 @@ class CliGeneratorTest {
   void pathParametersAreUrlEncoded() {
     assertThat(source(generate("petstore"), "src/commands/pets.ts"))
         .contains("path: \"/pets/\" + encodeURIComponent(String(opts[\"petId\"])),");
+  }
+
+  @Test
+  void readmeStatesThatOneAlternativeIsSent() {
+    assertThat(source(generate("bookshelf"), "README.md"))
+        .contains("one alternative is sent: the first whose credentials are all passed");
+  }
+
+  @Test
+  void runnerSendsTheFirstAlternativeWhoseCredentialsArePassed() {
+    assertThat(source(generate("bookshelf"), "src/index.ts"))
+        .contains("const credentials = chooseRequirement(call.security, globals).flatMap(")
+        .contains(
+            "return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];");
+  }
+
+  @Test
+  void apiKeyPrecedenceSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "apikey-precedence", generator.generate(local("apikey-precedence"), ctx()));
+  }
+
+  @Test
+  void reservedHeaderParametersBecomeNoOptions() {
+    // Authorization, Accept and Content-Type are set by the runner, so no option may carry them.
+    String commands = source(generate(local("apikey-precedence")), "src/commands/default.ts");
+    assertThat(commands)
+        .doesNotContain("--authorization")
+        .doesNotContain("--accept")
+        .doesNotContain("--content-type")
+        .contains("--x-api-key <value>");
+  }
+
+  @Test
+  void eachCommandCarriesItsEffectiveSecurityRequirement() {
+    var files = generate("bookshelf");
+    // listAuthors declares security: [], so it sends no credentials.
+    assertThat(source(files, "src/commands/authors.ts")).contains("security: [],");
+    // createLoan accepts an API key or an OAuth2 token, not the global bearer token.
+    assertThat(source(files, "src/commands/loans.ts"))
+        .contains("security: [[\"apiKeyAuth\"], [\"oauth2\"]],");
+    // returnLoan declares no security, so it inherits the global requirement.
+    assertThat(source(files, "src/commands/loans.ts")).contains("security: [[\"bearerAuth\"]],");
+  }
+
+  @Test
+  void securitySchemesMapToTheirCredentialLocation() {
+    assertThat(source(generate("bookshelf"), "src/index.ts"))
+        .contains("[\"bearerAuth\", { kind: \"bearer\" }]")
+        .contains("[\"apiKeyAuth\", { kind: \"apiKey\", in: \"header\", name: \"X-Api-Key\" }]")
+        .contains("[\"oauth2\", { kind: \"bearer\" }]");
+  }
+
+  @Test
+  void jsonOutputIsNotReparsedThroughNumbers() {
+    // Parsing integers outside the safe range through Number rounds them. JSON output is
+    // re-indented
+    // by tokens instead of being parsed, and the table view marks large integers before parsing.
+    String index = source(generate("petstore"), "src/index.ts");
+    assertThat(index)
+        .doesNotContain("JSON.stringify(value, null, 2)")
+        .doesNotContain("context?.source")
+        .contains("function prettyJson")
+        .contains("function markLargeIntegers");
   }
 
   @Test
@@ -170,6 +241,65 @@ class CliGeneratorTest {
         .doesNotContain("--no-cache");
   }
 
+  @Test
+  void collidingParamNamesGetLocationPrefixedFlags() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".option(\"--id <value>\"")
+        .contains(".option(\"--header-id <value>\"")
+        .contains("\"id\": opts[\"id\"],")
+        .contains("\"id\": opts[\"headerId\"],")
+        .doesNotContain("--id-2");
+  }
+
+  @Test
+  void collidingFlagFallsBackToANumericSuffixLast() {
+    var op =
+        operation(
+            "search",
+            "Search",
+            param("id", ParamLocation.QUERY, false),
+            param("id", ParamLocation.HEADER, false),
+            param("id", ParamLocation.HEADER, false));
+    String commands = source(generate(model(op)), "src/commands/things.ts");
+    assertThat(commands)
+        .contains(".option(\"--id <value>\"")
+        .contains(".option(\"--header-id <value>\"")
+        .contains(".option(\"--header-id-2 <value>\"")
+        .contains("\"id\": opts[\"headerId2\"],");
+  }
+
+  @Test
+  void commandHelpShowsTheSummaryForTheListAndTheSummaryWithTheDescription() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".summary(\"Search items\")")
+        .contains(".description(\"Search items\\n\\nFinds items matching the given filters.\")");
+  }
+
+  @Test
+  void summaryAloneIsTheDescriptionWhenItRepeatsTheSummary() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".summary(\"Update an item\")")
+        .contains(".description(\"Update an item\")")
+        .doesNotContain("Update an item\\n\\nUpdate an item");
+  }
+
+  @Test
+  void descriptionAloneIsTheHelpWhenThereIsNoSummary() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".description(\"Lists the notes on an item.\")")
+        .doesNotContain(".summary(\"Lists the notes");
+  }
+
+  @Test
+  void paramCollisionsSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "param-collisions", generator.generate(local("param-collisions"), ctx()));
+  }
+
   private static GeneratorContext ctx() {
     return ctx(".emitkit/");
   }
@@ -177,6 +307,19 @@ class CliGeneratorTest {
   private static GeneratorContext ctx(String outputDir) {
     var names = new PackageNames("acme", "petstore", "petstore", "dev.acme", "petstore");
     return new GeneratorContext(outputDir, "1.2.3", names, List.of("typescript"), Optional.empty());
+  }
+
+  /** A spec under this module's {@code src/test/resources/specs/}, parsed into the model. */
+  private static ApiModel local(String name) {
+    String text;
+    try {
+      text = Files.readString(Path.of("src", "test", "resources", "specs", name + ".yaml"));
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    ParseResult result = new SpecParser().parse(text);
+    assertThat(result.errors()).isEmpty();
+    return Objects.requireNonNull(result.model());
   }
 
   /** Generated files for a fixture, under the default output directory. */

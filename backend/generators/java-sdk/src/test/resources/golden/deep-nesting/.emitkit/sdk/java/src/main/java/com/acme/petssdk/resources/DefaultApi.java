@@ -20,19 +20,22 @@ public final class DefaultApi {
 
   /** GET /deep */
   public Deep getDeep() {
-    HttpResponse<String> response = client.request("GET", "/deep", null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/deep", null, null, null, null, List.of());
     return read(response, new TypeReference<Deep>() {});
   }
 
   /** GET /grid */
   public List<List<Integer>> getGrid() {
-    HttpResponse<String> response = client.request("GET", "/grid", null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/grid", null, null, null, null, List.of());
     return read(response, new TypeReference<List<List<Integer>>>() {});
   }
 
   /** GET /nodes */
   public Node getNode() {
-    HttpResponse<String> response = client.request("GET", "/nodes", null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/nodes", null, null, null, null, List.of());
     return read(response, new TypeReference<Node>() {});
   }
 

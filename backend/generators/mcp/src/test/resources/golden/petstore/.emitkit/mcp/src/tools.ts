@@ -6,8 +6,14 @@ export interface ApiTool {
   description: string;
   method: string;
   path: string;
-  params: { name: string; in: "path" | "query" | "header" | "cookie" }[];
+  /** Each parameter's wire name, the args key its value is read from, and its location. */
+  params: { name: string; arg: string; in: "path" | "query" | "header" | "cookie" }[];
   hasBody: boolean;
+  /**
+   * The tool's effective security requirement: its alternatives, each the names of the schemes sent
+   * together. One alternative is sent. Empty sends no credentials.
+   */
+  security: string[][];
   inputSchema: Tool["inputSchema"];
 }
 
@@ -20,10 +26,12 @@ export const tools: ApiTool[] = [
     "params": [
       {
         "name": "limit",
+        "arg": "limit",
         "in": "query"
       }
     ],
     "hasBody": false,
+    "security": [],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -42,6 +50,7 @@ export const tools: ApiTool[] = [
     "path": "/pets",
     "params": [],
     "hasBody": true,
+    "security": [],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -78,10 +87,12 @@ export const tools: ApiTool[] = [
     "params": [
       {
         "name": "petId",
+        "arg": "petId",
         "in": "path"
       }
     ],
     "hasBody": false,
+    "security": [],
     "inputSchema": {
       "type": "object",
       "properties": {

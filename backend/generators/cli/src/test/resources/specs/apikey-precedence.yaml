@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: Key Precedence
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+security:
+  - headerKey: []
+paths:
+  /items:
+    get:
+      operationId: listItems
+      security:
+        - headerKey: []
+        - queryKey: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Content-Type
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: X-Api-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Items
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      security:
+        - queryKey: []
+        - cookieKey: []
+      responses:
+        "200":
+          description: Orders
+  /reports:
+    get:
+      operationId: listReports
+      tags: [reports]
+      security:
+        - queryKey: []
+      parameters:
+        - name: api_key
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reports
+components:
+  securitySchemes:
+    headerKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    queryKey:
+      type: apiKey
+      in: query
+      name: api_key
+    cookieKey:
+      type: apiKey
+      in: cookie
+      name: session_key

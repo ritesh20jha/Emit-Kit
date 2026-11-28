@@ -4,8 +4,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from types import TracebackType
-from typing import Any, Dict, Mapping, Optional, Type
+from typing import Any, Dict, Mapping, Optional, Sequence, Set, Tuple, Type
+from urllib.parse import quote
 
 import httpx
 
@@ -19,11 +22,20 @@ from .errors import (
     ServerError,
     UnauthorizedError,
 )
+from .resources.default import AsyncDefaultResource, DefaultResource
 
 # Base URL used when the caller passes none. Empty when no server is an absolute http(s) URL.
 DEFAULT_BASE_URL = ""
 DEFAULT_MAX_RETRIES = 2
 RETRY_BASE_DELAY_SECONDS = 0.5
+# The longest wait a Retry-After header can ask for.
+MAX_RETRY_AFTER_SECONDS = 30.0
+# Methods that may be repeated without effect. Other requests are retried only with an Idempotency-Key.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "PUT", "DELETE", "OPTIONS"})
+# Where each security scheme's credential is sent, as (location, name). An apiKey goes in the header,
+# cookie or query parameter it names; bearer and basic credentials go in the Authorization header.
+_SCHEME_LOCATIONS: Dict[str, Tuple[str, str]] = {
+}
 
 
 class PaginationClient:
@@ -46,8 +58,7 @@ class PaginationClient:
         )
         self._http = http_client if http_client is not None else httpx.Client(follow_redirects=True)
         self._owns_http = http_client is None
-        self._headers: Dict[str, str] = {}
-        self._params: Dict[str, str] = {}
+        self.default = DefaultResource(self)
 
     def __enter__(self) -> PaginationClient:
         return self
@@ -65,33 +76,62 @@ class PaginationClient:
         if self._owns_http:
             self._http.close()
 
+    def _auth(
+        self, security: Sequence[Sequence[str]]
+    ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+        """The headers, query parameters and cookies that carry the credentials of one alternative
+        of the security requirement (see _choose_requirement). A scheme without a configured
+        credential contributes nothing."""
+        headers: Dict[str, str] = {}
+        params: Dict[str, str] = {}
+        cookies: Dict[str, str] = {}
+        held: Set[str] = set()
+        locations = [
+            _SCHEME_LOCATIONS[scheme]
+            for scheme in _choose_requirement(security, held)
+            if scheme in _SCHEME_LOCATIONS
+        ]
+        if not locations:
+            return headers, params, cookies
+        return headers, params, cookies
+
     def _request(
         self,
         method: str,
         path: str,
         *,
         query: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+        cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
+        security: Sequence[Sequence[str]] = (),
     ) -> httpx.Response:
-        """Sends a request with the configured credentials. 429 and 5xx responses are retried with
-        exponential backoff, up to max_retries times. Any other non-2xx status raises an ApiError
-        subclass. Returns the successful response for the caller to parse."""
-        params: Dict[str, Any] = {**self._params, **(query or {})}
+        """Sends a request with the credentials of one alternative of the security requirement. A 429 or 5xx response
+        is retried up to max_retries times, but only when the request may be repeated. Any other
+        non-2xx status raises an ApiError subclass. Returns the successful response for the caller
+        to parse."""
+        auth_headers, auth_params, auth_cookies = self._auth(security)
+        params: Dict[str, Any] = {**(query or {}), **auth_params}
+        request_headers = _request_headers(headers, cookies, auth_headers, auth_cookies)
         attempt = 0
         while True:
             response = self._http.request(
                 method,
                 self._base_url + path,
                 params=params,
-                headers=self._headers,
+                headers=request_headers,
                 json=json_body,
             )
             if response.is_success:
                 return response
-            if not _is_retryable(response.status_code) or attempt >= self._max_retries:
+            if (
+                not _may_retry(method, request_headers, response.status_code)
+                or attempt >= self._max_retries
+            ):
                 raise _to_api_error(response)
+            delay = _retry_delay(response, attempt)
             response.close()
-            time.sleep(RETRY_BASE_DELAY_SECONDS * 2**attempt)
+            time.sleep(delay)
             attempt += 1
 
 
@@ -115,8 +155,7 @@ class AsyncPaginationClient:
         )
         self._http = http_client if http_client is not None else httpx.AsyncClient(follow_redirects=True)
         self._owns_http = http_client is None
-        self._headers: Dict[str, str] = {}
-        self._params: Dict[str, str] = {}
+        self.default = AsyncDefaultResource(self)
 
     async def __aenter__(self) -> AsyncPaginationClient:
         return self
@@ -134,33 +173,62 @@ class AsyncPaginationClient:
         if self._owns_http:
             await self._http.aclose()
 
+    def _auth(
+        self, security: Sequence[Sequence[str]]
+    ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+        """The headers, query parameters and cookies that carry the credentials of one alternative
+        of the security requirement (see _choose_requirement). A scheme without a configured
+        credential contributes nothing."""
+        headers: Dict[str, str] = {}
+        params: Dict[str, str] = {}
+        cookies: Dict[str, str] = {}
+        held: Set[str] = set()
+        locations = [
+            _SCHEME_LOCATIONS[scheme]
+            for scheme in _choose_requirement(security, held)
+            if scheme in _SCHEME_LOCATIONS
+        ]
+        if not locations:
+            return headers, params, cookies
+        return headers, params, cookies
+
     async def _request(
         self,
         method: str,
         path: str,
         *,
         query: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+        cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
+        security: Sequence[Sequence[str]] = (),
     ) -> httpx.Response:
-        """Sends a request with the configured credentials. 429 and 5xx responses are retried with
-        exponential backoff, up to max_retries times. Any other non-2xx status raises an ApiError
-        subclass. Returns the successful response for the caller to parse."""
-        params: Dict[str, Any] = {**self._params, **(query or {})}
+        """Sends a request with the credentials of one alternative of the security requirement. A 429 or 5xx response
+        is retried up to max_retries times, but only when the request may be repeated. Any other
+        non-2xx status raises an ApiError subclass. Returns the successful response for the caller
+        to parse."""
+        auth_headers, auth_params, auth_cookies = self._auth(security)
+        params: Dict[str, Any] = {**(query or {}), **auth_params}
+        request_headers = _request_headers(headers, cookies, auth_headers, auth_cookies)
         attempt = 0
         while True:
             response = await self._http.request(
                 method,
                 self._base_url + path,
                 params=params,
-                headers=self._headers,
+                headers=request_headers,
                 json=json_body,
             )
             if response.is_success:
                 return response
-            if not _is_retryable(response.status_code) or attempt >= self._max_retries:
+            if (
+                not _may_retry(method, request_headers, response.status_code)
+                or attempt >= self._max_retries
+            ):
                 raise _to_api_error(response)
+            delay = _retry_delay(response, attempt)
             await response.aclose()
-            await asyncio.sleep(RETRY_BASE_DELAY_SECONDS * 2**attempt)
+            await asyncio.sleep(delay)
             attempt += 1
 
 
@@ -177,8 +245,115 @@ def _check_max_retries(max_retries: int, error: str) -> int:
     return max_retries
 
 
+def _choose_requirement(alternatives: Sequence[Sequence[str]], held: Set[str]) -> Sequence[str]:
+    """The alternative of a security requirement that a request sends. Of the alternatives whose
+    credentials are all held, the first that puts no apiKey in the URL, else the first of them. When
+    none is held, the first alternative, which sends what it can. Empty alternatives are skipped."""
+    named = [names for names in alternatives if names]
+    usable = [names for names in named if all(_credential_of(s) in held for s in names)]
+    for names in usable:
+        if not any(_SCHEME_LOCATIONS.get(s, ("", ""))[0] == "query" for s in names):
+            return names
+    if usable:
+        return usable[0]
+    return named[0] if named else ()
+
+
+def _credential_of(scheme: str) -> Optional[str]:
+    """The credential a scheme sends: "api_key", "bearer" or "basic". None for an unknown scheme."""
+    location = _SCHEME_LOCATIONS.get(scheme)
+    if location is None:
+        return None
+    return location[0] if location[0] in ("bearer", "basic") else "api_key"
+
+
+def _header_text(value: Any) -> str:
+    """The text sent for a header value: booleans as true or false, and a list comma-joined."""
+    if isinstance(value, (list, tuple)):
+        return ",".join(_header_text(item) for item in value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _cookie_text(value: Any) -> str:
+    """The text sent for a cookie value: each item URL-encoded, and a list comma-joined."""
+    items = value if isinstance(value, (list, tuple)) else [value]
+    return ",".join(quote(_header_text(item), safe="") for item in items)
+
+
+def _set_header(values: Dict[str, str], name: str, text: str) -> None:
+    """Sets a header, replacing any value under the same name in any letter case, so that a name is
+    never sent twice."""
+    for existing in [key for key in values if key.lower() == name.lower()]:
+        del values[existing]
+    values[name] = text
+
+
+def _request_headers(
+    headers: Optional[Mapping[str, Any]],
+    cookies: Optional[Mapping[str, Any]],
+    auth_headers: Mapping[str, str],
+    auth_cookies: Mapping[str, str],
+) -> Dict[str, str]:
+    """The headers of a request. The header parameters come first, and the credentials replace any
+    header of the same name. The cookie parameters and the cookie credential share one Cookie header.
+    Parameters left unset (None) are not sent."""
+    values: Dict[str, str] = {}
+    for name, value in (headers or {}).items():
+        if value is not None:
+            _set_header(values, name, _header_text(value))
+    for name, text in auth_headers.items():
+        _set_header(values, name, text)
+    jar: Dict[str, str] = {}
+    for name, cookie in (cookies or {}).items():
+        if cookie is not None:
+            jar[name] = _cookie_text(cookie)
+    for name, secret in auth_cookies.items():
+        jar[name] = _cookie_text(secret)
+    if jar:
+        _set_header(values, "Cookie", "; ".join(f"{name}={text}" for name, text in jar.items()))
+    return values
+
+
 def _is_retryable(status: int) -> bool:
     return status == 429 or status >= 500
+
+
+def _may_retry(method: str, headers: Mapping[str, str], status: int) -> bool:
+    """Whether a response with this status may be retried. Only 429 and 5xx qualify, and only for
+    a request that may be repeated: an idempotent method, or one that carries an Idempotency-Key."""
+    if not _is_retryable(status):
+        return False
+    if method.upper() in _IDEMPOTENT_METHODS:
+        return True
+    return any(name.lower() == "idempotency-key" for name in headers)
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Seconds to wait before the next attempt: the Retry-After of the response, capped at
+    MAX_RETRY_AFTER_SECONDS, or the exponential backoff when the response has none."""
+    retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+    if retry_after is None:
+        return RETRY_BASE_DELAY_SECONDS * float(2**attempt)
+    return min(retry_after, MAX_RETRY_AFTER_SECONDS)
+
+
+def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+    """The wait a Retry-After value asks for, given as integer seconds or an HTTP date. None when
+    the value is absent or cannot be read."""
+    if value is None:
+        return None
+    text = value.strip()
+    if text.isascii() and text.isdigit():
+        return float(text)
+    try:
+        when = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
 
 
 _ERROR_TYPES: Dict[int, Type[ApiError]] = {

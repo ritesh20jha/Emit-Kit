@@ -8,42 +8,42 @@ from pydantic import TypeAdapter
 from ..models import Deep, Grid, Node
 
 if TYPE_CHECKING:
-    from ..client import DeepNestingClient, AsyncDeepNestingClient
+    from ..client import DeepNestingClient as _DeepNestingClient, AsyncDeepNestingClient as _AsyncDeepNestingClient
 
 
 class DefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: DeepNestingClient) -> None:
+    def __init__(self, client: _DeepNestingClient) -> None:
         self._client = client
 
     def get_deep(self) -> Deep:
-        response = self._client._request("GET", "/deep")
+        response = self._client._request("GET", "/deep", security=[])
         return TypeAdapter(Deep).validate_python(response.json())
 
     def get_grid(self) -> Grid:
-        response = self._client._request("GET", "/grid")
+        response = self._client._request("GET", "/grid", security=[])
         return TypeAdapter(Grid).validate_python(response.json())
 
     def get_node(self) -> Node:
-        response = self._client._request("GET", "/nodes")
+        response = self._client._request("GET", "/nodes", security=[])
         return TypeAdapter(Node).validate_python(response.json())
 
 
 class AsyncDefaultResource:
     """Operations tagged default."""
 
-    def __init__(self, client: AsyncDeepNestingClient) -> None:
+    def __init__(self, client: _AsyncDeepNestingClient) -> None:
         self._client = client
 
     async def get_deep(self) -> Deep:
-        response = await self._client._request("GET", "/deep")
+        response = await self._client._request("GET", "/deep", security=[])
         return TypeAdapter(Deep).validate_python(response.json())
 
     async def get_grid(self) -> Grid:
-        response = await self._client._request("GET", "/grid")
+        response = await self._client._request("GET", "/grid", security=[])
         return TypeAdapter(Grid).validate_python(response.json())
 
     async def get_node(self) -> Node:
-        response = await self._client._request("GET", "/nodes")
+        response = await self._client._request("GET", "/nodes", security=[])
         return TypeAdapter(Node).validate_python(response.json())

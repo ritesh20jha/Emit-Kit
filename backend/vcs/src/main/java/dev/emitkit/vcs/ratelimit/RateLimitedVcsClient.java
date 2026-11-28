@@ -136,6 +136,12 @@ public final class RateLimitedVcsClient implements VcsClient {
   }
 
   @Override
+  public List<String> listTags(String repo, String prefix) {
+    guard();
+    return delegate.listTags(repo, prefix);
+  }
+
+  @Override
   public Webhook registerWebhook(String repo, String url, String secret, Set<String> events) {
     guard();
     return delegate.registerWebhook(repo, url, secret, events);

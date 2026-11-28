@@ -12,7 +12,7 @@ export interface CodeBlockProps {
 export function CodeBlock({ code, language, label }: CodeBlockProps) {
   const name = label ?? (language ? `${language} code` : "Code");
   return (
-    <div className="flex flex-col rounded-card border border-border bg-bg-subtle">
+    <div className="flex flex-col overflow-hidden rounded-card border border-border bg-bg-subtle">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
         <span className="font-mono text-xs text-fg-muted">{language}</span>
         <CopyButton value={code} label="Copy code" />

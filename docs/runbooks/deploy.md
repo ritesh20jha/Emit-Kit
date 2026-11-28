@@ -46,7 +46,7 @@ COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
    `.env.prod`, `secrets/` and `backups/` are git-ignored. Keep them out of the repository.
 
-   Memory: `API_MEMORY_LIMIT` (default `1g`) and `WORKER_MEMORY_LIMIT` (default `1536m`) cap each api and worker replica. The JVM sizes its heap to 75% of the cap. Two replicas of each take 5 GiB by default, so the host needs that plus headroom for Postgres, RabbitMQ, Redis, RustFS, Vault and Caddy. Without the caps, the JVMs could together claim far more than the host has, and the kernel could kill Vault, which then comes back sealed. Raise the caps only after watching `docker stats` under real load.
+   Memory: `API_MEMORY_LIMIT` (default `1g`) and `WORKER_MEMORY_LIMIT` (default `1536m`) cap each api and worker replica. The JVM sizes its heap to 60% of the cap; the rest is for metaspace, compiled code and thread stacks. `API_CPU_LIMIT` and `WORKER_CPU_LIMIT` (default `2` each) cap CPU, and the JVM sizes its thread pools to them. A worker run that generates several outputs uses up to its CPU cap. Two replicas of each take 5 GiB by default, so the host needs that plus headroom for Postgres, RabbitMQ, Redis, RustFS, Vault and Caddy. Without the caps, the JVMs could together claim far more than the host has, and the kernel could kill Vault, which then comes back sealed. Raise the caps only after watching `docker stats` under real load.
 
 2. Start Vault. It comes up sealed, and `--wait` still passes because a sealed Vault is reachable:
 

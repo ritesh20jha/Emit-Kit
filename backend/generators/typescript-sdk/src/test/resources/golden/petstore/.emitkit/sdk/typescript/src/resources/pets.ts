@@ -17,7 +17,7 @@ export class PetsResource {
     return response.json();
   }
 
-  async createPet(body?: Pet): Promise<void> {
+  async createPet(body: Pet): Promise<void> {
     await this.client.request("POST", "/pets", {
       body,
     });

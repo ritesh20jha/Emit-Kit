@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /** Operations tagged user, User. */
 public final class UserApi {
@@ -20,17 +21,18 @@ public final class UserApi {
 
   /** GET /class */
   public void class_() {
-    client.request("GET", "/class", null, null);
+    client.request("GET", "/class", null, null, null, null, List.of());
   }
 
   /** GET /import */
   public void import_() {
-    client.request("GET", "/import", null, null);
+    client.request("GET", "/import", null, null, null, null, List.of());
   }
 
   /** GET /items/{in} */
   public Object_ getItemIn(String in) {
-    HttpResponse<String> response = client.request("GET", "/items/" + segment(in), null, null);
+    HttpResponse<String> response =
+        client.request("GET", "/items/" + segment(in), null, null, null, null, List.of());
     return read(response, new TypeReference<Object_>() {});
   }
 
