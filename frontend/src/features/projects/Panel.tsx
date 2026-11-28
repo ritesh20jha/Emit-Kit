@@ -7,9 +7,9 @@ export function Panel({ title, danger = false, children }: { title: string; dang
   return (
     <section
       aria-labelledby={titleId}
-      className={cn("flex min-w-0 flex-col gap-3 rounded-card border p-4", danger ? "border-status-failed/50" : "border-border")}
+      className={cn("flex min-w-0 flex-col gap-3 rounded-card border bg-surface p-4 shadow-raised md:p-5", danger ? "border-status-failed/50" : "border-border")}
     >
-      <h2 id={titleId} className="text-sm font-medium text-fg">
+      <h2 id={titleId} className={cn("text-sm font-semibold", danger ? "text-status-failed" : "text-fg")}>
         {title}
       </h2>
       {children}

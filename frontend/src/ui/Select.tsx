@@ -56,6 +56,8 @@ export function Select({
         className={cn(
           FIELD_SURFACE,
           "inline-flex h-8 cursor-pointer items-center justify-between gap-2 px-2.5 text-left text-sm data-[placeholder]:text-fg-subtle",
+          // In a form the field fills its column; in a toolbar or filter bar it sizes to its content.
+          !control && "w-auto min-w-40",
           className,
         )}
       >
@@ -68,7 +70,7 @@ export function Select({
         <SelectPrimitive.Content
           position="popper"
           sideOffset={4}
-          className="z-50 min-w-(--radix-select-trigger-width) overflow-hidden rounded-control border border-border-strong bg-bg"
+          className="z-50 min-w-(--radix-select-trigger-width) overflow-hidden rounded-control border border-border-strong bg-surface shadow-overlay motion-safe:animate-overlay-fade"
         >
           <SelectPrimitive.Viewport className="p-1">
             {options.map((option) => (

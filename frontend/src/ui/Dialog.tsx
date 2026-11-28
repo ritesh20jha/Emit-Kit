@@ -4,7 +4,7 @@ import type { ReactNode, RefObject } from "react";
 import { cn } from "@/lib/utils/cn";
 import { IconButton } from "./IconButton";
 
-const PANEL = "fixed z-50 flex flex-col gap-4 border-border-control bg-bg p-5 text-fg shadow-overlay";
+const PANEL = "fixed z-50 flex flex-col gap-4 border-border-strong bg-surface p-5 text-fg shadow-overlay";
 
 const CENTER =
   "left-1/2 top-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-card border motion-safe:animate-dialog-in";

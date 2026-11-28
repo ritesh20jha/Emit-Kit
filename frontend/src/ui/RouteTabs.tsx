@@ -43,7 +43,7 @@ export function RouteTabs({ tabs, label = "Sections" }: RouteTabsProps) {
   // under the edge: each focused tab is scrolled into view, and scroll-px-1 keeps it clear of the padding.
   return (
     <nav aria-label={label} className="-m-1 overflow-x-auto p-1 scroll-px-1">
-      <ul onKeyDown={moveFocus} className="flex w-max min-w-full gap-1 border-b border-border">
+      <ul onKeyDown={moveFocus} className="flex w-max min-w-full gap-0.5 border-b border-border">
         {tabs.map((tab, index) => (
           <li key={tab.to}>
             <Link
@@ -55,7 +55,7 @@ export function RouteTabs({ tabs, label = "Sections" }: RouteTabsProps) {
               activeOptions={{ exact: true, includeSearch: false }}
               // Link marks only its own path as current, so an extra path is marked here. A current link sets its own.
               aria-current={tab.alsoActiveAt?.includes(pathname) ? "page" : undefined}
-              className="-mb-px inline-flex h-9 items-center border-b-2 border-transparent px-3 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) hover:text-fg aria-[current=page]:border-accent aria-[current=page]:text-fg"
+              className="-mb-px inline-flex h-10 items-center border-b-2 border-transparent px-3 text-sm font-medium whitespace-nowrap text-fg-muted transition-colors duration-(--duration-fast) hover:border-border-strong hover:text-fg aria-[current=page]:border-accent aria-[current=page]:text-fg"
             >
               {tab.label}
             </Link>

@@ -19,7 +19,7 @@ export function DropdownMenu({ trigger, align = "start", defaultOpen, children }
         <DropdownMenuPrimitive.Content
           align={align}
           sideOffset={4}
-          className="z-50 min-w-40 overflow-hidden rounded-control border border-border-control bg-bg p-1 text-fg shadow-overlay motion-safe:animate-overlay-fade"
+          className="z-50 min-w-40 overflow-hidden rounded-control border border-border-strong bg-surface p-1 text-fg shadow-overlay motion-safe:animate-overlay-fade"
         >
           {children}
         </DropdownMenuPrimitive.Content>
