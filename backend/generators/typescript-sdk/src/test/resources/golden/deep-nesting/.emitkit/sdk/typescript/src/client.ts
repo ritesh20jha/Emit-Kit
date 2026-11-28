@@ -105,31 +105,39 @@ export class DeepNestingClient {
     options: RequestOptions = {},
   ): Promise<Response> {
     const url = new URL(this.baseUrl + path);
+    // Parameters first, then credentials, so a parameter can never replace a credential.
     const auth = this.authFor(options.security ?? []);
-    for (const [name, value] of Object.entries(auth.query)) {
-      url.searchParams.set(name, value);
-    }
     for (const [name, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined && value !== null) {
         url.searchParams.set(name, paramValue(value));
       }
     }
-    const headers = new Headers(auth.headers);
+    for (const [name, value] of Object.entries(auth.query)) {
+      url.searchParams.set(name, value);
+    }
+    const headers = new Headers();
     for (const [name, value] of Object.entries(options.headers ?? {})) {
       if (value !== undefined && value !== null) {
         headers.set(name, paramValue(value));
       }
     }
-    const cookies = Object.entries(auth.cookies).map(
-      ([name, value]) => `${name}=${encodeURIComponent(value)}`,
-    );
+    for (const [name, value] of Object.entries(auth.headers)) {
+      headers.set(name, value);
+    }
+    const cookies = new Map<string, string>();
     for (const [name, value] of Object.entries(options.cookies ?? {})) {
       if (value !== undefined && value !== null) {
-        cookies.push(`${name}=${encodeURIComponent(paramValue(value))}`);
+        cookies.set(name, paramValue(value));
       }
     }
-    if (cookies.length > 0) {
-      headers.set("Cookie", cookies.join("; "));
+    for (const [name, value] of Object.entries(auth.cookies)) {
+      cookies.set(name, value);
+    }
+    if (cookies.size > 0) {
+      headers.set(
+        "Cookie",
+        [...cookies].map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join("; "),
+      );
     }
     const init: RequestInit = { method, headers };
     if (options.body !== undefined) {

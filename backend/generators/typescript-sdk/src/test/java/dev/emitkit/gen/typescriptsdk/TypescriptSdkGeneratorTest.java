@@ -241,6 +241,18 @@ class TypescriptSdkGeneratorTest {
   }
 
   @Test
+  void credentialsAreAppliedAfterParametersSoTheyWin() {
+    var client = content("petstore", "src/client.ts");
+    assertThat(client.indexOf("Object.entries(auth.query)"))
+        .isGreaterThan(client.indexOf("Object.entries(options.query ?? {})"));
+    assertThat(client.indexOf("Object.entries(auth.headers)"))
+        .isGreaterThan(client.indexOf("Object.entries(options.headers ?? {})"));
+    assertThat(client.indexOf("Object.entries(auth.cookies)"))
+        .isGreaterThan(client.indexOf("Object.entries(options.cookies ?? {})"));
+    assertThat(client).contains("const cookies = new Map<string, string>();");
+  }
+
+  @Test
   void enumsAndPolymorphismRenderAsUnionsAndIntersections() {
     assertThat(content("enums", "src/types.ts"))
         .contains("export type Color = \"red\" | \"green\" | \"blue\";")
