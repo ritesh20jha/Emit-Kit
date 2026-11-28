@@ -22,13 +22,13 @@ class KeysResource:
         self._client = client
 
     def header_beats_query(self) -> None:
-        self._client._request("GET", "/both", security=["queryKey", "headerKey"])
+        self._client._request("GET", "/both", security=[["queryKey"], ["headerKey"]])
 
     def cookie_beats_query(self, *, session: Optional[str] = None) -> None:
-        self._client._request("GET", "/cookie", cookies={"session": session}, security=["queryKey", "cookieKey"])
+        self._client._request("GET", "/cookie", cookies={"session": session}, security=[["queryKey"], ["cookieKey"]])
 
     def query_only(self) -> None:
-        self._client._request("GET", "/query-only", security=["queryKey"])
+        self._client._request("GET", "/query-only", security=[["queryKey"]])
 
     def no_credentials(self) -> None:
         self._client._request("GET", "/none", security=[])
@@ -38,7 +38,7 @@ class KeysResource:
         return TypeAdapter(ApiKeysClient).validate_python(response.json())
 
     def query_name_collision(self, *, api_key: Optional[str] = None) -> None:
-        self._client._request("GET", "/query-collide", query=_drop_none({"api_key": api_key}), security=["queryKey"])
+        self._client._request("GET", "/query-collide", query=_drop_none({"api_key": api_key}), security=[["queryKey"]])
 
     def create_item(self, *, idempotency_key: Optional[str] = None) -> None:
         self._client._request("POST", "/items", headers={"Idempotency-Key": idempotency_key}, security=[])
@@ -54,13 +54,13 @@ class AsyncKeysResource:
         self._client = client
 
     async def header_beats_query(self) -> None:
-        await self._client._request("GET", "/both", security=["queryKey", "headerKey"])
+        await self._client._request("GET", "/both", security=[["queryKey"], ["headerKey"]])
 
     async def cookie_beats_query(self, *, session: Optional[str] = None) -> None:
-        await self._client._request("GET", "/cookie", cookies={"session": session}, security=["queryKey", "cookieKey"])
+        await self._client._request("GET", "/cookie", cookies={"session": session}, security=[["queryKey"], ["cookieKey"]])
 
     async def query_only(self) -> None:
-        await self._client._request("GET", "/query-only", security=["queryKey"])
+        await self._client._request("GET", "/query-only", security=[["queryKey"]])
 
     async def no_credentials(self) -> None:
         await self._client._request("GET", "/none", security=[])
@@ -70,7 +70,7 @@ class AsyncKeysResource:
         return TypeAdapter(ApiKeysClient).validate_python(response.json())
 
     async def query_name_collision(self, *, api_key: Optional[str] = None) -> None:
-        await self._client._request("GET", "/query-collide", query=_drop_none({"api_key": api_key}), security=["queryKey"])
+        await self._client._request("GET", "/query-collide", query=_drop_none({"api_key": api_key}), security=[["queryKey"]])
 
     async def create_item(self, *, idempotency_key: Optional[str] = None) -> None:
         await self._client._request("POST", "/items", headers={"Idempotency-Key": idempotency_key}, security=[])

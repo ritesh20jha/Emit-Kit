@@ -169,8 +169,7 @@ final class TsResources {
       options.add("      cookies: { " + String.join(", ", cookies) + " },");
     }
     if (!op.security().isEmpty()) {
-      List<String> schemes = op.security().stream().map(TsClientView::quote).toList();
-      options.add("      security: [" + String.join(", ", schemes) + "],");
+      options.add("      security: " + securityLiteral(op.securityRequirements()) + ",");
     }
     if (body != null) {
       options.add("      body,");
@@ -338,5 +337,13 @@ final class TsResources {
       candidate = name + n;
     }
     return candidate;
+  }
+
+  /** The requirement's alternatives as a nested array literal, such as {@code [["a"], ["b"]]}. */
+  static String securityLiteral(List<List<String>> requirements) {
+    return requirements.stream()
+        .map(names ->
+            "[" + String.join(", ", names.stream().map(TsClientView::quote).toList()) + "]")
+        .collect(joining(", ", "[", "]"));
   }
 }

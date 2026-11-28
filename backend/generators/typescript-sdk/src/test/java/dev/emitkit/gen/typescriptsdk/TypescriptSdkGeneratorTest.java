@@ -138,11 +138,19 @@ class TypescriptSdkGeneratorTest {
   @Test
   void eachOperationNamesOnlyItsEffectiveSecuritySchemes() {
     assertThat(method("bookshelf", "src/resources/books.ts", "listBooks"))
-        .contains("security: [\"bearerAuth\"],");
+        .contains("security: [[\"bearerAuth\"]],");
     assertThat(method("bookshelf", "src/resources/authors.ts", "listAuthors"))
         .doesNotContain("security:");
     assertThat(method("bookshelf", "src/resources/loans.ts", "createLoan"))
-        .contains("security: [\"apiKeyAuth\", \"oauth2\"],");
+        .contains("security: [[\"apiKeyAuth\"], [\"oauth2\"]],");
+  }
+
+  @Test
+  void oneSecurityAlternativeIsSentTheFirstWhoseCredentialsAreAllHeld() {
+    assertThat(content("bookshelf", "src/client.ts"))
+        .contains("this.authFor(this.chooseRequirement(options.security ?? []))")
+        .contains(
+            "return held.find((names) => !names.some(isQueryApiKey)) ?? held[0] ?? named[0] ?? [];");
   }
 
   @Test
@@ -201,7 +209,7 @@ class TypescriptSdkGeneratorTest {
   void oneApiKeyIsSentPerRequestPreferringAHeaderOrCookieScheme() {
     // listItems lists headerKey then queryKey: only the header key is sent, never the query.
     assertThat(content("security-alternatives", "src/resources/items.ts"))
-        .contains("security: [\"headerKey\", \"queryKey\"],");
+        .contains("security: [[\"headerKey\"], [\"queryKey\"]],");
     assertThat(content("security-alternatives", "src/client.ts"))
         .contains("\"headerKey\": { kind: \"apiKey\", location: \"header\", name: \"X-Api-Key\" },")
         .contains("\"queryKey\": { kind: \"apiKey\", location: \"query\", name: \"api_key\" },")

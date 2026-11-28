@@ -18,7 +18,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "POST",
         path: "/loans",
-        security: ["apiKeyAuth", "oauth2"],
+        security: [["apiKeyAuth"], ["oauth2"]],
         cookies: {
           "session": opts["session"],
         },
@@ -36,7 +36,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "POST",
         path: "/loans/" + encodeURIComponent(String(opts["loanId"])) + "/return",
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
       }),
     );
 }

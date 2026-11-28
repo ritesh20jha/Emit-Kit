@@ -94,11 +94,17 @@ class CliGeneratorTest {
   }
 
   @Test
-  void readmeStatesThatAlternativesSendEveryConfiguredCredential() {
+  void readmeStatesThatOneAlternativeIsSent() {
     assertThat(source(generate("bookshelf"), "README.md"))
+        .contains("one alternative is sent: the first whose credentials are all passed");
+  }
+
+  @Test
+  void runnerSendsTheFirstAlternativeWhoseCredentialsArePassed() {
+    assertThat(source(generate("bookshelf"), "src/index.ts"))
+        .contains("const credentials = chooseRequirement(call.security, globals).flatMap(")
         .contains(
-            "every configured credential named by any of the operation's alternative security"
-                + " requirements is sent");
+            "return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];");
   }
 
   @Test
@@ -125,9 +131,9 @@ class CliGeneratorTest {
     assertThat(source(files, "src/commands/authors.ts")).contains("security: [],");
     // createLoan accepts an API key or an OAuth2 token, not the global bearer token.
     assertThat(source(files, "src/commands/loans.ts"))
-        .contains("security: [\"apiKeyAuth\", \"oauth2\"],");
+        .contains("security: [[\"apiKeyAuth\"], [\"oauth2\"]],");
     // returnLoan declares no security, so it inherits the global requirement.
-    assertThat(source(files, "src/commands/loans.ts")).contains("security: [\"bearerAuth\"],");
+    assertThat(source(files, "src/commands/loans.ts")).contains("security: [[\"bearerAuth\"]],");
   }
 
   @Test

@@ -45,7 +45,7 @@ public final class BooksApi {
       query.put("available", String.valueOf(options.available()));
     }
     HttpResponse<String> response =
-        client.request("GET", "/books", query, null, null, null, List.of("bearerAuth"));
+        client.request("GET", "/books", query, null, null, null, List.of(List.of("bearerAuth")));
     return read(response, new TypeReference<BookPage>() {});
   }
 
@@ -58,7 +58,7 @@ public final class BooksApi {
     Map<String, String> headers = new LinkedHashMap<>();
     headers.put("Idempotency-Key", idempotencyKey);
     HttpResponse<String> response =
-        client.request("POST", "/books", null, headers, null, body, List.of("bearerAuth"));
+        client.request("POST", "/books", null, headers, null, body, List.of(List.of("bearerAuth")));
     return read(response, new TypeReference<Book>() {});
   }
 
@@ -76,7 +76,7 @@ public final class BooksApi {
             null,
             null,
             null,
-            List.of("bearerAuth"));
+            List.of(List.of("bearerAuth")));
     return read(response, new TypeReference<Book>() {});
   }
 
@@ -93,7 +93,7 @@ public final class BooksApi {
         null,
         null,
         null,
-        List.of("bearerAuth"));
+        List.of(List.of("bearerAuth")));
   }
 
   /**
@@ -110,7 +110,7 @@ public final class BooksApi {
             null,
             null,
             body,
-            List.of("bearerAuth"));
+            List.of(List.of("bearerAuth")));
     return read(response, new TypeReference<Book>() {});
   }
 

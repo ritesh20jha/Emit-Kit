@@ -16,7 +16,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/reports",
-        security: ["queryKey"],
+        security: [["queryKey"]],
         query: {
           "api_key": opts["apiKey2"],
         },

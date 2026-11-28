@@ -19,7 +19,8 @@ Global options, accepted before or after the command: `--base-url <url>`, `--tok
 as a bearer token), `--api-key <key>` (sent in the header, query parameter or cookie the API
 declares), and `--output json|table` (default `json`). A credential is sent only to operations whose
 security requirement declares it. When an operation lists alternative security requirements,
-every configured credential named by any of the operation's alternative security requirements is sent, with at most one API key per request. Request bodies use `--json <body|@file>`.
+one alternative is sent: the first whose credentials are all passed, preferring one that does not
+put an API key in the URL. A request carries at most one API key. Request bodies use `--json <body|@file>`.
 
 ## Base URL
 

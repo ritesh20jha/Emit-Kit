@@ -15,22 +15,22 @@ public final class DefaultApi {
 
   /** GET /header-key */
   public void getWithHeaderKey() {
-    client.request("GET", "/header-key", null, null, null, null, List.of("headerKey"));
+    client.request("GET", "/header-key", null, null, null, null, List.of(List.of("headerKey")));
   }
 
   /** GET /query-key */
   public void getWithQueryKey() {
-    client.request("GET", "/query-key", null, null, null, null, List.of("queryKey"));
+    client.request("GET", "/query-key", null, null, null, null, List.of(List.of("queryKey")));
   }
 
   /** GET /basic */
   public void getWithBasic() {
-    client.request("GET", "/basic", null, null, null, null, List.of("basicAuth"));
+    client.request("GET", "/basic", null, null, null, null, List.of(List.of("basicAuth")));
   }
 
   /** GET /oauth */
   public void getWithOAuth() {
-    client.request("GET", "/oauth", null, null, null, null, List.of("oauth"));
+    client.request("GET", "/oauth", null, null, null, null, List.of(List.of("oauth")));
   }
 
   /** GET /public */
@@ -40,6 +40,6 @@ public final class DefaultApi {
 
   /** GET /inherited */
   public void getInherited() {
-    client.request("GET", "/inherited", null, null, null, null, List.of("bearerAuth"));
+    client.request("GET", "/inherited", null, null, null, null, List.of(List.of("bearerAuth")));
   }
 }

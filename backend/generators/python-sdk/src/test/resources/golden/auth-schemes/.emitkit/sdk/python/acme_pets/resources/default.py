@@ -14,22 +14,22 @@ class DefaultResource:
         self._client = client
 
     def get_with_header_key(self) -> None:
-        self._client._request("GET", "/header-key", security=["headerKey"])
+        self._client._request("GET", "/header-key", security=[["headerKey"]])
 
     def get_with_query_key(self) -> None:
-        self._client._request("GET", "/query-key", security=["queryKey"])
+        self._client._request("GET", "/query-key", security=[["queryKey"]])
 
     def get_with_basic(self) -> None:
-        self._client._request("GET", "/basic", security=["basicAuth"])
+        self._client._request("GET", "/basic", security=[["basicAuth"]])
 
     def get_with_o_auth(self) -> None:
-        self._client._request("GET", "/oauth", security=["oauth"])
+        self._client._request("GET", "/oauth", security=[["oauth"]])
 
     def get_public(self) -> None:
         self._client._request("GET", "/public", security=[])
 
     def get_inherited(self) -> None:
-        self._client._request("GET", "/inherited", security=["bearerAuth"])
+        self._client._request("GET", "/inherited", security=[["bearerAuth"]])
 
 
 class AsyncDefaultResource:
@@ -39,19 +39,19 @@ class AsyncDefaultResource:
         self._client = client
 
     async def get_with_header_key(self) -> None:
-        await self._client._request("GET", "/header-key", security=["headerKey"])
+        await self._client._request("GET", "/header-key", security=[["headerKey"]])
 
     async def get_with_query_key(self) -> None:
-        await self._client._request("GET", "/query-key", security=["queryKey"])
+        await self._client._request("GET", "/query-key", security=[["queryKey"]])
 
     async def get_with_basic(self) -> None:
-        await self._client._request("GET", "/basic", security=["basicAuth"])
+        await self._client._request("GET", "/basic", security=[["basicAuth"]])
 
     async def get_with_o_auth(self) -> None:
-        await self._client._request("GET", "/oauth", security=["oauth"])
+        await self._client._request("GET", "/oauth", security=[["oauth"]])
 
     async def get_public(self) -> None:
         await self._client._request("GET", "/public", security=[])
 
     async def get_inherited(self) -> None:
-        await self._client._request("GET", "/inherited", security=["bearerAuth"])
+        await self._client._request("GET", "/inherited", security=[["bearerAuth"]])

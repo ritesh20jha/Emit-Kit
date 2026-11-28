@@ -9,8 +9,11 @@ export interface ApiTool {
   /** Each parameter's wire name, the args key its value is read from, and its location. */
   params: { name: string; arg: string; in: "path" | "query" | "header" | "cookie" }[];
   hasBody: boolean;
-  /** Scheme names of the tool's effective security requirement. Empty sends no credentials. */
-  security: string[];
+  /**
+   * The tool's effective security requirement: its alternatives, each the names of the schemes sent
+   * together. One alternative is sent. Empty sends no credentials.
+   */
+  security: string[][];
   inputSchema: Tool["inputSchema"];
 }
 
@@ -44,7 +47,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": false,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -91,7 +96,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": true,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -259,7 +266,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": false,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -288,7 +297,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": false,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -317,7 +328,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": true,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -406,7 +419,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": false,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -436,8 +451,12 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": true,
     "security": [
-      "apiKeyAuth",
-      "oauth2"
+      [
+        "apiKeyAuth"
+      ],
+      [
+        "oauth2"
+      ]
     ],
     "inputSchema": {
       "type": "object",
@@ -484,7 +503,9 @@ export const tools: ApiTool[] = [
     ],
     "hasBody": false,
     "security": [
-      "bearerAuth"
+      [
+        "bearerAuth"
+      ]
     ],
     "inputSchema": {
       "type": "object",

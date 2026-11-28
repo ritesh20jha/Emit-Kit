@@ -22,14 +22,14 @@ class LoansResource:
         """Borrow a book
 
         Lends a free copy of a book to a member."""
-        response = self._client._request("POST", "/loans", cookies={"session": session}, json_body=TypeAdapter[Any](LoanRequest).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=["apiKeyAuth", "oauth2"])
+        response = self._client._request("POST", "/loans", cookies={"session": session}, json_body=TypeAdapter[Any](LoanRequest).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[["apiKeyAuth"], ["oauth2"]])
         return TypeAdapter(Loan).validate_python(response.json())
 
     def return_loan(self, *, loan_id: str) -> Loan:
         """Return a book
 
         Ends a loan and frees the copy."""
-        response = self._client._request("POST", f"/loans/{_quote(str(loan_id), safe='')}/return", security=["bearerAuth"])
+        response = self._client._request("POST", f"/loans/{_quote(str(loan_id), safe='')}/return", security=[["bearerAuth"]])
         return TypeAdapter(Loan).validate_python(response.json())
 
 
@@ -43,12 +43,12 @@ class AsyncLoansResource:
         """Borrow a book
 
         Lends a free copy of a book to a member."""
-        response = await self._client._request("POST", "/loans", cookies={"session": session}, json_body=TypeAdapter[Any](LoanRequest).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=["apiKeyAuth", "oauth2"])
+        response = await self._client._request("POST", "/loans", cookies={"session": session}, json_body=TypeAdapter[Any](LoanRequest).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[["apiKeyAuth"], ["oauth2"]])
         return TypeAdapter(Loan).validate_python(response.json())
 
     async def return_loan(self, *, loan_id: str) -> Loan:
         """Return a book
 
         Ends a loan and frees the copy."""
-        response = await self._client._request("POST", f"/loans/{_quote(str(loan_id), safe='')}/return", security=["bearerAuth"])
+        response = await self._client._request("POST", f"/loans/{_quote(str(loan_id), safe='')}/return", security=[["bearerAuth"]])
         return TypeAdapter(Loan).validate_python(response.json())

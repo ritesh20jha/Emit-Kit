@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * The resource modules, {@code {pkg}/resources/{tag}.py}: one module per tag, each with a sync
@@ -208,8 +209,15 @@ final class PyResources {
       request.add("json_body=" + (required ? dump : "None if " + py + " is None else " + dump));
     }
     // The effective requirement: the operation's own, or the document's when it has none.
-    List<String> security = op.security().stream().map(PyClientView::quote).toList();
-    request.add("security=[" + String.join(", ", security) + "]");
+    // One list per alternative; the client sends the first whose credentials it holds.
+    String security =
+        op.securityRequirements().stream()
+            .map(alternative ->
+                "["
+                    + String.join(", ", alternative.stream().map(PyClientView::quote).toList())
+                    + "]")
+            .collect(Collectors.joining(", ", "[", "]"));
+    request.add("security=" + security);
     Schema response = PyTypeRenderer.successSchema(op);
     String returnType =
         response == null

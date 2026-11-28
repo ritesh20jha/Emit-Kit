@@ -11,8 +11,11 @@ export interface Invocation {
   method: string;
   /** Path below the base URL, with path parameters already URL-encoded. */
   path: string;
-  /** Scheme names of the operation's effective security requirement. Empty sends no credentials. */
-  security: string[];
+  /**
+   * The operation's effective security requirement: its alternatives, each the names of the schemes
+   * sent together. One alternative is sent. Empty sends no credentials.
+   */
+  security: string[][];
   query?: Record<string, string | undefined>;
   headers?: Record<string, string | undefined>;
   cookies?: Record<string, string | undefined>;
@@ -53,6 +56,28 @@ const SECURITY_SCHEMES = new Map<string, Credential>([
   ["oauth2", { kind: "bearer" }],
 ]);
 
+/**
+ * The alternative of a security requirement to send. Of the alternatives whose credentials are set,
+ * the first that puts no API key in the URL, else the first of them. When none is set, the first
+ * alternative, which sends what it can. Empty alternatives are skipped.
+ */
+function chooseRequirement(alternatives: string[][], globals: GlobalOptions): string[] {
+  const holds = (name: string): boolean => {
+    const credential = SECURITY_SCHEMES.get(name);
+    if (credential?.kind === "bearer") {
+      return globals.token !== undefined;
+    }
+    return credential?.kind === "apiKey" && globals.apiKey !== undefined;
+  };
+  const inQuery = (name: string): boolean => {
+    const credential = SECURITY_SCHEMES.get(name);
+    return credential?.kind === "apiKey" && credential.in === "query";
+  };
+  const named = alternatives.filter((names) => names.length > 0);
+  const held = named.filter((names) => names.every(holds));
+  return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];
+}
+
 const program = new Command()
   .name("petstore")
   .description("Bookshelf API")
@@ -88,8 +113,8 @@ const run: Runner = async (call) => {
       cookies.set(name, value);
     }
   }
-  // Only the schemes that this operation's security requirement names are considered.
-  const credentials = call.security.flatMap((name) => {
+  // Only the schemes of one alternative of this operation's security requirement are considered.
+  const credentials = chooseRequirement(call.security, globals).flatMap((name) => {
     const credential = SECURITY_SCHEMES.get(name);
     return credential === undefined ? [] : [credential];
   });

@@ -451,31 +451,39 @@ final class JavaResourceRenderer {
   }
 
   /**
-   * The security schemes an operation sends, as a List literal. Its apiKey schemes are reduced to
-   * one, the key the operation sends: the first that names a header or cookie, else the first that
-   * names a query parameter. The other schemes are kept in the order the requirement lists them.
+   * The operation's security requirement as a List of alternatives, each a List of scheme names.
+   * Within an alternative, its apiKey schemes are reduced to one, the key it sends: the first that
+   * names a header or cookie, else the first that names a query parameter. The other schemes are
+   * kept in the order the alternative lists them. The client chooses the alternative at run time.
    */
   private static String securityList(Operation op, Map<String, SecurityScheme> schemes) {
+    return op.securityRequirements().stream()
+        .map(alternative ->
+            "List.of("
+                + oneApiKey(alternative, schemes).stream()
+                    .map(JavaClientView::quote)
+                    .collect(Collectors.joining(", "))
+                + ")")
+        .collect(Collectors.joining(", ", "List.of(", ")"));
+  }
+
+  private static List<String> oneApiKey(List<String> names, Map<String, SecurityScheme> schemes) {
     List<String> keys =
-        op.security().stream()
-            .filter(n -> JavaClientView.isSendableApiKey(schemes.get(n)))
-            .toList();
+        names.stream().filter(n -> JavaClientView.isSendableApiKey(schemes.get(n))).toList();
     String chosen =
         keys.stream()
             .filter(n -> !"query".equals(schemes.get(n).in()))
             .findFirst()
             .orElse(keys.isEmpty() ? null : keys.get(0));
     List<String> sent = new ArrayList<>();
-    for (String name : op.security()) {
+    for (String name : names) {
       SecurityScheme scheme = schemes.get(name);
       boolean apiKey = scheme != null && scheme.kind() == SecurityScheme.Kind.API_KEY;
       if (!apiKey || name.equals(chosen)) {
         sent.add(name);
       }
     }
-    return "List.of("
-        + sent.stream().map(JavaClientView::quote).collect(Collectors.joining(", "))
-        + ")";
+    return sent;
   }
 
   /** The 2xx response that carries a body, the first in document order, or null. */

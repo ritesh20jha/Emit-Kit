@@ -135,7 +135,7 @@ class JavaSdkGeneratorTest {
             "public Loan createLoan(LoanRequest body, CreateLoanOptions options) {",
             "if (options != null && options.session() != null) {",
             "cookies.put(\"session\", options.session());",
-            "List.of(\"apiKeyAuth\", \"oauth2\")");
+            "List.of(List.of(\"apiKeyAuth\"), List.of(\"oauth2\"))");
   }
 
   @Test
@@ -460,10 +460,13 @@ class JavaSdkGeneratorTest {
     assertThat(content(files, SRC + "resources/AuthorsApi.java"))
         .contains("\"/authors\", query, null, null, null, List.of());");
     assertThat(content(files, SRC + "resources/LoansApi.java"))
-        .contains("List.of(\"apiKeyAuth\", \"oauth2\")");
-    assertThat(content(files, SRC + "resources/BooksApi.java")).contains("List.of(\"bearerAuth\")");
+        .contains("List.of(List.of(\"apiKeyAuth\"), List.of(\"oauth2\"))");
+    assertThat(content(files, SRC + "resources/BooksApi.java"))
+        .contains("List.of(List.of(\"bearerAuth\"))");
     assertThat(content(files, SRC + "BookshelfApiClient.java"))
         .contains(
+            "for (String scheme : chooseRequirement(security)) {",
+            ".filter(a -> a.stream().allMatch(scheme -> held.get(scheme).query().isEmpty()))",
             "config.credentials().get(scheme)",
             "credential.headers().forEach(credHeaders::putIfAbsent)");
   }

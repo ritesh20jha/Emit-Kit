@@ -201,11 +201,18 @@ class McpGeneratorTest {
   }
 
   @Test
-  void readmeStatesThatAlternativesSendEveryConfiguredCredential() {
+  void readmeStatesThatOneAlternativeIsSent() {
     assertThat(source(generate("bookshelf"), "README.md"))
         .contains(
-            "every configured credential named by any of the operation's alternative security"
-                + " requirements is sent");
+            "security requirements, one of them is sent: the first whose credentials are all");
+  }
+
+  @Test
+  void serverSendsTheFirstAlternativeWhoseCredentialsAreSet() {
+    assertThat(source(generate("bookshelf"), "src/server.ts"))
+        .contains("const credentials = chooseRequirement(tool.security).flatMap(")
+        .contains(
+            "return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];");
   }
 
   @Test
@@ -272,7 +279,10 @@ class McpGeneratorTest {
     // listAuthors declares security: [], so its tool sends no credentials.
     assertThat(tools).contains("\"name\": \"list_authors\"").contains("\"security\": []");
     // createLoan accepts an API key or an OAuth2 token, not the global bearer token.
-    assertThat(tools).contains("\"security\": [\n      \"apiKeyAuth\",\n      \"oauth2\"\n    ]");
+    assertThat(tools)
+        .contains(
+            "\"security\": [\n      [\n        \"apiKeyAuth\"\n      ],\n      [\n"
+                + "        \"oauth2\"\n      ]\n    ]");
   }
 
   @Test

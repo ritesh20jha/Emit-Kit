@@ -68,8 +68,11 @@ public final class DeepNestingClient {
   }
 
   /**
-   * Sends a request with the credentials of the security schemes in {@code security}, and no others.
-   * An empty list sends none. Retries 429 and 5xx responses with backoff, but only for GET, HEAD,
+   * Sends a request with the credentials of one alternative of {@code security}, the operation's
+   * security requirement, and no others. Each alternative lists the schemes sent together. Of the
+   * alternatives whose credentials the client holds, the first that puts no API key in the URL is
+   * sent, else the first of them; when it holds none, the first alternative is sent with what it
+   * has. An empty list sends no credentials. Retries 429 and 5xx responses with backoff, but only for GET, HEAD,
    * PUT, DELETE and OPTIONS requests and requests with an Idempotency-Key header. Other non-2xx
    * statuses throw an {@link ApiException}.
    *
@@ -85,7 +88,7 @@ public final class DeepNestingClient {
       Map<String, String> headers,
       Map<String, String> cookies,
       Object body,
-      List<String> security) {
+      List<List<String>> security) {
     HttpRequest request = buildRequest(method, path, query, headers, cookies, body, security);
     // A retry could repeat a side effect, so only idempotent requests are retried.
     boolean retryable =
@@ -111,7 +114,7 @@ public final class DeepNestingClient {
       Map<String, String> headers,
       Map<String, String> cookies,
       Object body,
-      List<String> security) {
+      List<List<String>> security) {
     // Parameters first. Then the credentials of the operation's schemes, which win over a
     // parameter of the same name, and where two schemes set a name the first one listed wins.
     Map<String, String> allHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
@@ -123,7 +126,7 @@ public final class DeepNestingClient {
     Map<String, String> credHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
     Map<String, String> credQuery = new LinkedHashMap<>();
     Map<String, String> credCookies = new LinkedHashMap<>();
-    for (String scheme : security) {
+    for (String scheme : chooseRequirement(security)) {
       ClientConfig.Credential credential = config.credentials().get(scheme);
       if (credential != null) {
         credential.headers().forEach(credHeaders::putIfAbsent);
@@ -149,6 +152,17 @@ public final class DeepNestingClient {
           .method(method, HttpRequest.BodyPublishers.ofString(toJson(body)));
     }
     return builder.build();
+  }
+
+  /** The alternative of a security requirement to send; see {@link #request}. */
+  private List<String> chooseRequirement(List<List<String>> alternatives) {
+    Map<String, ClientConfig.Credential> held = config.credentials();
+    List<List<String>> named = alternatives.stream().filter(a -> !a.isEmpty()).toList();
+    List<List<String>> usable = named.stream().filter(a -> held.keySet().containsAll(a)).toList();
+    return usable.stream()
+        .filter(a -> a.stream().allMatch(scheme -> held.get(scheme).query().isEmpty()))
+        .findFirst()
+        .orElse(usable.isEmpty() ? (named.isEmpty() ? List.of() : named.get(0)) : usable.get(0));
   }
 
   /** Copies the entries that have a name and a value. */
@@ -310,7 +324,8 @@ public final class DeepNestingClient {
         throw new IllegalArgumentException(
             "DeepNestingClient: maxRetries must be a non-negative integer");
       }
-      // Credentials are keyed by security scheme. An operation sends only the schemes it lists.
+      // Credentials are keyed by security scheme. An operation sends only one alternative of its
+      // security requirement.
       Map<String, ClientConfig.Credential> credentials = new LinkedHashMap<>();
       // Redirects are intentionally not followed, so credentials never leave the configured host.
       java.net.http.HttpClient client =

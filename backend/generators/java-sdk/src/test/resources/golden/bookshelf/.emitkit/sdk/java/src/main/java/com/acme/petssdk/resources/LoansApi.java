@@ -40,7 +40,7 @@ public final class LoansApi {
             null,
             cookies,
             body,
-            List.of("apiKeyAuth", "oauth2"));
+            List.of(List.of("apiKeyAuth"), List.of("oauth2")));
     return read(response, new TypeReference<Loan>() {});
   }
 
@@ -58,7 +58,7 @@ public final class LoansApi {
             null,
             null,
             null,
-            List.of("bearerAuth"));
+            List.of(List.of("bearerAuth")));
     return read(response, new TypeReference<Loan>() {});
   }
 

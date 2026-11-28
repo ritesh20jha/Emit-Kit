@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from types import TracebackType
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Type
+from typing import Any, Dict, Mapping, Optional, Sequence, Set, Tuple, Type
 from urllib.parse import quote
 
 import httpx
@@ -89,14 +89,26 @@ class AuthSchemesClient:
             self._http.close()
 
     def _auth(
-        self, security: Sequence[str]
+        self, security: Sequence[Sequence[str]]
     ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
-        """The headers, query parameters and cookies that carry the credentials of the named security
-        schemes. A scheme without a configured credential contributes nothing."""
+        """The headers, query parameters and cookies that carry the credentials of one alternative
+        of the security requirement (see _choose_requirement). A scheme without a configured
+        credential contributes nothing."""
         headers: Dict[str, str] = {}
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
-        locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
+        held: Set[str] = set()
+        if self._api_key is not None:
+            held.add("api_key")
+        if self._bearer_token is not None:
+            held.add("bearer")
+        if self._basic is not None:
+            held.add("basic")
+        locations = [
+            _SCHEME_LOCATIONS[scheme]
+            for scheme in _choose_requirement(security, held)
+            if scheme in _SCHEME_LOCATIONS
+        ]
         if not locations:
             return headers, params, cookies
         # One apiKey is sent per request, so the key is never in the URL while a header or cookie
@@ -126,9 +138,9 @@ class AuthSchemesClient:
         headers: Optional[Mapping[str, Any]] = None,
         cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
-        security: Sequence[str] = (),
+        security: Sequence[Sequence[str]] = (),
     ) -> httpx.Response:
-        """Sends a request with the credentials of the named security schemes. A 429 or 5xx response
+        """Sends a request with the credentials of one alternative of the security requirement. A 429 or 5xx response
         is retried up to max_retries times, but only when the request may be repeated. Any other
         non-2xx status raises an ApiError subclass. Returns the successful response for the caller
         to parse."""
@@ -202,14 +214,26 @@ class AsyncAuthSchemesClient:
             await self._http.aclose()
 
     def _auth(
-        self, security: Sequence[str]
+        self, security: Sequence[Sequence[str]]
     ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
-        """The headers, query parameters and cookies that carry the credentials of the named security
-        schemes. A scheme without a configured credential contributes nothing."""
+        """The headers, query parameters and cookies that carry the credentials of one alternative
+        of the security requirement (see _choose_requirement). A scheme without a configured
+        credential contributes nothing."""
         headers: Dict[str, str] = {}
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
-        locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
+        held: Set[str] = set()
+        if self._api_key is not None:
+            held.add("api_key")
+        if self._bearer_token is not None:
+            held.add("bearer")
+        if self._basic is not None:
+            held.add("basic")
+        locations = [
+            _SCHEME_LOCATIONS[scheme]
+            for scheme in _choose_requirement(security, held)
+            if scheme in _SCHEME_LOCATIONS
+        ]
         if not locations:
             return headers, params, cookies
         # One apiKey is sent per request, so the key is never in the URL while a header or cookie
@@ -239,9 +263,9 @@ class AsyncAuthSchemesClient:
         headers: Optional[Mapping[str, Any]] = None,
         cookies: Optional[Mapping[str, Any]] = None,
         json_body: Any = None,
-        security: Sequence[str] = (),
+        security: Sequence[Sequence[str]] = (),
     ) -> httpx.Response:
-        """Sends a request with the credentials of the named security schemes. A 429 or 5xx response
+        """Sends a request with the credentials of one alternative of the security requirement. A 429 or 5xx response
         is retried up to max_retries times, but only when the request may be repeated. Any other
         non-2xx status raises an ApiError subclass. Returns the successful response for the caller
         to parse."""
@@ -281,6 +305,28 @@ def _check_max_retries(max_retries: int, error: str) -> int:
     if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
         raise ValueError(error)
     return max_retries
+
+
+def _choose_requirement(alternatives: Sequence[Sequence[str]], held: Set[str]) -> Sequence[str]:
+    """The alternative of a security requirement that a request sends. Of the alternatives whose
+    credentials are all held, the first that puts no apiKey in the URL, else the first of them. When
+    none is held, the first alternative, which sends what it can. Empty alternatives are skipped."""
+    named = [names for names in alternatives if names]
+    usable = [names for names in named if all(_credential_of(s) in held for s in names)]
+    for names in usable:
+        if not any(_SCHEME_LOCATIONS.get(s, ("", ""))[0] == "query" for s in names):
+            return names
+    if usable:
+        return usable[0]
+    return named[0] if named else ()
+
+
+def _credential_of(scheme: str) -> Optional[str]:
+    """The credential a scheme sends: "api_key", "bearer" or "basic". None for an unknown scheme."""
+    location = _SCHEME_LOCATIONS.get(scheme)
+    if location is None:
+        return None
+    return location[0] if location[0] in ("bearer", "basic") else "api_key"
 
 
 def _api_key_location(locations: Sequence[Tuple[str, str]]) -> Optional[Tuple[str, str]]:

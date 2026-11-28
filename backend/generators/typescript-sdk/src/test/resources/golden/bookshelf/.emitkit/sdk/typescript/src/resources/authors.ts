@@ -29,7 +29,7 @@ export class AuthorsResource {
    */
   async listAuthorBooks(params: { authorId: number }): Promise<Book[]> {
     const response = await this.client.request("GET", "/authors/" + encodeURIComponent(String(params.authorId)) + "/books", {
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
     });
     return response.json();
   }

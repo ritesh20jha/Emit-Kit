@@ -89,6 +89,13 @@ Severity: **P0** the output is broken for normal use. **P1** wrong behaviour for
 | 18 | Fixed. |
 | 19 | Open. |
 
+### Re-test on 2026-11-28
+
+Run `01M8H147J15NE7VYPJKV2GNM33` (PR #2), generated from this branch, passes every harness case in all five outputs. The re-test also found two problems, both now fixed on this branch:
+
+- **Every alternative's credentials were sent.** `createLoan` accepts `apiKeyAuth` or `oauth2`, but every output sent both the API key and the bearer token. `Operation` now keeps the requirement's alternatives (`securityRequirements`). Each runtime sends one alternative: of those whose credentials are all set, the first that puts no API key in the URL, else the first of them. When none is fully set, it sends the first alternative with what it has.
+- **A reconnected project reused a released version.** Its first run was 0.1.0 again, so the merge tag `sdk/v0.1.0` already existed and was skipped, and nothing was published. When no version is recorded, `CALC_VERSION` now continues from the highest `sdk/v` or `mcp/v` tag in the output repo, with a breaking-change bump (minor below 1.0.0, major from 1.0.0).
+
 Before release, review the breaking changes for users of already-generated SDKs. These include the new signatures in all three SDKs, the Java record order, the MCP package rename and per-operation credentials. The first release after deploy should be a major bump: the spec diff compares API models, not generated code, so it cannot see these changes.
 
 ## Not covered

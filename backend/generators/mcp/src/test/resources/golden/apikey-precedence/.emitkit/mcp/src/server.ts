@@ -54,6 +54,28 @@ const apiKey = process.env.API_KEY;
 
 type Args = Record<string, unknown>;
 
+/**
+ * The alternative of a security requirement to send. Of the alternatives whose credentials are set,
+ * the first that puts no API key in the URL, else the first of them. When none is set, the first
+ * alternative, which sends what it can. Empty alternatives are skipped.
+ */
+function chooseRequirement(alternatives: string[][]): string[] {
+  const holds = (name: string): boolean => {
+    const credential = SECURITY_SCHEMES.get(name);
+    if (credential?.kind === "bearer") {
+      return Boolean(apiToken);
+    }
+    return credential?.kind === "apiKey" && Boolean(apiKey);
+  };
+  const inQuery = (name: string): boolean => {
+    const credential = SECURITY_SCHEMES.get(name);
+    return credential?.kind === "apiKey" && credential.in === "query";
+  };
+  const named = alternatives.filter((names) => names.length > 0);
+  const held = named.filter((names) => names.every(holds));
+  return held.find((names) => !names.some(inQuery)) ?? held[0] ?? named[0] ?? [];
+}
+
 /** Text for one argument value: arrays are comma-joined and objects are JSON. */
 function toText(value: unknown): string {
   if (Array.isArray(value)) {
@@ -127,8 +149,8 @@ async function callApi(
     }
   }
   // Credentials are applied after the parameters, so a credential replaces a parameter of the same
-  // name. Only the schemes that this tool's security requirement names are considered.
-  const credentials = tool.security.flatMap((name) => {
+  // name. Only the schemes of one alternative of this tool's security requirement are considered.
+  const credentials = chooseRequirement(tool.security).flatMap((name) => {
     const credential = SECURITY_SCHEMES.get(name);
     return credential === undefined ? [] : [credential];
   });

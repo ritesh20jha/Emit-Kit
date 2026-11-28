@@ -162,7 +162,7 @@ record CommandOperation(
         !cookies.isEmpty(),
         body != null,
         body == null ? quote("") : quote(body.contentType()),
-        securityLiteral(op.security()));
+        securityLiteral(op.securityRequirements()));
   }
 
   /**
@@ -185,9 +185,19 @@ record CommandOperation(
     return summary + "\n\n" + description;
   }
 
-  /** The scheme names of the operation's effective security requirement, as a string array. */
-  static String securityLiteral(List<String> schemes) {
-    return "[" + String.join(", ", schemes.stream().map(TsLiterals::quote).toList()) + "]";
+  /**
+   * The operation's effective security requirement as an array of alternatives, each an array of
+   * scheme names, such as {@code [["a"], ["b"]]}.
+   */
+  static String securityLiteral(List<List<String>> requirements) {
+    return "["
+        + String.join(
+            ", ",
+            requirements.stream()
+                .map(names ->
+                    "[" + String.join(", ", names.stream().map(TsLiterals::quote).toList()) + "]")
+                .toList())
+        + "]";
   }
 
   /**

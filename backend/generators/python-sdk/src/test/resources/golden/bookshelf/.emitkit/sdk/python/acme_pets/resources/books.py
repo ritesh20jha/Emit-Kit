@@ -26,34 +26,34 @@ class BooksResource:
         """List books
 
         Returns a page of books, optionally filtered by genre and availability."""
-        response = self._client._request("GET", "/books", query=_drop_none({"cursor": cursor, "limit": limit, "genre": None if genre is None else TypeAdapter(Genre).dump_python(genre, mode='json'), "available": available}), security=["bearerAuth"])
+        response = self._client._request("GET", "/books", query=_drop_none({"cursor": cursor, "limit": limit, "genre": None if genre is None else TypeAdapter(Genre).dump_python(genre, mode='json'), "available": available}), security=[["bearerAuth"]])
         return TypeAdapter(BookPage).validate_python(response.json())
 
     def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:
         """Add a book
 
         Adds a new book to the catalogue."""
-        response = self._client._request("POST", "/books", headers={"Idempotency-Key": idempotency_key}, json_body=TypeAdapter[Any](BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=["bearerAuth"])
+        response = self._client._request("POST", "/books", headers={"Idempotency-Key": idempotency_key}, json_body=TypeAdapter[Any](BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[["bearerAuth"]])
         return TypeAdapter(Book).validate_python(response.json())
 
     def get_book(self, *, book_id: str) -> Book:
         """Get a book
 
         Returns one book by its id."""
-        response = self._client._request("GET", f"/books/{_quote(str(book_id), safe='')}", security=["bearerAuth"])
+        response = self._client._request("GET", f"/books/{_quote(str(book_id), safe='')}", security=[["bearerAuth"]])
         return TypeAdapter(Book).validate_python(response.json())
 
     def delete_book(self, *, book_id: str) -> None:
         """Remove a book
 
         Removes a book from the catalogue."""
-        self._client._request("DELETE", f"/books/{_quote(str(book_id), safe='')}", security=["bearerAuth"])
+        self._client._request("DELETE", f"/books/{_quote(str(book_id), safe='')}", security=[["bearerAuth"]])
 
     def update_book(self, *, book_id: str, body: BookPatch) -> Book:
         """Update a book
 
         Changes some fields of a book. Fields left out are kept."""
-        response = self._client._request("PATCH", f"/books/{_quote(str(book_id), safe='')}", json_body=TypeAdapter[Any](BookPatch).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=["bearerAuth"])
+        response = self._client._request("PATCH", f"/books/{_quote(str(book_id), safe='')}", json_body=TypeAdapter[Any](BookPatch).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[["bearerAuth"]])
         return TypeAdapter(Book).validate_python(response.json())
 
 
@@ -67,32 +67,32 @@ class AsyncBooksResource:
         """List books
 
         Returns a page of books, optionally filtered by genre and availability."""
-        response = await self._client._request("GET", "/books", query=_drop_none({"cursor": cursor, "limit": limit, "genre": None if genre is None else TypeAdapter(Genre).dump_python(genre, mode='json'), "available": available}), security=["bearerAuth"])
+        response = await self._client._request("GET", "/books", query=_drop_none({"cursor": cursor, "limit": limit, "genre": None if genre is None else TypeAdapter(Genre).dump_python(genre, mode='json'), "available": available}), security=[["bearerAuth"]])
         return TypeAdapter(BookPage).validate_python(response.json())
 
     async def create_book(self, *, idempotency_key: str, body: BookInput) -> Book:
         """Add a book
 
         Adds a new book to the catalogue."""
-        response = await self._client._request("POST", "/books", headers={"Idempotency-Key": idempotency_key}, json_body=TypeAdapter[Any](BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=["bearerAuth"])
+        response = await self._client._request("POST", "/books", headers={"Idempotency-Key": idempotency_key}, json_body=TypeAdapter[Any](BookInput).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[["bearerAuth"]])
         return TypeAdapter(Book).validate_python(response.json())
 
     async def get_book(self, *, book_id: str) -> Book:
         """Get a book
 
         Returns one book by its id."""
-        response = await self._client._request("GET", f"/books/{_quote(str(book_id), safe='')}", security=["bearerAuth"])
+        response = await self._client._request("GET", f"/books/{_quote(str(book_id), safe='')}", security=[["bearerAuth"]])
         return TypeAdapter(Book).validate_python(response.json())
 
     async def delete_book(self, *, book_id: str) -> None:
         """Remove a book
 
         Removes a book from the catalogue."""
-        await self._client._request("DELETE", f"/books/{_quote(str(book_id), safe='')}", security=["bearerAuth"])
+        await self._client._request("DELETE", f"/books/{_quote(str(book_id), safe='')}", security=[["bearerAuth"]])
 
     async def update_book(self, *, book_id: str, body: BookPatch) -> Book:
         """Update a book
 
         Changes some fields of a book. Fields left out are kept."""
-        response = await self._client._request("PATCH", f"/books/{_quote(str(book_id), safe='')}", json_body=TypeAdapter[Any](BookPatch).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=["bearerAuth"])
+        response = await self._client._request("PATCH", f"/books/{_quote(str(book_id), safe='')}", json_body=TypeAdapter[Any](BookPatch).dump_python(body, mode="json", by_alias=True, exclude_unset=True), security=[["bearerAuth"]])
         return TypeAdapter(Book).validate_python(response.json())

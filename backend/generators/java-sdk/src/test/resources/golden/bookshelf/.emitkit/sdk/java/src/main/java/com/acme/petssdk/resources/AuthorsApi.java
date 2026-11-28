@@ -52,7 +52,7 @@ public final class AuthorsApi {
             null,
             null,
             null,
-            List.of("bearerAuth"));
+            List.of(List.of("bearerAuth")));
     return read(response, new TypeReference<List<Book>>() {});
   }
 

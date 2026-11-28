@@ -18,7 +18,7 @@ export class LoansResource {
   async createLoan(params: { session?: string }, body: LoanRequest): Promise<Loan> {
     const response = await this.client.request("POST", "/loans", {
       cookies: { session: params.session },
-      security: ["apiKeyAuth", "oauth2"],
+      security: [["apiKeyAuth"], ["oauth2"]],
       body,
     });
     return response.json();
@@ -31,7 +31,7 @@ export class LoansResource {
    */
   async returnLoan(params: { loanId: string }): Promise<Loan> {
     const response = await this.client.request("POST", "/loans/" + encodeURIComponent(String(params.loanId)) + "/return", {
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
     });
     return response.json();
   }

@@ -18,7 +18,7 @@ export class BooksResource {
   async listBooks(params: { cursor?: string; limit?: number; genre?: Genre; available?: boolean } = {}): Promise<BookPage> {
     const response = await this.client.request("GET", "/books", {
       query: { cursor: params.cursor, limit: params.limit, genre: params.genre, available: params.available },
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
     });
     return response.json();
   }
@@ -31,7 +31,7 @@ export class BooksResource {
   async createBook(params: { idempotencyKey: string }, body: BookInput): Promise<Book> {
     const response = await this.client.request("POST", "/books", {
       headers: { "Idempotency-Key": params.idempotencyKey },
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
       body,
     });
     return response.json();
@@ -44,7 +44,7 @@ export class BooksResource {
    */
   async getBook(params: { bookId: string }): Promise<Book> {
     const response = await this.client.request("GET", "/books/" + encodeURIComponent(String(params.bookId)), {
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
     });
     return response.json();
   }
@@ -56,7 +56,7 @@ export class BooksResource {
    */
   async deleteBook(params: { bookId: string }): Promise<void> {
     await this.client.request("DELETE", "/books/" + encodeURIComponent(String(params.bookId)), {
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
     });
   }
 
@@ -67,7 +67,7 @@ export class BooksResource {
    */
   async updateBook(params: { bookId: string }, body: BookPatch): Promise<Book> {
     const response = await this.client.request("PATCH", "/books/" + encodeURIComponent(String(params.bookId)), {
-      security: ["bearerAuth"],
+      security: [["bearerAuth"]],
       body,
     });
     return response.json();

@@ -33,7 +33,7 @@ class AuthorsResource:
         """List an author's books
 
         Returns the books written by one author."""
-        response = self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books", security=["bearerAuth"])
+        response = self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books", security=[["bearerAuth"]])
         return TypeAdapter(list[Book]).validate_python(response.json())
 
 
@@ -54,5 +54,5 @@ class AsyncAuthorsResource:
         """List an author's books
 
         Returns the books written by one author."""
-        response = await self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books", security=["bearerAuth"])
+        response = await self._client._request("GET", f"/authors/{_quote(str(author_id), safe='')}/books", security=[["bearerAuth"]])
         return TypeAdapter(list[Book]).validate_python(response.json())

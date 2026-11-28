@@ -15,7 +15,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/orders",
-        security: ["queryKey", "cookieKey"],
+        security: [["queryKey"], ["cookieKey"]],
       }),
     );
 }

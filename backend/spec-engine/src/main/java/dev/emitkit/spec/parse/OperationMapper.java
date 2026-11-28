@@ -103,7 +103,8 @@ final class OperationMapper {
         requestBody(resolveBody(api, op.getRequestBody())),
         responses(api, op.getResponses()),
         securityNames(security),
-        Boolean.TRUE.equals(op.getDeprecated()));
+        Boolean.TRUE.equals(op.getDeprecated()),
+        securityRequirements(security));
   }
 
   /** {@code GET /users/{id}} becomes {@code getUsersById}. */
@@ -285,6 +286,15 @@ final class OperationMapper {
   /** The first content type, preferring {@code application/json} when it is offered. */
   private static String preferredContentType(Content content) {
     return content.containsKey(JSON) ? JSON : content.keySet().iterator().next();
+  }
+
+  /** One list of scheme names per alternative, in document order; scopes are not kept. */
+  private static List<List<String>> securityRequirements(
+      @Nullable List<SecurityRequirement> requirements) {
+    if (requirements == null) {
+      return List.of();
+    }
+    return requirements.stream().map(r -> List.copyOf(r.keySet())).toList();
   }
 
   /** Scheme names only; scopes are not part of the model. */

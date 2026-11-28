@@ -16,7 +16,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/items",
-        security: ["headerKey", "queryKey"],
+        security: [["headerKey"], ["queryKey"]],
         headers: {
           "X-Api-Key": opts["xApiKey"],
         },

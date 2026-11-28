@@ -33,7 +33,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/authors/" + encodeURIComponent(String(opts["authorId"])) + "/books",
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
       }),
     );
 }

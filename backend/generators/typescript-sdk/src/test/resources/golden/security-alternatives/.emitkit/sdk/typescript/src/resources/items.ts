@@ -13,7 +13,7 @@ export class ItemsResource {
     await this.client.request("GET", "/items", {
       query: { limit: params.limit },
       headers: { limit: params.headerLimit },
-      security: ["headerKey", "queryKey"],
+      security: [["headerKey"], ["queryKey"]],
     });
   }
 
@@ -21,13 +21,13 @@ export class ItemsResource {
     await this.client.request("GET", "/things/" + encodeURIComponent(String(params.xId)), {
       headers: { "X-Id": params.headerXId },
       cookies: { session: params.session },
-      security: ["cookieKey", "queryKey"],
+      security: [["cookieKey"], ["queryKey"]],
     });
   }
 
   async legacyCall(): Promise<void> {
     await this.client.request("GET", "/legacy", {
-      security: ["queryKey"],
+      security: [["queryKey"]],
     });
   }
 }

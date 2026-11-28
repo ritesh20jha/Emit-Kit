@@ -32,7 +32,8 @@ Credentials are set through the `AuthOptions` fields in `src/client.ts`. Each fi
 the API declares a matching scheme: `apiKey` for API key schemes, `bearerToken` for HTTP bearer,
 OAuth2 and OpenID Connect schemes, and `basic` for HTTP basic. Each operation sends only the
 credentials of the schemes in its own security requirement, so an operation with no requirement
-sends none. An API key is sent in the header, cookie or query parameter that its scheme declares. A
+sends none. When the requirement lists alternatives, the request sends one of them: the first whose
+credentials are all set, preferring one that does not put an API key in the URL. An API key is sent in the header, cookie or query parameter that its scheme declares. A
 request carries one API key: the first header or cookie scheme the operation names, or else its
 query scheme. Other schemes are not mapped. Set them with a custom `fetch`.
 

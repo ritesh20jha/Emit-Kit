@@ -20,7 +20,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/books",
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
         query: {
           "cursor": opts["cursor"],
           "limit": opts["limit"],
@@ -40,7 +40,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "POST",
         path: "/books",
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
         headers: {
           "Idempotency-Key": opts["idempotencyKey"],
         },
@@ -58,7 +58,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/books/" + encodeURIComponent(String(opts["bookId"])),
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
       }),
     );
 
@@ -71,7 +71,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "DELETE",
         path: "/books/" + encodeURIComponent(String(opts["bookId"])),
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
       }),
     );
 
@@ -85,7 +85,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "PATCH",
         path: "/books/" + encodeURIComponent(String(opts["bookId"])),
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
         body: opts["json"],
         contentType: "application/json",
       }),

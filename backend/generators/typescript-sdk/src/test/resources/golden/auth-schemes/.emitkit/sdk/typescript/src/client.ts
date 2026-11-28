@@ -39,8 +39,11 @@ export interface RequestOptions {
   headers?: Record<string, unknown>;
   /** Cookie parameters, keyed by cookie name. Values are URL-encoded and sent in one Cookie header. */
   cookies?: Record<string, unknown>;
-  /** Names of the security schemes in the operation's effective security requirement. Empty sends no credentials. */
-  security?: readonly string[];
+  /**
+   * The operation's effective security requirement: its alternatives, each the names of the
+   * schemes sent together. Empty sends no credentials.
+   */
+  security?: readonly (readonly string[])[];
   body?: unknown;
 }
 
@@ -111,7 +114,9 @@ export class AuthSchemesClient {
   }
 
   /**
-   * Sends a request. Only the credentials of the schemes named in `options.security` are sent.
+   * Sends a request with the credentials of one alternative of `options.security`. Of the
+   * alternatives whose credentials the client holds, the first that puts no API key in the URL is
+   * sent, else the first of them. When it holds none, the first alternative is sent with what it has.
    * 429 and 5xx responses are retried, up to maxRetries times, when the method is replay-safe or
    * the request has an Idempotency-Key. The wait is the Retry-After header when present (capped at
    * 30 seconds), else exponential backoff. Any other non-2xx status throws an ApiError subclass.
@@ -126,7 +131,7 @@ export class AuthSchemesClient {
   ): Promise<Response> {
     const url = new URL(this.baseUrl + path);
     // Parameters first, then credentials, so a parameter can never replace a credential.
-    const auth = this.authFor(options.security ?? []);
+    const auth = this.authFor(this.chooseRequirement(options.security ?? []));
     for (const [name, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined && value !== null) {
         url.searchParams.set(name, paramValue(value));
@@ -182,6 +187,28 @@ export class AuthSchemesClient {
     }
   }
 
+  /** The alternative to send: see `request`. Empty alternatives are skipped. */
+  private chooseRequirement(alternatives: readonly (readonly string[])[]): readonly string[] {
+    const named = alternatives.filter((names) => names.length > 0);
+    const held = named.filter((names) => names.every((name) => this.holds(name)));
+    return held.find((names) => !names.some(isQueryApiKey)) ?? held[0] ?? named[0] ?? [];
+  }
+
+  /** Whether the client holds a credential for the named scheme. False for an unknown scheme. */
+  private holds(name: string): boolean {
+    const scheme = SECURITY_SCHEMES[name];
+    switch (scheme?.kind) {
+      case "apiKey":
+        return this.credentials.apiKey !== undefined;
+      case "bearer":
+        return this.credentials.bearer !== undefined;
+      case "basic":
+        return this.credentials.basic !== undefined;
+      default:
+        return false;
+    }
+  }
+
   /** The headers, query parameters and cookies that the named security schemes call for. */
   private authFor(schemes: readonly string[]): AuthParts {
     const parts: AuthParts = { headers: {}, query: {}, cookies: {} };
@@ -215,6 +242,12 @@ export class AuthSchemesClient {
     }
     return parts;
   }
+}
+
+/** Whether the named scheme sends an API key in the query string. */
+function isQueryApiKey(name: string): boolean {
+  const scheme = SECURITY_SCHEMES[name];
+  return scheme?.kind === "apiKey" && scheme.location === "query";
 }
 
 function isRetryable(status: number): boolean {

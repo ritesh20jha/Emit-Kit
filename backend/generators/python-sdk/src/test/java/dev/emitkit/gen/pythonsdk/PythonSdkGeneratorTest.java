@@ -266,20 +266,20 @@ class PythonSdkGeneratorTest {
   void operationSecurityDecidesWhichCredentialsAreSent() {
     // auth-schemes: a global bearer scheme and operations that override or drop it.
     assertThat(content("auth-schemes", "resources/default.py"))
-        .contains("security=[\"headerKey\"]")
-        .contains("security=[\"queryKey\"]")
-        .contains("security=[\"basicAuth\"]")
-        .contains("security=[\"oauth\"]")
+        .contains("security=[[\"headerKey\"]]")
+        .contains("security=[[\"queryKey\"]]")
+        .contains("security=[[\"basicAuth\"]]")
+        .contains("security=[[\"oauth\"]]")
         .contains("security=[]")
-        .contains("security=[\"bearerAuth\"]");
+        .contains("security=[[\"bearerAuth\"]]");
   }
 
   @Test
   void bookshelfOperationsSendTheSchemesOfTheirRequirement() {
     assertThat(content("bookshelf", "resources/authors.py")).contains("security=[]");
-    assertThat(content("bookshelf", "resources/books.py")).contains("security=[\"bearerAuth\"]");
+    assertThat(content("bookshelf", "resources/books.py")).contains("security=[[\"bearerAuth\"]]");
     assertThat(content("bookshelf", "resources/loans.py"))
-        .contains("security=[\"apiKeyAuth\", \"oauth2\"]");
+        .contains("security=[[\"apiKeyAuth\"], [\"oauth2\"]]");
     assertThat(content("bookshelf", "client.py"))
         .contains("\"apiKeyAuth\": (\"header\", \"X-Api-Key\"),")
         .contains("\"bearerAuth\": (\"bearer\", \"\"),")
@@ -508,14 +508,15 @@ class PythonSdkGeneratorTest {
   @Test
   void apiKeyIsSentOnceFromTheFirstHeaderOrCookieSchemeNeverFromTheUrlThen() {
     assertThat(sdkFile(localSpec("apikeys"), "acme_pets/resources/keys.py"))
-        .contains("security=[\"queryKey\", \"headerKey\"]")
-        .contains("security=[\"queryKey\", \"cookieKey\"]")
-        .contains("security=[\"queryKey\"]");
+        .contains("security=[[\"queryKey\"], [\"headerKey\"]]")
+        .contains("security=[[\"queryKey\"], [\"cookieKey\"]]")
+        .contains("security=[[\"queryKey\"]]");
     assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py"))
         .contains("\"headerKey\": (\"header\", \"X-Api-Key\"),")
         .contains("\"cookieKey\": (\"cookie\", \"sid\"),")
         .contains("\"queryKey\": (\"query\", \"api_key\"),")
-        .contains("def _api_key_location(");
+        .contains("def _api_key_location(")
+        .contains("def _choose_requirement(");
   }
 
   @Test

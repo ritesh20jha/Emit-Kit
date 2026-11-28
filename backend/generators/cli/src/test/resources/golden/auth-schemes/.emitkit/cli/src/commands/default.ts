@@ -15,7 +15,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/header-key",
-        security: ["headerKey"],
+        security: [["headerKey"]],
       }),
     );
 
@@ -26,7 +26,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/query-key",
-        security: ["queryKey"],
+        security: [["queryKey"]],
       }),
     );
 
@@ -37,7 +37,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/basic",
-        security: ["basicAuth"],
+        security: [["basicAuth"]],
       }),
     );
 
@@ -48,7 +48,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/oauth",
-        security: ["oauth"],
+        security: [["oauth"]],
       }),
     );
 
@@ -70,7 +70,7 @@ export function registerGroup(program: Command, run: Runner): void {
       run({
         method: "GET",
         path: "/inherited",
-        security: ["bearerAuth"],
+        security: [["bearerAuth"]],
       }),
     );
 }
