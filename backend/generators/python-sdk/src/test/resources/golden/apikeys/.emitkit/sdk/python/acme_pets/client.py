@@ -90,7 +90,8 @@ class ApiKeysClient:
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
         locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
-        kinds = {kind for kind, _ in locations}
+        if not locations:
+            return headers, params, cookies
         # One apiKey is sent per request, so the key is never in the URL while a header or cookie
         # scheme applies.
         key = _api_key_location(locations)
@@ -193,7 +194,8 @@ class AsyncApiKeysClient:
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
         locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
-        kinds = {kind for kind, _ in locations}
+        if not locations:
+            return headers, params, cookies
         # One apiKey is sent per request, so the key is never in the URL while a header or cookie
         # scheme applies.
         key = _api_key_location(locations)

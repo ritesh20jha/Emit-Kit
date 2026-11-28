@@ -85,7 +85,8 @@ class PetstoreClient:
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
         locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
-        kinds = {kind for kind, _ in locations}
+        if not locations:
+            return headers, params, cookies
         return headers, params, cookies
 
     def _request(
@@ -175,7 +176,8 @@ class AsyncPetstoreClient:
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
         locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
-        kinds = {kind for kind, _ in locations}
+        if not locations:
+            return headers, params, cookies
         return headers, params, cookies
 
     async def _request(

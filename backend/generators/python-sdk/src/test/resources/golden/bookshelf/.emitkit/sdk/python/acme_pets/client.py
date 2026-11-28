@@ -96,7 +96,8 @@ class BookshelfApiClient:
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
         locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
-        kinds = {kind for kind, _ in locations}
+        if not locations:
+            return headers, params, cookies
         # One apiKey is sent per request, so the key is never in the URL while a header or cookie
         # scheme applies.
         key = _api_key_location(locations)
@@ -108,7 +109,7 @@ class BookshelfApiClient:
                 cookies[name] = self._api_key
             else:
                 params[name] = self._api_key
-        if "bearer" in kinds and self._bearer_token is not None:
+        if any(kind == "bearer" for kind, _ in locations) and self._bearer_token is not None:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
         return headers, params, cookies
 
@@ -205,7 +206,8 @@ class AsyncBookshelfApiClient:
         params: Dict[str, str] = {}
         cookies: Dict[str, str] = {}
         locations = [_SCHEME_LOCATIONS[scheme] for scheme in security if scheme in _SCHEME_LOCATIONS]
-        kinds = {kind for kind, _ in locations}
+        if not locations:
+            return headers, params, cookies
         # One apiKey is sent per request, so the key is never in the URL while a header or cookie
         # scheme applies.
         key = _api_key_location(locations)
@@ -217,7 +219,7 @@ class AsyncBookshelfApiClient:
                 cookies[name] = self._api_key
             else:
                 params[name] = self._api_key
-        if "bearer" in kinds and self._bearer_token is not None:
+        if any(kind == "bearer" for kind, _ in locations) and self._bearer_token is not None:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
         return headers, params, cookies
 
