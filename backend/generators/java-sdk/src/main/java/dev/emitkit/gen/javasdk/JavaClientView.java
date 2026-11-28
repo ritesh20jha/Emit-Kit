@@ -40,8 +40,6 @@ record JavaClientView(
     List<Literal> apiKeyCredentials,
     List<Literal> bearerCredentials,
     List<Literal> basicCredentials,
-    /** The condition under which basic credentials are used, as a bearer token takes precedence. */
-    String basicCondition,
     List<Accessor> accessors) {
 
   private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("https?://[^{}\\s]+");
@@ -96,8 +94,6 @@ record JavaClientView(
         apiKeys,
         bearerCredentials(schemes),
         basicCredentials(schemes),
-        // A bearer token, when given, takes precedence over basic credentials.
-        hasBearer ? "basicUsername != null && bearerToken == null" : "basicUsername != null",
         accessors);
   }
 
@@ -189,6 +185,7 @@ record JavaClientView(
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+            .replace("{@", "&#123;@")
             .replace("\\", "&#92;")
             .replace("*/", "*&#47;");
     return escaped.startsWith("@") ? "&#64;" + escaped.substring(1) : escaped;
@@ -219,37 +216,57 @@ record JavaClientView(
   }
 
   /**
-   * One statement per API key scheme sent in a header or a query parameter, which carries the
-   * builder's single API key in the scheme's own location and name.
+   * Whether an apiKey scheme can send its key: it must name a header, cookie or query parameter.
+   */
+  static boolean isSendableApiKey(SecurityScheme s) {
+    return s != null
+        && s.kind() == Kind.API_KEY
+        && s.paramName() != null
+        && ("header".equals(s.in()) || "cookie".equals(s.in()) || "query".equals(s.in()));
+  }
+
+  /**
+   * One statement per sendable API key scheme. Each carries the builder's single API key in the
+   * scheme's own location and name.
    */
   private static List<Literal> apiKeyCredentials(List<SecurityScheme> schemes) {
     var out = new ArrayList<Literal>();
     for (SecurityScheme s : schemes) {
-      if (s.kind() != Kind.API_KEY || s.paramName() == null) {
+      if (!isSendableApiKey(s)) {
         continue;
       }
-      String key = quote(s.paramName()) + ", apiKey)";
-      if ("header".equals(s.in())) {
-        out.add(new Literal(putCredential(s.name(), "Map.of(" + key, "Map.of()")));
-      } else if ("query".equals(s.in())) {
-        out.add(new Literal(putCredential(s.name(), "Map.of()", "Map.of(" + key)));
-      }
+      String entry = quote(s.paramName()) + ", apiKey)";
+      String none = "Map.of()";
+      out.add(
+          new Literal(
+              switch (s.in()) {
+                case "header" -> putCredential(s.name(), "Map.of(" + entry, none, none);
+                case "query" -> putCredential(s.name(), none, "Map.of(" + entry, none);
+                default -> putCredential(s.name(), none, none, "Map.of(" + entry);
+              }));
     }
     return out;
   }
 
-  /** One statement per bearer scheme: OAuth2 and OpenID Connect carry the token as a bearer. */
+  /**
+   * One statement per bearer scheme: OAuth2 and OpenID Connect carry the token as a bearer. A
+   * bearer scheme is registered whenever a token is set, and the request decides whether it is
+   * sent.
+   */
   private static List<Literal> bearerCredentials(List<SecurityScheme> schemes) {
     return schemes.stream()
         .filter(JavaClientView::isBearerScheme)
         .map(s ->
             new Literal(
                 putCredential(
-                    s.name(), "Map.of(\"Authorization\", \"Bearer \" + bearerToken)", "Map.of()")))
+                    s.name(),
+                    "Map.of(\"Authorization\", \"Bearer \" + bearerToken)",
+                    "Map.of()",
+                    "Map.of()")))
         .toList();
   }
 
-  /** One statement per HTTP basic scheme. */
+  /** One statement per HTTP basic scheme, registered whenever basic credentials are set. */
   private static List<Literal> basicCredentials(List<SecurityScheme> schemes) {
     return schemes.stream()
         .filter(s -> s.kind() == Kind.HTTP && "basic".equalsIgnoreCase(s.scheme()))
@@ -258,18 +275,21 @@ record JavaClientView(
                 putCredential(
                     s.name(),
                     "Map.of(\"Authorization\", basicCredentials(basicUsername, basicPassword))",
+                    "Map.of()",
                     "Map.of()")))
         .toList();
   }
 
-  /** A statement that adds one credential, with its headers and query, under its scheme name. */
-  private static String putCredential(String scheme, String headers, String query) {
+  /** A statement that registers one scheme's headers, query parameters and cookies. */
+  private static String putCredential(String scheme, String headers, String query, String cookies) {
     return "credentials.put(\n            "
         + quote(scheme)
         + ",\n            new ClientConfig.Credential("
         + headers
         + ", "
         + query
+        + ", "
+        + cookies
         + "));";
   }
 }

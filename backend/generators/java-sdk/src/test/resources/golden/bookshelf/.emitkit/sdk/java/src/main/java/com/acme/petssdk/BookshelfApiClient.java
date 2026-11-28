@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.TreeMap;
 
 /** Client for the Bookshelf API API. */
 public final class BookshelfApiClient {
@@ -84,18 +85,20 @@ public final class BookshelfApiClient {
    * PUT, DELETE and OPTIONS requests and requests with an Idempotency-Key header. Other non-2xx
    * statuses throw an {@link ApiException}.
    *
-   * <p>{@code path} starts with {@code /} and is already percent-encoded. Query names and values are
-   * encoded here, and entries with a null name or value are skipped. A null query or header map is
-   * empty, and a null body sends none.
+   * <p>{@code path} starts with {@code /} and is already percent-encoded. Query, header and cookie
+   * names and values are passed as given, and entries with a null name or value are skipped. A
+   * credential overrides a parameter of the same name. Cookies, the parameters and the credentials,
+   * share one Cookie header with URL-encoded values. A null map is empty, and a null body sends none.
    */
   public HttpResponse<String> request(
       String method,
       String path,
       Map<String, String> query,
       Map<String, String> headers,
+      Map<String, String> cookies,
       Object body,
       List<String> security) {
-    HttpRequest request = buildRequest(method, path, query, headers, body, security);
+    HttpRequest request = buildRequest(method, path, query, headers, cookies, body, security);
     // A retry could repeat a side effect, so only idempotent requests are retried.
     boolean retryable =
         SAFE_METHODS.contains(request.method())
@@ -118,32 +121,33 @@ public final class BookshelfApiClient {
       String path,
       Map<String, String> query,
       Map<String, String> headers,
+      Map<String, String> cookies,
       Object body,
       List<String> security) {
-    Map<String, String> allHeaders = new LinkedHashMap<>();
+    // Parameters first. Then the credentials of the operation's schemes, which win over a
+    // parameter of the same name, and where two schemes set a name the first one listed wins.
+    Map<String, String> allHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
     Map<String, String> allQuery = new LinkedHashMap<>();
+    Map<String, String> allCookies = new LinkedHashMap<>();
+    addPresent(query, allQuery);
+    addPresent(headers, allHeaders);
+    addPresent(cookies, allCookies);
+    Map<String, String> credHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    Map<String, String> credQuery = new LinkedHashMap<>();
+    Map<String, String> credCookies = new LinkedHashMap<>();
     for (String scheme : security) {
       ClientConfig.Credential credential = config.credentials().get(scheme);
       if (credential != null) {
-        allHeaders.putAll(credential.headers());
-        allQuery.putAll(credential.query());
+        credential.headers().forEach(credHeaders::putIfAbsent);
+        credential.query().forEach(credQuery::putIfAbsent);
+        credential.cookies().forEach(credCookies::putIfAbsent);
       }
     }
-    if (query != null) {
-      query.forEach(
-          (name, value) -> {
-            if (name != null && value != null) {
-              allQuery.put(name, value);
-            }
-          });
-    }
-    if (headers != null) {
-      headers.forEach(
-          (name, value) -> {
-            if (name != null && value != null) {
-              allHeaders.put(name, value);
-            }
-          });
+    allHeaders.putAll(credHeaders);
+    allQuery.putAll(credQuery);
+    allCookies.putAll(credCookies);
+    if (!allCookies.isEmpty()) {
+      allHeaders.put("Cookie", cookieHeader(allCookies));
     }
     HttpRequest.Builder builder =
         HttpRequest.newBuilder(URI.create(config.baseUrl() + path + queryString(allQuery)));
@@ -157,6 +161,30 @@ public final class BookshelfApiClient {
           .method(method, HttpRequest.BodyPublishers.ofString(toJson(body)));
     }
     return builder.build();
+  }
+
+  /** Copies the entries that have a name and a value. */
+  private static void addPresent(Map<String, String> from, Map<String, String> to) {
+    if (from != null) {
+      from.forEach(
+          (name, value) -> {
+            if (name != null && value != null) {
+              to.put(name, value);
+            }
+          });
+    }
+  }
+
+  /** The Cookie header value: each name with its value percent-encoded, joined by semicolons. */
+  private static String cookieHeader(Map<String, String> cookies) {
+    StringJoiner joiner = new StringJoiner("; ");
+    cookies.forEach(
+        (name, value) ->
+            joiner.add(
+                name
+                    + "="
+                    + URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")));
+    return joiner.toString();
   }
 
   private HttpResponse<String> send(HttpRequest request) {
@@ -286,7 +314,7 @@ public final class BookshelfApiClient {
       return this;
     }
 
-    /** API key, sent as a header, or as a query parameter when the API has no header scheme. */
+    /** API key, sent in the header, cookie or query parameter that each apiKey scheme declares. */
     public Builder apiKey(String apiKey) {
       this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
       return this;
@@ -313,15 +341,15 @@ public final class BookshelfApiClient {
       if (apiKey != null) {
         credentials.put(
             "apiKeyAuth",
-            new ClientConfig.Credential(Map.of("X-Api-Key", apiKey), Map.of()));
+            new ClientConfig.Credential(Map.of("X-Api-Key", apiKey), Map.of(), Map.of()));
       }
       if (bearerToken != null) {
         credentials.put(
             "bearerAuth",
-            new ClientConfig.Credential(Map.of("Authorization", "Bearer " + bearerToken), Map.of()));
+            new ClientConfig.Credential(Map.of("Authorization", "Bearer " + bearerToken), Map.of(), Map.of()));
         credentials.put(
             "oauth2",
-            new ClientConfig.Credential(Map.of("Authorization", "Bearer " + bearerToken), Map.of()));
+            new ClientConfig.Credential(Map.of("Authorization", "Bearer " + bearerToken), Map.of(), Map.of()));
       }
       // Redirects are intentionally not followed, so credentials never leave the configured host.
       java.net.http.HttpClient client =

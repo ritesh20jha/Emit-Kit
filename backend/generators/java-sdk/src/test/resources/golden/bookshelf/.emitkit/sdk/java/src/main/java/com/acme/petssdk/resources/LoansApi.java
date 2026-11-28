@@ -9,7 +9,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,16 +28,19 @@ public final class LoansApi {
    * <p>Lends a free copy of a book to a member.
    */
   public Loan createLoan(LoanRequest body, CreateLoanOptions options) {
-    Map<String, String> headers = new LinkedHashMap<>();
-    List<String> cookies = new ArrayList<>();
+    Map<String, String> cookies = new LinkedHashMap<>();
     if (options != null && options.session() != null) {
-      cookies.add(cookie("session", options.session()));
-    }
-    if (!cookies.isEmpty()) {
-      headers.put("Cookie", String.join("; ", cookies));
+      cookies.put("session", options.session());
     }
     HttpResponse<String> response =
-        client.request("POST", "/loans", null, headers, body, List.of("apiKeyAuth", "oauth2"));
+        client.request(
+            "POST",
+            "/loans",
+            null,
+            null,
+            cookies,
+            body,
+            List.of("apiKeyAuth", "oauth2"));
     return read(response, new TypeReference<Loan>() {});
   }
 
@@ -55,6 +57,7 @@ public final class LoansApi {
             null,
             null,
             null,
+            null,
             List.of("bearerAuth"));
     return read(response, new TypeReference<Loan>() {});
   }
@@ -62,11 +65,6 @@ public final class LoansApi {
   /** Percent-encodes one path segment. URLEncoder writes spaces as '+', so use %20. */
   private static String segment(String value) {
     return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
-  }
-
-  /** Builds one cookie pair. The value is percent-encoded, with spaces as %20. */
-  private static String cookie(String name, String value) {
-    return name + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
   }
 
   private <T> T read(HttpResponse<String> response, TypeReference<T> type) {

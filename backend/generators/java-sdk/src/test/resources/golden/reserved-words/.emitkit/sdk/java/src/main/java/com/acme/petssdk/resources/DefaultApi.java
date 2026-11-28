@@ -17,7 +17,7 @@ public final class DefaultApi {
 
   /** POST /delete */
   public void delete() {
-    client.request("POST", "/delete", null, null, null, List.of());
+    client.request("POST", "/delete", null, null, null, null, List.of());
   }
 
   /** GET /default */
@@ -26,7 +26,7 @@ public final class DefaultApi {
     if (options != null && options.default_() != null) {
       query.put("default", options.default_());
     }
-    client.request("GET", "/default", query, null, null, List.of());
+    client.request("GET", "/default", query, null, null, null, List.of());
   }
 
   public record DefaultOptions(

@@ -21,18 +21,18 @@ public final class UserApi {
 
   /** GET /class */
   public void class_() {
-    client.request("GET", "/class", null, null, null, List.of());
+    client.request("GET", "/class", null, null, null, null, List.of());
   }
 
   /** GET /import */
   public void import_() {
-    client.request("GET", "/import", null, null, null, List.of());
+    client.request("GET", "/import", null, null, null, null, List.of());
   }
 
   /** GET /items/{in} */
   public Object_ getItemIn(String in) {
     HttpResponse<String> response =
-        client.request("GET", "/items/" + segment(in), null, null, null, List.of());
+        client.request("GET", "/items/" + segment(in), null, null, null, null, List.of());
     return read(response, new TypeReference<Object_>() {});
   }
 

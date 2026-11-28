@@ -237,6 +237,16 @@ final class JavaTypeRenderer {
         || (schema instanceof OneOfSchema u && isSealed(u));
   }
 
+  /**
+   * The Java names of the top-level types the API declares as files. Aliases are not among them.
+   */
+  Set<String> namedTypes() {
+    return schemas.entrySet().stream()
+        .filter(e -> isNamed(e.getValue()))
+        .map(e -> java.type(e.getKey()))
+        .collect(Collectors.toSet());
+  }
+
   /** A discriminated oneOf whose options are all refs to records. */
   private boolean isSealed(OneOfSchema union) {
     return union.discriminator() != null
@@ -336,12 +346,7 @@ final class JavaTypeRenderer {
       String raw = ((RefSchema) option).name();
       String type = java.type(raw);
       permits.add(type);
-      subtypes.add(
-          "@JsonSubTypes.Type(value = "
-              + type
-              + ".class, name = "
-              + JavaClientView.quote(subtypeName(union, raw))
-              + ")");
+      subtypes.add(subtypeEntry(type, subtypeNames(union, raw)));
     }
     String body =
         """
@@ -364,20 +369,38 @@ final class JavaTypeRenderer {
   }
 
   /**
-   * The discriminator value that names one option of a sealed oneOf: the value the document maps to
-   * it, else the single value its discriminator property allows, else its schema name.
+   * The discriminator values that name one option of a sealed oneOf: every value the document maps
+   * to it, in document order. Without a mapping, the single value its discriminator property
+   * allows, else its schema name.
    */
-  private String subtypeName(OneOfSchema union, String raw) {
-    for (var entry : union.mapping().entrySet()) {
-      if (entry.getValue().equals(raw)) {
-        return entry.getKey();
-      }
+  private List<String> subtypeNames(OneOfSchema union, String raw) {
+    List<String> mapped =
+        union.mapping().entrySet().stream()
+            .filter(entry -> entry.getValue().equals(raw))
+            .map(Map.Entry::getKey)
+            .toList();
+    if (!mapped.isEmpty()) {
+      return mapped;
     }
     Schema property = propsOf(target(raw)).properties().get(union.discriminator());
     if (property instanceof EnumSchema e && e.values().size() == 1) {
-      return e.values().get(0);
+      return List.of(e.values().get(0));
     }
-    return raw;
+    return List.of(raw);
+  }
+
+  /**
+   * The {@code @JsonSubTypes.Type} entry for one option: {@code name} for one value, else {@code
+   * names}.
+   */
+  private static String subtypeEntry(String type, List<String> names) {
+    String naming =
+        names.size() == 1
+            ? "name = " + JavaClientView.quote(names.get(0))
+            : "names = {"
+                + names.stream().map(JavaClientView::quote).collect(Collectors.joining(", "))
+                + "}";
+    return "@JsonSubTypes.Type(value = " + type + ".class, " + naming + ")";
   }
 
   /** Claims {@code name} for {@code raw}. Fails when another original name already has it. */

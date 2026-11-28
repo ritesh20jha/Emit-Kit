@@ -15,6 +15,6 @@ public final class StoreApi {
 
   /** GET /store/orders */
   public void listStoreOrders() {
-    client.request("GET", "/store/orders", null, null, null, List.of());
+    client.request("GET", "/store/orders", null, null, null, null, List.of());
   }
 }

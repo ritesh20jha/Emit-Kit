@@ -16,18 +16,21 @@ record ClientConfig(
     Duration timeout,
     Map<String, Credential> credentials) {
 
-  /** The headers and query parameters that one security scheme sends. */
-  record Credential(Map<String, String> headers, Map<String, String> query) {
+  /** The headers, query parameters and cookies that one security scheme sends. */
+  record Credential(
+      Map<String, String> headers, Map<String, String> query, Map<String, String> cookies) {
 
     Credential {
       headers = Collections.unmodifiableMap(new LinkedHashMap<>(headers));
       query = Collections.unmodifiableMap(new LinkedHashMap<>(query));
+      cookies = Collections.unmodifiableMap(new LinkedHashMap<>(cookies));
     }
 
     // Credential values are never printed, only the names they send.
     @Override
     public String toString() {
-      return "Credential[headers=" + headers.keySet() + ", query=" + query.keySet() + "]";
+      return "Credential[headers=" + headers.keySet() + ", query=" + query.keySet()
+          + ", cookies=" + cookies.keySet() + "]";
     }
   }
 

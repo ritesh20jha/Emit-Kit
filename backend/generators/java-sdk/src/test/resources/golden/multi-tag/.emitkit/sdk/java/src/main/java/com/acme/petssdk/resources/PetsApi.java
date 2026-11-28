@@ -23,6 +23,7 @@ public final class PetsApi {
         null,
         null,
         null,
+        null,
         List.of());
   }
 
