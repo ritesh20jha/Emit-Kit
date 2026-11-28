@@ -61,6 +61,18 @@ public class SpecSnapshot extends BaseEntity {
     this.infoVersion = infoVersion;
   }
 
+  /**
+   * Replaces the columns that come from parsing the spec, with those of a fresh parse of the same
+   * content. The content and its hash never change.
+   *
+   * @param apiModel the freshly parsed model as JSON text
+   * @param infoVersion the freshly parsed info version
+   */
+  public void replaceParsedFields(String apiModel, String infoVersion) {
+    this.apiModel = apiModel;
+    this.infoVersion = infoVersion;
+  }
+
   public String getProjectId() {
     return projectId;
   }
