@@ -10,7 +10,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("create-loan")
-    .description("Borrow a book")
+    .summary("Borrow a book")
+    .description("Borrow a book\n\nLends a free copy of a book to a member.")
     .option("--session <value>", "Kiosk session, when borrowing from a library terminal.")
     .requiredOption("--json <body|@file>", "Request body as JSON text, or @path to read it from a file")
     .action(async (opts: Record<string, string | undefined>) =>
@@ -28,7 +29,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("return-loan")
-    .description("Return a book")
+    .summary("Return a book")
+    .description("Return a book\n\nEnds a loan and frees the copy.")
     .requiredOption("--loan-id <value>", "The loan's id.")
     .action(async (opts: Record<string, string | undefined>) =>
       run({

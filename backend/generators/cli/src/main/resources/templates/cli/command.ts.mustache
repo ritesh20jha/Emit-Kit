@@ -11,6 +11,9 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command({{{nameLiteral}}})
+{{#hasSummary}}
+    .summary({{{summaryLiteral}}})
+{{/hasSummary}}
     .description({{{descriptionLiteral}}})
 {{#flags}}
 {{#required}}

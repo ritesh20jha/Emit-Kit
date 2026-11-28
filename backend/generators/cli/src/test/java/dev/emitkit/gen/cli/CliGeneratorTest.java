@@ -235,6 +235,65 @@ class CliGeneratorTest {
         .doesNotContain("--no-cache");
   }
 
+  @Test
+  void collidingParamNamesGetLocationPrefixedFlags() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".option(\"--id <value>\"")
+        .contains(".option(\"--header-id <value>\"")
+        .contains("\"id\": opts[\"id\"],")
+        .contains("\"id\": opts[\"headerId\"],")
+        .doesNotContain("--id-2");
+  }
+
+  @Test
+  void collidingFlagFallsBackToANumericSuffixLast() {
+    var op =
+        operation(
+            "search",
+            "Search",
+            param("id", ParamLocation.QUERY, false),
+            param("id", ParamLocation.HEADER, false),
+            param("id", ParamLocation.HEADER, false));
+    String commands = source(generate(model(op)), "src/commands/things.ts");
+    assertThat(commands)
+        .contains(".option(\"--id <value>\"")
+        .contains(".option(\"--header-id <value>\"")
+        .contains(".option(\"--header-id-2 <value>\"")
+        .contains("\"id\": opts[\"headerId2\"],");
+  }
+
+  @Test
+  void commandHelpShowsTheSummaryForTheListAndTheSummaryWithTheDescription() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".summary(\"Search items\")")
+        .contains(".description(\"Search items\\n\\nFinds items matching the given filters.\")");
+  }
+
+  @Test
+  void summaryAloneIsTheDescriptionWhenItRepeatsTheSummary() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".summary(\"Update an item\")")
+        .contains(".description(\"Update an item\")")
+        .doesNotContain("Update an item\\n\\nUpdate an item");
+  }
+
+  @Test
+  void descriptionAloneIsTheHelpWhenThereIsNoSummary() {
+    String commands = source(generate(local("param-collisions")), "src/commands/items.ts");
+    assertThat(commands)
+        .contains(".description(\"Lists the notes on an item.\")")
+        .doesNotContain(".summary(\"Lists the notes");
+  }
+
+  @Test
+  void paramCollisionsSpecMatchesGolden() {
+    GoldenFiles.assertMatches(
+        "param-collisions", generator.generate(local("param-collisions"), ctx()));
+  }
+
   private static GeneratorContext ctx() {
     return ctx(".emitkit/");
   }

@@ -10,7 +10,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("list-authors")
-    .description("List authors")
+    .summary("List authors")
+    .description("List authors\n\nReturns every author, sorted by name.")
     .option("--sort <value>", "Sort direction.")
     .action(async (opts: Record<string, string | undefined>) =>
       run({
@@ -25,7 +26,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("list-author-books")
-    .description("List an author's books")
+    .summary("List an author's books")
+    .description("List an author's books\n\nReturns the books written by one author.")
     .requiredOption("--author-id <value>", "The author's id.")
     .action(async (opts: Record<string, string | undefined>) =>
       run({

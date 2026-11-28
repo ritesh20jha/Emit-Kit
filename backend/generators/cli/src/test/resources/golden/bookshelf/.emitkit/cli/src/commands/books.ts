@@ -10,7 +10,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("list-books")
-    .description("List books")
+    .summary("List books")
+    .description("List books\n\nReturns a page of books, optionally filtered by genre and availability.")
     .option("--cursor <value>", "Opaque cursor from the previous page.")
     .option("--limit <value>", "Page size.")
     .option("--genre <value>", "Only return books in this genre.")
@@ -31,7 +32,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("create-book")
-    .description("Add a book")
+    .summary("Add a book")
+    .description("Add a book\n\nAdds a new book to the catalogue.")
     .requiredOption("--idempotency-key <value>", "Client-generated key that makes retries safe.")
     .requiredOption("--json <body|@file>", "Request body as JSON text, or @path to read it from a file")
     .action(async (opts: Record<string, string | undefined>) =>
@@ -49,7 +51,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("get-book")
-    .description("Get a book")
+    .summary("Get a book")
+    .description("Get a book\n\nReturns one book by its id.")
     .requiredOption("--book-id <value>", "The book's id.")
     .action(async (opts: Record<string, string | undefined>) =>
       run({
@@ -61,7 +64,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("delete-book")
-    .description("Remove a book")
+    .summary("Remove a book")
+    .description("Remove a book\n\nRemoves a book from the catalogue.")
     .requiredOption("--book-id <value>", "The book's id.")
     .action(async (opts: Record<string, string | undefined>) =>
       run({
@@ -73,7 +77,8 @@ export function registerGroup(program: Command, run: Runner): void {
 
   group
     .command("update-book")
-    .description("Update a book")
+    .summary("Update a book")
+    .description("Update a book\n\nChanges some fields of a book. Fields left out are kept.")
     .requiredOption("--book-id <value>", "The book's id.")
     .requiredOption("--json <body|@file>", "Request body as JSON text, or @path to read it from a file")
     .action(async (opts: Record<string, string | undefined>) =>
