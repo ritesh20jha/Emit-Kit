@@ -26,7 +26,9 @@ class ControlListener {
     this.cancellation = cancellation;
   }
 
-  @RabbitListener(queues = "#{workerControlQueue.name}")
+  // One consumer: control messages are rare and tiny. Without this it would take the job listeners'
+  // concurrency (spring.rabbitmq.listener.simple.concurrency).
+  @RabbitListener(queues = "#{workerControlQueue.name}", concurrency = "1")
   void onControl(
       ControlMessage message, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag)
       throws IOException {

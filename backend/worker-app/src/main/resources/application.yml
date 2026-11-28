@@ -10,6 +10,9 @@ spring:
       # Four listener threads, each holding a run's advisory-lock connection plus a connection for
       # its work (4 x 2 = 8), with headroom.
       maximum-pool-size: 20
+      # Hikari otherwise keeps all 20 open. Connections above this close after 10 idle minutes; a run's
+      # lock connection is checked out, so it is never idle in the pool.
+      minimum-idle: 2
       # RunLock needs auto-commit: its advisory lock is held by the session, outside any transaction.
       auto-commit: true
       # Hikari reads this as a plain number of milliseconds (10 s).

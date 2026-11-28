@@ -31,7 +31,9 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      # RabbitMQ opens the AMQP port once the node has booted. rabbitmq-diagnostics would start an Erlang VM
+      # for each check, about 4 CPU-seconds every interval.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "5672"]
       interval: 10s
       timeout: 10s
       retries: 20
