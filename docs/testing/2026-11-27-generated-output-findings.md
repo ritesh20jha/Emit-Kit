@@ -68,6 +68,29 @@ Severity: **P0** the output is broken for normal use. **P1** wrong behaviour for
 
 19. **CLI command names repeat the group:** `books list-books`. Consider `books list`.
 
+## Status on branch `bug-fixes-and-enhancement`
+
+| # | Status |
+|---|---|
+| 1 | Fixed. `OneOfSchema.mapping` sets the Java subtype names, and the spec diff now reports discriminator and mapping changes. |
+| 2 | Fixed. The sync and async clients attach one resource per tag. |
+| 3 | Fixed in TS, Python and Java. |
+| 4 | Fixed. |
+| 5 | Fixed in every output. Each request sends at most one API key: a header or cookie scheme first, a query scheme only as a fallback. Credentials win over same-named parameters. |
+| 6 | Fixed in TS, Python and Java. `Retry-After` is honoured, capped at 30 s. |
+| 7 | Fixed. `spec_snapshots.api_model` is now `json` (V7), and a reused snapshot is repaired from a fresh parse on its project's next run. |
+| 8 | Open. |
+| 9 | CLI fixed (lossless JSON output). TS `int64` is still `number`. |
+| 10 | Fixed. MCP is now `<base>-mcp` with bin `<base>-mcp`. |
+| 11 | Fixed. |
+| 12 | Fixed, except "API API". |
+| 13, 14, 15 | Fixed. |
+| 16, 17 | Open. |
+| 18 | Fixed. |
+| 19 | Open. |
+
+Before release, review the breaking changes for users of already-generated SDKs. These include the new signatures in all three SDKs, the Java record order, the MCP package rename and per-operation credentials. The first release after deploy should be a major bump: the spec diff compares API models, not generated code, so it cannot see these changes.
+
 ## Not covered
 
 - Docs output (`.emitkit/docs/v0.1.0`) and the publish workflows. These weren't run, because there are no registry secrets, by choice.
