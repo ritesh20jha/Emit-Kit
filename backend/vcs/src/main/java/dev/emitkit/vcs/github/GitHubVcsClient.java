@@ -57,6 +57,7 @@ final class GitHubVcsClient implements VcsClient {
   private static final long CONTENTS_API_MAX_BYTES = 1024 * 1024;
 
   private static final int REPO_PAGE_SIZE = 100;
+  private static final String TAG_REF_PREFIX = "refs/tags/";
   private static final int REPO_LIMIT = 300;
 
   /** Entries per tree write. Larger commits chain several trees, one per chunk. */
@@ -295,8 +296,37 @@ final class GitHubVcsClient implements VcsClient {
   @Override
   public boolean createTag(String repo, String tag, String sha) {
     try {
-      return createRef(github.getRepository(repo), "refs/tags/" + tag, sha);
+      return createRef(github.getRepository(repo), TAG_REF_PREFIX + tag, sha);
     } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
+  }
+
+  @Override
+  public List<String> listTags(String repo, String prefix) {
+    GHRepository target;
+    try {
+      target = github.getRepository(repo);
+    } catch (IOException | GHException e) {
+      throw GitHubErrors.map(e);
+    }
+    // The repo exists, so a 404 here is GitHub's answer for a tags namespace with no tags in it.
+    try {
+      List<String> tags = new ArrayList<>();
+      for (GHRef ref : target.listRefs("tags")) {
+        String name = ref.getRef().substring(TAG_REF_PREFIX.length());
+        if (name.startsWith(prefix)) {
+          tags.add(name);
+        }
+      }
+      return List.copyOf(tags);
+    } catch (IOException | GHException e) {
+      if (GitHubErrors.statusOf(e) == 404
+          || (e instanceof GHException
+              && e.getCause() instanceof Exception cause
+              && GitHubErrors.statusOf(cause) == 404)) {
+        return List.of();
+      }
       throw GitHubErrors.map(e);
     }
   }

@@ -53,6 +53,22 @@ class VersionCalculatorTest {
     assertThat(result).isEqualTo(new VersionResult("0.1.0", Optional.of(ChangeType.MINOR)));
   }
 
+  @ParameterizedTest(name = "released {0} -> {1} {2}")
+  @CsvSource({"0.1.0, 0.2.0, MINOR", "0.3.7, 0.4.0, MINOR", "1.2.3, 2.0.0, MAJOR"})
+  void continueAfter_bumpsAsBreaking(String released, String expected, ChangeType changeType) {
+    VersionResult result = calc.continueAfter(released);
+    assertThat(result.version()).isEqualTo(expected);
+    assertThat(result.changeType()).contains(changeType);
+  }
+
+  @Test
+  void highest_comparesAsSemverAndSkipsInvalid() {
+    assertThat(VersionCalculator.highest(List.of("0.9.0", "0.10.0", "abc", "0.2.0-rc.1")))
+        .contains("0.10.0");
+    assertThat(VersionCalculator.highest(List.of("abc"))).isEmpty();
+    assertThat(VersionCalculator.highest(List.of())).isEmpty();
+  }
+
   @Test
   void specVersion_usesInfoVersion() {
     assertThat(calc.next(SPEC_VERSION, Optional.of("1.0.0"), ANY_DIFF, "3.4.5").version())

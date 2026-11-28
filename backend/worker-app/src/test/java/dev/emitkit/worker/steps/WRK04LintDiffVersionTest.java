@@ -32,6 +32,7 @@ import dev.emitkit.spec.diff.SpecDiff;
 import dev.emitkit.spec.model.ApiModelJson;
 import dev.emitkit.spec.parse.ParseResult;
 import dev.emitkit.spec.parse.SpecParser;
+import dev.emitkit.vcs.fake.InMemoryVcsClient;
 import dev.emitkit.worker.pipeline.CancellationRegistry;
 import dev.emitkit.worker.pipeline.RunContext;
 import dev.emitkit.worker.pipeline.RunLogger;
@@ -149,6 +150,7 @@ class WRK04LintDiffVersionTest {
   private LintSpecStep lint;
   private DiffSpecStep diff;
   private CalcVersionStep calc;
+  private InMemoryVcsClient vcs;
 
   @BeforeEach
   void seedProjectAndSteps() {
@@ -176,6 +178,8 @@ class WRK04LintDiffVersionTest {
     lint = new LintSpecStep(runs, snapshots, lintResults, transactions);
     diff = new DiffSpecStep(runs, snapshots, transactions);
     calc = new CalcVersionStep(runs, snapshots, sdkVersions, transactions);
+    vcs = new InMemoryVcsClient();
+    vcs.createRepo("acme", "api-" + n, true);
   }
 
   @Test
@@ -270,6 +274,37 @@ class WRK04LintDiffVersionTest {
     GenerationRun run = reload(runId);
     assertThat(run.getSdkVersion()).isEqualTo("0.1.0");
     assertThat(run.getChangeType()).isEqualTo(ChangeType.MINOR);
+  }
+
+  @Test
+  void firstRun_repoAlreadyTagged_continuesFromHighestTagAsBreaking() {
+    String repo = project.getRepoFullName();
+    String head = vcs.branchHead(repo, "main");
+    vcs.createTag(repo, "sdk/v0.1.0", head);
+    vcs.createTag(repo, "mcp/v0.3.0", head);
+    vcs.createTag(repo, "v9.0.0", head);
+    String runId = runWith(PETS_V1, T3, RunStatus.RUNNING).getId();
+    diff.execute(context(reload(runId)));
+
+    assertThat(calc.execute(context(reload(runId))))
+        .isEqualTo(new StepResult.Continue(new CalcVersionStep.Output("0.4.0", true)));
+    GenerationRun run = reload(runId);
+    assertThat(run.getSdkVersion()).isEqualTo("0.4.0");
+    assertThat(run.getChangeType()).isEqualTo(ChangeType.MINOR);
+  }
+
+  @Test
+  void recordedVersion_doesNotReadTags() {
+    GenerationRun previous = runWith(PETS_V1, T1, RunStatus.SUCCESS);
+    sdkVersions.saveAndFlush(
+        new SdkVersion(
+            null, project.getId(), "0.2.0", previous.getId(), ChangeType.MINOR, "", null));
+    String runId = runWith(PETS_V2, T3, RunStatus.RUNNING).getId();
+    diff.execute(context(reload(runId)));
+
+    calc.execute(context(reload(runId)));
+
+    assertThat(vcs.calls("listTags")).isEmpty();
   }
 
   @Test
@@ -369,14 +404,7 @@ class WRK04LintDiffVersionTest {
 
   private RunContext context(GenerationRun run) {
     return new RunContext(
-        run,
-        project,
-        config,
-        () -> {
-          throw new UnsupportedOperationException("no VCS in these steps");
-        },
-        RunLogger.NOOP,
-        new CancellationRegistry(runs));
+        run, project, config, () -> vcs, RunLogger.NOOP, new CancellationRegistry(runs));
   }
 
   private GenerationRun reload(String runId) {

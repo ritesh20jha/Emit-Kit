@@ -2,6 +2,8 @@ package dev.emitkit.spec.version;
 
 import com.github.zafarkhaja.semver.Version;
 import dev.emitkit.spec.diff.SpecDiff;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -27,6 +29,34 @@ public final class VersionCalculator {
       case EMITKIT_MANAGED -> emitkitManaged(last, diff);
       case SPEC_VERSION -> specVersion(last, infoVersion);
     };
+  }
+
+  /**
+   * The highest semver among {@code versions}, ignoring any that do not parse. Used to find the
+   * last release in a repo's tags when EmitKit has no record of one.
+   */
+  public static Optional<String> highest(Collection<String> versions) {
+    Objects.requireNonNull(versions, "versions");
+    return versions.stream()
+        .map(Version::tryParse)
+        .flatMap(Optional::stream)
+        .max(Comparator.naturalOrder())
+        .map(Version::toString);
+  }
+
+  /**
+   * The first EmitKit-managed version for a project whose repo already has release {@code
+   * released}, but no record of it here (the project was connected again, or its history was lost).
+   * There is no baseline to diff against, so the bump is treated as breaking: minor below 1.0.0,
+   * major from 1.0.0. That never reuses a released version and never understates a change.
+   */
+  public VersionResult continueAfter(String released) {
+    Objects.requireNonNull(released, "released");
+    Version current =
+        Version.tryParse(released)
+            .orElseThrow(() -> new IllegalArgumentException("not a semver version: " + released));
+    ChangeType applied = current.majorVersion() == 0 ? ChangeType.MINOR : ChangeType.MAJOR;
+    return new VersionResult(bump(current, applied).toString(), Optional.of(applied));
   }
 
   private static VersionResult emitkitManaged(Optional<Version> last, SpecDiff diff) {
