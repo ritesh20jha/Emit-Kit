@@ -28,6 +28,8 @@ __all__ = [
 
 # custom/ is hand-written and may export names. A name it exports that this package also defines
 # would be silently replaced by one of them, so the import fails and the names must be renamed.
+# Re-exporting the generated object itself (from ..models import Book) is not a clash. The
+# generated names are bound above, so globals() holds the objects this package exposes.
 _generated_names = frozenset(
     [
         "ApiError",
@@ -45,7 +47,11 @@ _generated_names = frozenset(
 _custom_exports = frozenset(
     getattr(_custom, "__all__", [name for name in vars(_custom) if not name.startswith("_")])
 )
-_clashes = sorted(_generated_names & _custom_exports)
+_clashes = [
+    n
+    for n in sorted(_generated_names & _custom_exports)
+    if getattr(_custom, n) is not globals()[n]
+]
 if _clashes:
     raise ImportError(
         "custom/ must not define names that this package generates: " + ", ".join(_clashes)

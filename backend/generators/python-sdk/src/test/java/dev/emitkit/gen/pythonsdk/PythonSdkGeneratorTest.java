@@ -558,6 +558,16 @@ class PythonSdkGeneratorTest {
   }
 
   @Test
+  void customClashIsOnlyAnObjectDifferentFromTheGeneratedOne() {
+    // custom/ re-exporting a generated model (from ..models import Book) is valid; only a
+    // different object bound under a generated name is a clash. The check reads the bound globals,
+    // so it must run after the imports that bind them.
+    assertThat(content("bookshelf", "__init__.py"))
+        .contains("if getattr(_custom, n) is not globals()[n]")
+        .doesNotContain("_clashes = sorted(_generated_names & _custom_exports)");
+  }
+
+  @Test
   void credentialsWinOverAQueryParameterOfTheSameName() {
     assertThat(sdkFile(localSpec("apikeys"), "acme_pets/client.py"))
         .contains("params: Dict[str, Any] = {**(query or {}), **auth_params}")
