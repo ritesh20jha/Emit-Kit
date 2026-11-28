@@ -1,7 +1,11 @@
 package dev.emitkit.spec.diff;
 
+import static dev.emitkit.spec.diff.ChangeKind.DISCRIMINATOR_CHANGED;
 import static dev.emitkit.spec.diff.ChangeKind.ENUM_VALUE_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.ENUM_VALUE_REMOVED;
+import static dev.emitkit.spec.diff.ChangeKind.MAPPING_KEY_ADDED;
+import static dev.emitkit.spec.diff.ChangeKind.MAPPING_KEY_REMOVED;
+import static dev.emitkit.spec.diff.ChangeKind.MAPPING_TARGET_CHANGED;
 import static dev.emitkit.spec.diff.ChangeKind.REQUEST_PROPERTY_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.REQUEST_REQUIRED_PROPERTY_ADDED;
 import static dev.emitkit.spec.diff.ChangeKind.RESPONSE_PROPERTY_ADDED;
@@ -21,12 +25,14 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import dev.emitkit.spec.diff.ModelBuilder.Op;
 import dev.emitkit.spec.model.ApiModel;
 import dev.emitkit.spec.model.ObjectSchema;
+import dev.emitkit.spec.model.OneOfSchema;
 import dev.emitkit.spec.model.Schema;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class SchemaDiffTest {
@@ -214,6 +220,124 @@ class SchemaDiffTest {
     var after = model(Map.of("Pet", object(Map.of("status", enumOf("available", "sold")))), getPet);
     assertThat(changes(before, after))
         .containsExactly(new Change(ENUM_VALUE_ADDED, "200.status", false));
+  }
+
+  /** A oneOf of Cat and Dog with the given discriminator property and mapping. */
+  private static Schema petOneOf(@Nullable String discriminator, Map<String, String> mapping) {
+    return new OneOfSchema(List.of(ref("Cat"), ref("Dog")), discriminator, false, null, mapping);
+  }
+
+  /** The same as {@link #petOneOf}, but with no options at all. */
+  private static Schema emptyPetOneOf(@Nullable String discriminator) {
+    return new OneOfSchema(List.of(), discriminator, false, null, Map.of());
+  }
+
+  /** The Pet oneOf, plus the Cat and Dog variants it refers to. */
+  private static Map<String, Schema> petSchemas(Schema pet) {
+    return Map.of(
+        "Pet", pet,
+        "Cat", object(Map.of("name", string())),
+        "Dog", object(Map.of("bark", string())));
+  }
+
+  @Test
+  void discriminatorChanged_isBreaking() {
+    var before = model(petSchemas(petOneOf("petType", Map.of())), getPet);
+    var after = model(petSchemas(petOneOf("kind", Map.of())), getPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(DISCRIMINATOR_CHANGED, "200", true));
+  }
+
+  @Test
+  void discriminatorAdded_isBreaking() {
+    var before = model(petSchemas(petOneOf(null, Map.of())), getPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of())), getPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(DISCRIMINATOR_CHANGED, "200", true));
+  }
+
+  @Test
+  void discriminatorRemoved_isBreaking() {
+    var before = model(petSchemas(petOneOf("petType", Map.of())), getPet);
+    var after = model(petSchemas(petOneOf(null, Map.of())), getPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(DISCRIMINATOR_CHANGED, "200", true));
+  }
+
+  @Test
+  void discriminatorChangedOnRequestBody_isBreaking() {
+    var before = model(petSchemas(petOneOf("petType", Map.of())), createPet);
+    var after = model(petSchemas(petOneOf("kind", Map.of())), createPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(DISCRIMINATOR_CHANGED, "body", true));
+  }
+
+  @Test
+  void discriminatorChanged_withNoOptionsOnEitherSide_notReported() {
+    // The discriminator rule applies only when both sides have options.
+    var before = model(petSchemas(emptyPetOneOf("petType")), getPet);
+    var after = model(petSchemas(emptyPetOneOf("kind")), getPet);
+    assertThat(changes(before, after)).isEmpty();
+  }
+
+  @Test
+  void discriminatorAndMappingUnchanged_notReported() {
+    var mapping = Map.of("cat", "Cat", "dog", "Dog");
+    var before = model(petSchemas(petOneOf("petType", mapping)), getPet);
+    var after = model(petSchemas(petOneOf("petType", mapping)), getPet);
+    assertThat(changes(before, after)).isEmpty();
+  }
+
+  @Test
+  void mappingKeyRemoved_isBreaking() {
+    var before = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat", "dog", "Dog"))), getPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat"))), getPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(MAPPING_KEY_REMOVED, "200", true));
+  }
+
+  @Test
+  void mappingKeyRenamed_isBreaking() {
+    // The wire value changed: the old key is gone (breaking) and the new one is added.
+    var before = model(petSchemas(petOneOf("petType", Map.of("print", "Cat"))), getPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of("paperback", "Cat"))), getPet);
+    assertThat(changes(before, after))
+        .containsExactlyInAnyOrder(
+            new Change(MAPPING_KEY_REMOVED, "200", true),
+            new Change(MAPPING_KEY_ADDED, "200", false));
+  }
+
+  @Test
+  void mappingKeyRepointed_isBreaking() {
+    var before = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat"))), getPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of("cat", "Dog"))), getPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(MAPPING_TARGET_CHANGED, "200", true));
+  }
+
+  @Test
+  void mappingKeyAdded_notBreaking() {
+    var before = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat"))), getPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat", "dog", "Dog"))), getPet);
+    assertThat(changes(before, after)).containsExactly(new Change(MAPPING_KEY_ADDED, "200", false));
+  }
+
+  @Test
+  void mappingKeyRemoved_onRequestBody_isBreaking() {
+    var before =
+        model(petSchemas(petOneOf("petType", Map.of("cat", "Cat", "dog", "Dog"))), createPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat"))), createPet);
+    assertThat(changes(before, after))
+        .containsExactly(new Change(MAPPING_KEY_REMOVED, "body", true));
+  }
+
+  @Test
+  void emptyBeforeMapping_populatedAfter_notReported() {
+    // Snapshots from before the mapping existed read back empty. Skipping the mapping
+    // comparison keeps the next run from reporting every mapping entry as new.
+    var before = model(petSchemas(petOneOf("petType", Map.of())), getPet);
+    var after = model(petSchemas(petOneOf("petType", Map.of("cat", "Cat", "dog", "Dog"))), getPet);
+    assertThat(changes(before, after)).isEmpty();
   }
 
   /** An object with no fixed properties whose values have the given schema. */
