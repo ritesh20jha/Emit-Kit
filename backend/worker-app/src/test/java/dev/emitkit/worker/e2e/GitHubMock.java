@@ -166,6 +166,11 @@ final class GitHubMock implements ResponseDefinitionTransformerV2, AutoCloseable
     if (rest.startsWith(HEADS)) {
       return refRoute(method, repo, refs, decode(rest.substring(HEADS.length())), in);
     }
+    // No repo here has tags. GitHub answers 404 for an empty tags namespace, which CALC_VERSION
+    // reads as "no earlier releases".
+    if (method.equals("GET") && rest.equals("/git/refs/tags")) {
+      return json(404, NOT_FOUND);
+    }
     if (method.equals("POST") && rest.equals("/git/refs")) {
       String branch = in.path("ref").stringValue().substring("refs/heads/".length());
       return refRoute(method, repo, refs, branch, in);
